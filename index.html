@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ungatus Mini App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="profile-screen" class="screen">
+  <h2>Ваш профиль</h2>
+  <div id="balance">Баланс: 0 UGT</div>
+  <button onclick="openBuy()">Купить пакет</button>
+  <button onclick="openStatus()">Статус аллокации</button>
+</div>
+
+<div id="buy-screen" class="screen hidden">
+  <h2>Купить пакет</h2>
+  <p>Пакет: 25 евро → 25 000 UGT</p>
+  <button onclick="buyPackage()">Оплатить TON/SOL</button>
+  <button onclick="openProfile()">Назад</button>
+</div>
+
+<div id="status-screen" class="screen hidden">
+  <h2>Статус аллокации</h2>
+  <p id="status-text">До запуска аллокации ваши 25 000 UGT считаются как 50 000 UGT.</p>
+  <button onclick="openProfile()">Назад</button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
