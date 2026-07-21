@@ -1,7 +1,8 @@
 {
   "name": "ungatus-lab-miniapp",
   "version": "1.0.0",
-    "type": "module",
+  "type": "module",
+  "main": "api/index.js",
   "scripts": {
     "start": "vercel dev"
   }
