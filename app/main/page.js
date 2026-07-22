@@ -1,104 +1,59 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-export default function MainScreen() {
+export default function MainRedirect() {
   const router = useRouter();
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("pgm_started", "1");
+      window.localStorage.setItem("pgm_active_room", "center");
+    }
+
+    router.replace("/");
+  }, [router]);
+
   return (
-    <div
+    <main
       style={{
         width: "100%",
         minHeight: "100vh",
-        backgroundColor: "#0b0b0b",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        paddingTop: 40,
+        background:
+          "radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.22), transparent 32%), linear-gradient(180deg, #121212 0%, #0b0b0b 100%)",
         color: "white",
-        fontFamily: "Inter, sans-serif",
+        display: "grid",
+        placeItems: "center",
+        fontFamily:
+          "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
-      {/* Заголовок */}
-      <h1 style={{ marginBottom: 40, fontSize: 28, fontWeight: 600 }}>
-        PixelGrid Mini App
-      </h1>
-
-      {/* Круг комнат */}
-      <div
+      <section
         style={{
-          display: "flex",
-          flexDirection: "row",
-          gap: 30,
-          justifyContent: "center",
-          alignItems: "center",
-          flexWrap: "wrap",
-          maxWidth: 900,
+          width: "min(380px, calc(100% - 32px))",
+          padding: 24,
+          borderRadius: 24,
+          background: "rgba(20,20,20,0.86)",
+          border: "1px solid rgba(255,255,255,0.09)",
+          textAlign: "center",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.55)",
         }}
       >
-        {/* Device Room */}
-        <button
-          onClick={() => router.push("/device-room")}
-          style={roomButtonStyle}
-        >
-          Device
-        </button>
+        <h1 style={{ margin: "0 0 10px", fontSize: 28 }}>
+          PixelGridMacro
+        </h1>
 
-        {/* Collab Room */}
-        <button
-          onClick={() => router.push("/collab-room")}
-          style={roomButtonStyle}
-        >
-          Collab
-        </button>
-
-        {/* Center Room */}
-        <button
-          onClick={() => router.push("/center-room")}
+        <p
           style={{
-            ...roomButtonStyle,
-            backgroundColor: "#1a1a1a",
-            border: "3px solid #4caf50",
-            boxShadow: "0 0 12px #4caf50",
+            margin: 0,
+            color: "rgba(255,255,255,0.64)",
+            lineHeight: 1.5,
           }}
         >
-          Center
-        </button>
-
-        {/* Market Room */}
-        <button
-          onClick={() => router.push("/market-room")}
-          style={roomButtonStyle}
-        >
-          Market
-        </button>
-
-        {/* Profile Room */}
-        <button
-          onClick={() => router.push("/profile-room")}
-          style={{
-            ...roomButtonStyle,
-            backgroundColor: "#1a1a1a",
-            border: "3px solid #2196f3",
-            boxShadow: "0 0 12px #2196f3",
-          }}
-        >
-          Profile
-        </button>
-      </div>
-    </div>
+          Opening Center Room...
+        </p>
+      </section>
+    </main>
   );
 }
-
-const roomButtonStyle = {
-  width: 140,
-  height: 140,
-  borderRadius: "50%",
-  backgroundColor: "#141414",
-  border: "2px solid #333",
-  color: "white",
-  fontSize: 18,
-  fontWeight: 500,
-  cursor: "pointer",
-  transition: "0.2s",
-};
