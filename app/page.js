@@ -10,13 +10,29 @@ const rooms = [
   { id: "profile", label: "Profile", icon: "◌" },
 ];
 
+const validRoomIds = ["device", "collab", "center", "market", "profile"];
+
 export default function Home() {
   const [started, setStarted] = useState(false);
   const [activeRoom, setActiveRoom] = useState("center");
   const [telegramUser, setTelegramUser] = useState(null);
+  const [bootReady, setBootReady] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    const savedStarted = window.localStorage.getItem("pgm_started") === "1";
+    const savedRoom = window.localStorage.getItem("pgm_active_room");
+
+    if (savedStarted) {
+      setStarted(true);
+    }
+
+    if (validRoomIds.includes(savedRoom)) {
+      setActiveRoom(savedRoom);
+    } else {
+      setActiveRoom("center");
+    }
 
     const tg = window.Telegram?.WebApp;
 
@@ -25,11 +41,45 @@ export default function Home() {
       tg.expand();
       setTelegramUser(tg.initDataUnsafe?.user || null);
     }
+
+    setBootReady(true);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!started) return;
+
+    window.localStorage.setItem("pgm_started", "1");
+    window.localStorage.setItem("pgm_active_room", activeRoom);
+  }, [started, activeRoom]);
+
   function handleStart() {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("pgm_started", "1");
+      window.localStorage.setItem("pgm_active_room", "center");
+    }
+
     setStarted(true);
     setActiveRoom("center");
+  }
+
+  function handleRoomChange(roomId) {
+    setActiveRoom(roomId);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("pgm_active_room", roomId);
+    }
+  }
+
+  if (!bootReady) {
+    return (
+      <main style={styles.welcomeRoot}>
+        <section style={styles.welcomeCard}>
+          <h1 style={styles.welcomeTitle}>PixelGridMacro</h1>
+          <p style={styles.welcomeSubtitle}>Loading Mini App...</p>
+        </section>
+      </main>
+    );
   }
 
   if (!started) {
@@ -44,14 +94,14 @@ export default function Home() {
         {activeRoom === "center" && (
           <button
             style={styles.floatingButton}
-            onClick={() => setActiveRoom("market")}
+            onClick={() => handleRoomChange("market")}
             title="Open Market Room"
           >
             ◎
           </button>
         )}
 
-        <BottomNav activeRoom={activeRoom} setActiveRoom={setActiveRoom} />
+        <BottomNav activeRoom={activeRoom} setActiveRoom={handleRoomChange} />
       </div>
     </div>
   );
@@ -76,14 +126,12 @@ function WelcomeScreen({ onStart, telegramUser }) {
           <div style={styles.emblemCore}>PGM</div>
         </div>
 
-        {name && (
-          <div style={styles.telegramBadge}>
-            Telegram: {name}
-          </div>
-        )}
+        {name && <div style={styles.telegramBadge}>Telegram: {name}</div>}
 
         <button style={styles.getStartedButton} onClick={onStart}>
-          GET<br />STARTED
+          GET
+          <br />
+          STARTED
         </button>
 
         <p style={styles.smallNote}>
@@ -118,10 +166,7 @@ function RoomHeader({ title, subtitle, pill }) {
 }
 
 function CenterRoom({ telegramUser }) {
-  const name =
-    telegramUser?.first_name ||
-    telegramUser?.username ||
-    "SceneAgent";
+  const name = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
 
   return (
     <>
@@ -142,6 +187,7 @@ function CenterRoom({ telegramUser }) {
 
       <section style={styles.card}>
         <h3 style={styles.cardTitle}>Что будет раскрыто через native app</h3>
+
         <div style={styles.featureGrid}>
           <Feature title="Remote Mirrors" text="PC, Android и LDPlayer-зеркала." />
           <Feature title="Pixel Scanner" text="Эталонные цветовые массивы по сценам." />
@@ -150,9 +196,7 @@ function CenterRoom({ telegramUser }) {
         </div>
       </section>
 
-      <button style={styles.primaryAction}>
-        Download Native App — soon
-      </button>
+      <button style={styles.primaryAction}>Download Native App — soon</button>
     </>
   );
 }
@@ -206,8 +250,8 @@ function CollabRoom() {
       <section style={styles.card}>
         <h3 style={styles.cardTitle}>Invite builders</h3>
         <p style={styles.cardText}>
-          В Mini App эта комната может стать местом приглашений,
-          раннего доступа, реферальных веток и командных комнат.
+          В Mini App эта комната может стать местом приглашений, раннего доступа,
+          реферальных веток и командных комнат.
         </p>
       </section>
 
@@ -219,9 +263,7 @@ function CollabRoom() {
         </p>
       </section>
 
-      <button style={styles.primaryAction}>
-        Share Mini App — soon
-      </button>
+      <button style={styles.primaryAction}>Share Mini App — soon</button>
     </>
   );
 }
@@ -295,10 +337,7 @@ function MarketRoom() {
 function ProfileRoom({ telegramUser }) {
   const profile = useMemo(() => {
     return {
-      name:
-        telegramUser?.username ||
-        telegramUser?.first_name ||
-        "SceneAgent",
+      name: telegramUser?.username || telegramUser?.first_name || "SceneAgent",
       id: telegramUser?.id || "browser-preview",
       balance: 0,
       locked: 0,
@@ -309,6 +348,14 @@ function ProfileRoom({ telegramUser }) {
   function openNative() {
     if (typeof window === "undefined") return;
     window.location.href = `pixelgrid://open?telegram_id=${profile.id}`;
+  }
+
+  function resetMiniApp() {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.removeItem("pgm_started");
+    window.localStorage.removeItem("pgm_active_room");
+    window.location.reload();
   }
 
   return (
@@ -346,6 +393,10 @@ function ProfileRoom({ telegramUser }) {
 
       <button style={styles.primaryAction} onClick={openNative}>
         Open Native App
+      </button>
+
+      <button style={styles.secondaryAction} onClick={resetMiniApp}>
+        Reset Mini App Entrance
       </button>
     </>
   );
@@ -593,6 +644,20 @@ const styles = {
     fontWeight: 800,
     cursor: "pointer",
     fontSize: 15,
+    marginBottom: 12,
+  },
+
+  secondaryAction: {
+    width: "100%",
+    padding: "13px 18px",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 16,
+    color: "rgba(255,255,255,0.72)",
+    background: "rgba(255,255,255,0.05)",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 14,
+    marginBottom: 12,
   },
 
   tabs: {
