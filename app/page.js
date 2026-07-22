@@ -1,3 +1,5 @@
-export default function Page() {
-  return <div>Ungatus Mini App</div>;
+import { redirect } from "next/navigation";
+
+export default function Home() {
+  redirect("/welcome");
 }
