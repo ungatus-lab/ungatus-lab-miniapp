@@ -10,24 +10,26 @@ export default function MainScreen() {
       style={{
         width: "100%",
         minHeight: "100vh",
-        backgroundColor: "#0d0d0d",
+        backgroundColor: "#0b0b0b",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         paddingTop: 40,
         color: "white",
-        fontFamily: "sans-serif",
+        fontFamily: "Inter, sans-serif",
       }}
     >
       {/* Заголовок */}
-      <h1 style={{ marginBottom: 40 }}>PixelGrid Mini App</h1>
+      <h1 style={{ marginBottom: 40, fontSize: 28, fontWeight: 600 }}>
+        PixelGrid Mini App
+      </h1>
 
       {/* Круг комнат */}
       <div
         style={{
           display: "flex",
           flexDirection: "row",
-          gap: 20,
+          gap: 30,
           justifyContent: "center",
           alignItems: "center",
           flexWrap: "wrap",
@@ -39,7 +41,7 @@ export default function MainScreen() {
           onClick={() => router.push("/device-room")}
           style={roomButtonStyle}
         >
-          Device Room
+          Device
         </button>
 
         {/* Collab Room */}
@@ -47,7 +49,7 @@ export default function MainScreen() {
           onClick={() => router.push("/collab-room")}
           style={roomButtonStyle}
         >
-          Collab Room
+          Collab
         </button>
 
         {/* Center Room */}
@@ -55,11 +57,12 @@ export default function MainScreen() {
           onClick={() => router.push("/center-room")}
           style={{
             ...roomButtonStyle,
-            backgroundColor: "#1e1e1e",
-            border: "2px solid #4caf50",
+            backgroundColor: "#1a1a1a",
+            border: "3px solid #4caf50",
+            boxShadow: "0 0 12px #4caf50",
           }}
         >
-          Center Room
+          Center
         </button>
 
         {/* Market Room */}
@@ -67,7 +70,7 @@ export default function MainScreen() {
           onClick={() => router.push("/market-room")}
           style={roomButtonStyle}
         >
-          Market Room
+          Market
         </button>
 
         {/* Profile Room */}
@@ -75,11 +78,12 @@ export default function MainScreen() {
           onClick={() => router.push("/profile-room")}
           style={{
             ...roomButtonStyle,
-            backgroundColor: "#1e1e1e",
-            border: "2px solid #2196f3",
+            backgroundColor: "#1a1a1a",
+            border: "3px solid #2196f3",
+            boxShadow: "0 0 12px #2196f3",
           }}
         >
-          Profile Room
+          Profile
         </button>
       </div>
     </div>
@@ -87,12 +91,14 @@ export default function MainScreen() {
 }
 
 const roomButtonStyle = {
-  width: 150,
-  height: 150,
+  width: 140,
+  height: 140,
   borderRadius: "50%",
-  backgroundColor: "#1e1e1e",
+  backgroundColor: "#141414",
   border: "2px solid #333",
   color: "white",
-  fontSize: 16,
+  fontSize: 18,
+  fontWeight: 500,
   cursor: "pointer",
+  transition: "0.2s",
 };
