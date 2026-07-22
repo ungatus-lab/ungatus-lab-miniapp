@@ -1,10 +1,25 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 export default function WelcomeScreen() {
-  const tg = typeof window !== "undefined" ? window.Telegram.WebApp : null;
+  const [tg, setTg] = useState(null);
+
+  useEffect(() => {
+    // Телега есть → инициализируем WebApp
+    if (typeof window !== "undefined" && window.Telegram?.WebApp) {
+      const webapp = window.Telegram.WebApp;
+      webapp.ready();
+      webapp.expand();
+      setTg(webapp);
+    } else {
+      // Нет Телеги (браузер) → просто живём без неё
+      setTg(null);
+    }
+  }, []);
 
   const handleStart = async () => {
-    const telegramId = tg?.initDataUnsafe?.user?.id;
+    const telegramId = tg?.initDataUnsafe?.user?.id ?? null;
 
     await fetch("/api/index", {
       method: "POST",
@@ -12,6 +27,7 @@ export default function WelcomeScreen() {
       body: JSON.stringify({ telegram_id: telegramId })
     });
 
+    // В телеге это нормально, в браузере тоже просто редирект
     window.location.href = "/main";
   };
 
