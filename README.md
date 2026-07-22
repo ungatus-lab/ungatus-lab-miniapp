@@ -1,3 +1,3 @@
 # ungatus-lab-miniapp
-mini app ungatus-lab _
+mini app ungatus-lab 
 
