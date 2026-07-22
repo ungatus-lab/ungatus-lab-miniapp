@@ -6,29 +6,41 @@ export default function CollabRoom() {
   const router = useRouter();
 
   return (
-    <div style={{
-      padding: 20,
-      textAlign: "center"
-    }}>
-      
-      <h1 style={{ marginBottom: 20 }}>
+    <div
+      style={{
+        width: "100%",
+        minHeight: "100vh",
+        backgroundColor: "#0b0b0b",
+        color: "white",
+        padding: 30,
+        fontFamily: "Inter, sans-serif",
+      }}
+    >
+      {/* Заголовок */}
+      <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 20 }}>
         Collab Room
       </h1>
 
-      <p style={{ marginBottom: 30 }}>
-        Комната коллабов PixelGrid.<br/>
-        В нативке здесь находятся проекты, совместная работа, обмен задачами и автоматизация между пользователями.<br/>
+      {/* Описание */}
+      <p style={{ fontSize: 16, lineHeight: "24px", marginBottom: 30 }}>
+        Комната коллабов PixelGrid.<br />
+        В нативке здесь находятся проекты, совместная работа, обмен задачами и автоматизация между пользователями.<br />
         В Mini App эта комната работает как презентация.
       </p>
 
-      <div style={{
-        border: "1px solid #444",
-        padding: 20,
-        borderRadius: 12,
-        marginBottom: 30
-      }}>
-        <h3>Что будет доступно в нативке:</h3>
-        <ul style={{ textAlign: "left", marginTop: 10 }}>
+      {/* Блок возможностей */}
+      <div
+        style={{
+          border: "1px solid #333",
+          borderRadius: 12,
+          padding: 20,
+          marginBottom: 40,
+          backgroundColor: "#141414",
+        }}
+      >
+        <h3 style={{ marginBottom: 12 }}>Что будет доступно в нативке:</h3>
+
+        <ul style={{ marginLeft: 20, lineHeight: "26px" }}>
           <li>Совместные проекты</li>
           <li>Обмен задачами</li>
           <li>Коллаб автоматизации</li>
@@ -37,37 +49,45 @@ export default function CollabRoom() {
         </ul>
       </div>
 
-      <button
-        style={{ marginBottom: 20 }}
-        onClick={() => router.push("/main")}
+      {/* Навигация */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
       >
-        Вернуться в Main Screen
-      </button>
+        <button style={navButton} onClick={() => router.push("/main")}>
+          Main Screen
+        </button>
 
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        marginTop: 20
-      }}>
-        
-        <button onClick={() => router.push("/device-room")}>
+        <button style={navButton} onClick={() => router.push("/device-room")}>
           Device Room
         </button>
 
-        <button onClick={() => router.push("/center-room")}>
+        <button style={navButton} onClick={() => router.push("/center-room")}>
           Center Room
         </button>
 
-        <button onClick={() => router.push("/market-room")}>
+        <button style={navButton} onClick={() => router.push("/market-room")}>
           Market Room
         </button>
 
-        <button onClick={() => router.push("/profile-room")}>
+        <button style={navButton} onClick={() => router.push("/profile-room")}>
           Profile Room
         </button>
-
       </div>
     </div>
   );
 }
+
+const navButton = {
+  padding: "12px 20px",
+  backgroundColor: "#1a1a1a",
+  border: "1px solid #333",
+  borderRadius: 8,
+  color: "white",
+  cursor: "pointer",
+  fontSize: 15,
+};
