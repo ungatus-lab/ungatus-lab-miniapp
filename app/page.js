@@ -181,7 +181,7 @@ function CenterRoom({ telegramUser }) {
         <p style={styles.cardText}>
           Нативное приложение — это инструмент зеркал, пиксельного сканера,
           записи жестов и multi-device orchestration. Mini App показывает
-          архитектуру, аллокации, профиль и путь к полной нативной платформе.
+          архитектуру, профиль, маркет и путь к полной нативной платформе.
         </p>
       </section>
 
@@ -269,7 +269,7 @@ function CollabRoom() {
 }
 
 function MarketRoom() {
-  const packs = [
+  const allocationPacks = [
     {
       name: "Starter",
       entry: "25 000 UGT",
@@ -292,43 +292,154 @@ function MarketRoom() {
     },
   ];
 
+  const marketItems = [
+    {
+      title: "Project Scripts",
+      subtitle: "Продажа и аренда готовых macro-проектов и сценариев.",
+      tag: "Projects",
+    },
+    {
+      title: "Emulator Mirrors",
+      subtitle: "Аренда LDPlayer / emulator слотов и зеркал за UGT.",
+      tag: "Rentals",
+    },
+    {
+      title: "Premium Pixel Tools",
+      subtitle: "Будущие premium-функции сканера, эталонов и плотности пикселей.",
+      tag: "Premium",
+    },
+  ];
+
   return (
     <>
       <RoomHeader
         title="Market Room"
-        subtitle="UGT utility credits, allocation packs и early access."
-        pill="Pre-launch"
+        subtitle="Маркетплейс проектов, зеркал, UGT-пакетов и ранних аллокаций."
+        pill="UGT Market"
       />
 
-      <div style={styles.packGrid}>
-        {packs.map((pack) => (
-          <section key={pack.name} style={styles.allocationCard}>
-            <h3 style={styles.allocationTitle}>{pack.name} Allocation</h3>
+      <section style={styles.marketHero}>
+        <div>
+          <h2 style={styles.cardTitle}>PixelGrid Marketplace</h2>
+          <p style={styles.cardText}>
+            Здесь позже будут продаваться и сдаваться в аренду проекты,
+            сценарии автоматизации, emulator-зеркала и цифровые возможности
+            экосистемы. Аллокации — отдельный ранний раздел внутри рынка.
+          </p>
+        </div>
+      </section>
 
-            <div style={styles.allocationRow}>
-              <span>Взнос</span>
-              <strong>{pack.entry}</strong>
-            </div>
+      <div style={styles.marketStatsGrid}>
+        <section style={styles.marketMiniCard}>
+          <strong style={styles.marketMiniValue}>0 UGT</strong>
+          <span>Available balance</span>
+        </section>
 
-            <div style={styles.allocationRow}>
-              <span>Pre-launch bonus</span>
-              <strong>{pack.bonus}</strong>
-            </div>
-          </section>
-        ))}
+        <section style={styles.marketMiniCard}>
+          <strong style={styles.marketMiniValue}>0 UGT</strong>
+          <span>Locked allocation pool</span>
+        </section>
+
+        <section style={styles.marketMiniCard}>
+          <strong style={styles.marketMiniValue}>Pre-launch</strong>
+          <span>Round status</span>
+        </section>
       </div>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Marketplace Preview</h3>
+
+        <div style={styles.marketplaceGrid}>
+          {marketItems.map((item) => (
+            <div key={item.title} style={styles.marketplaceItem}>
+              <div style={styles.marketplaceTopRow}>
+                <strong>{item.title}</strong>
+                <span style={styles.chip}>{item.tag}</span>
+              </div>
+
+              <p style={styles.cardText}>{item.subtitle}</p>
+
+              <button style={styles.miniButton}>Coming soon</button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section style={styles.allocationDashboard}>
+        <div style={styles.marketplaceTopRow}>
+          <div>
+            <h3 style={styles.cardTitle}>Allocation Dashboard</h3>
+            <p style={styles.cardText}>
+              Общий пул раннего участия. Сюда могут попадать купленные пакеты,
+              доливы и locked UGT за рекламу.
+            </p>
+          </div>
+
+          <span style={styles.chip}>Locked</span>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Total acquired allocation</span>
+          <strong>0 UGT</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Ad rewards added</span>
+          <strong>0 UGT</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Available to withdraw</span>
+          <strong>0 UGT</strong>
+        </div>
+
+        <div style={styles.progressTrack}>
+          <div style={styles.progressFill} />
+        </div>
+
+        <div style={styles.chipRow}>
+          <span style={styles.chip}>Buy pack</span>
+          <span style={styles.chip}>Add to pool</span>
+          <span style={styles.chip}>Watch ads</span>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Pre-launch Allocation Packs</h3>
+
+        <div style={styles.packGrid}>
+          {allocationPacks.map((pack) => (
+            <section key={pack.name} style={styles.allocationCard}>
+              <h3 style={styles.allocationTitle}>{pack.name}</h3>
+
+              <div style={styles.allocationRow}>
+                <span>Взнос</span>
+                <strong>{pack.entry}</strong>
+              </div>
+
+              <div style={styles.allocationRow}>
+                <span>Pre-launch bonus</span>
+                <strong>{pack.bonus}</strong>
+              </div>
+
+              <button style={styles.miniButton}>Select package</button>
+            </section>
+          ))}
+        </div>
+      </section>
 
       <section style={styles.card}>
         <h3 style={styles.cardTitle}>Watch Ads → locked UGT</h3>
         <p style={styles.cardText}>
           Идея: за просмотр рекламы пользователь получает 1–2 locked UGT
-          в аллокационный баланс. До запуска экосистемы вывод недоступен.
+          в свой allocation pool. Это не выводимый баланс, а внутренняя
+          ранняя награда экосистемы.
         </p>
       </section>
 
       <p style={styles.smallNote}>
-        UGT — внутренняя utility-валюта приложения для цифровых функций.
-        Это не публичная криптовалюта, не ценная бумага и не обещание прибыли.
+        UGT — внутренняя utility-валюта приложения для цифровых функций,
+        аренды, покупок и доступа внутри PixelGridMacro.
       </p>
     </>
   );
@@ -835,5 +946,120 @@ const styles = {
   navIcon: {
     fontSize: 16,
     lineHeight: 1,
+  },
+
+  marketHero: {
+    borderRadius: 24,
+    padding: 20,
+    background:
+      "radial-gradient(circle at 0% 0%, rgba(34,211,238,0.18), transparent 34%), radial-gradient(circle at 100% 0%, rgba(236,72,153,0.16), transparent 30%), rgba(20,20,20,0.9)",
+    border: "1px solid rgba(255,255,255,0.09)",
+    boxShadow: "0 16px 42px rgba(0,0,0,0.28)",
+    marginBottom: 14,
+  },
+
+  marketStatsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 8,
+    marginBottom: 14,
+  },
+
+  marketMiniCard: {
+    minHeight: 76,
+    borderRadius: 18,
+    padding: 12,
+    background: "rgba(255,255,255,0.045)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 5,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.56)",
+  },
+
+  marketMiniValue: {
+    color: "#ffffff",
+    fontSize: 15,
+  },
+
+  marketplaceGrid: {
+    display: "grid",
+    gap: 12,
+  },
+
+  marketplaceItem: {
+    borderRadius: 18,
+    padding: 14,
+    background: "rgba(255,255,255,0.045)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+
+  marketplaceTopRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 10,
+  },
+
+  chipRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "rgba(139,92,246,0.18)",
+    color: "#d8b4fe",
+    border: "1px solid rgba(216,180,254,0.14)",
+    fontSize: 12,
+    whiteSpace: "nowrap",
+  },
+
+  miniButton: {
+    marginTop: 12,
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.1)",
+    background: "rgba(255,255,255,0.055)",
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 13,
+  },
+
+  allocationDashboard: {
+    borderRadius: 22,
+    padding: 18,
+    background:
+      "radial-gradient(circle at 100% 0%, rgba(76,175,80,0.18), transparent 34%), rgba(20,20,20,0.9)",
+    border: "1px solid rgba(76,175,80,0.18)",
+    boxShadow: "0 16px 42px rgba(0,0,0,0.28)",
+    marginBottom: 14,
+  },
+
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+    background: "rgba(255,255,255,0.08)",
+    marginTop: 14,
+  },
+
+  progressFill: {
+    width: "12%",
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(135deg, #4caf50, #22d3ee)",
   },
 };
