@@ -2455,9 +2455,9 @@ export default function AppDrawer({
   onClose,
   onResetEntrance,
   onResetTestData,
-  onNavigate,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(true);
+  const [languageOpen, setLanguageOpen] = useState(false);
 
   if (!open) return null;
 
@@ -2478,11 +2478,12 @@ export default function AppDrawer({
     }
   }
 
-  function safeNavigate(roomId) {
-    if (typeof onNavigate === "function") {
-      onNavigate(roomId);
-      onClose?.();
+  function handleLanguageSelect(languageCode) {
+    if (typeof onSelectLanguage === "function") {
+      onSelectLanguage(languageCode);
     }
+
+    setLanguageOpen(false);
   }
 
   return (
@@ -2494,7 +2495,7 @@ export default function AppDrawer({
 
             <div>
               <h2 style={styles.brandTitle}>PixelGridMacro</h2>
-              <p style={styles.brandSubtitle}>Mini App account drawer</p>
+              <p style={styles.brandSubtitle}>Mini App account</p>
             </div>
           </div>
 
@@ -2530,33 +2531,6 @@ export default function AppDrawer({
         </section>
 
         <section style={styles.menuSection}>
-          <h4 style={styles.sectionTitle}>Quick access</h4>
-
-          <button style={styles.menuItem} onClick={() => safeNavigate("wallet")}>
-            <span>Wallet</span>
-            <strong>⇄</strong>
-          </button>
-
-          <button
-            style={styles.menuItem}
-            onClick={() => safeNavigate("allocation")}
-          >
-            <span>Allocation</span>
-            <strong>◇</strong>
-          </button>
-
-          <button style={styles.menuItem} onClick={() => safeNavigate("squad")}>
-            <span>Squad</span>
-            <strong>⬡</strong>
-          </button>
-
-          <button style={styles.menuItem} onClick={() => safeNavigate("earn")}>
-            <span>Earn</span>
-            <strong>✦</strong>
-          </button>
-        </section>
-
-        <section style={styles.menuSection}>
           <button
             style={styles.settingsHeader}
             onClick={() => setSettingsOpen((value) => !value)}
@@ -2567,39 +2541,57 @@ export default function AppDrawer({
 
           {settingsOpen && (
             <div style={styles.settingsBody}>
-              <div style={styles.settingsRow}>
-                <div>
-                  <h4 style={styles.settingsTitle}>{t("language_title")}</h4>
-                  <p style={styles.settingsText}>
-                    {t("language_current")}: {getLanguageName(language)}
-                  </p>
-                </div>
+              <button
+                style={styles.settingsItem}
+                onClick={() => setLanguageOpen((value) => !value)}
+              >
+                <span>{t("language_title")}</span>
 
-                <span style={styles.languageBadge}>
-                  {String(language).toUpperCase()}
+                <span style={styles.settingsItemRight}>
+                  <span style={styles.languageBadge}>
+                    {String(language).toUpperCase()}
+                  </span>
+                  <span style={styles.chevron}>{languageOpen ? "⌃" : "⌄"}</span>
                 </span>
+              </button>
+
+              {languageOpen && (
+                <div style={styles.languageList}>
+                  {supportedLanguages.map((languageCode) => {
+                    const active = languageCode === language;
+
+                    return (
+                      <button
+                        key={languageCode}
+                        style={{
+                          ...styles.languageOption,
+                          ...(active ? styles.languageOptionActive : {}),
+                        }}
+                        onClick={() => handleLanguageSelect(languageCode)}
+                      >
+                        <span style={styles.languageCode}>
+                          {languageCode.toUpperCase()}
+                        </span>
+
+                        <span style={styles.languageName}>
+                          {getLanguageName(languageCode)}
+                        </span>
+
+                        {active && <span style={styles.activeMark}>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={styles.disabledItem}>
+                <span>Payment methods</span>
+                <small>later</small>
               </div>
 
-              <div style={styles.languageGrid}>
-                {supportedLanguages.map((languageCode) => {
-                  const active = languageCode === language;
-
-                  return (
-                    <button
-                      key={languageCode}
-                      style={{
-                        ...styles.languageButton,
-                        ...(active ? styles.languageButtonActive : {}),
-                      }}
-                      onClick={() => onSelectLanguage?.(languageCode)}
-                    >
-                      <span style={styles.languageCode}>
-                        {languageCode.toUpperCase()}
-                      </span>
-                      <span>{getLanguageName(languageCode)}</span>
-                    </button>
-                  );
-                })}
+              <div style={styles.disabledItem}>
+                <span>Theme / Background</span>
+                <small>later</small>
               </div>
 
               <div style={styles.divider} />
@@ -2616,17 +2608,7 @@ export default function AppDrawer({
         </section>
 
         <section style={styles.menuSection}>
-          <h4 style={styles.sectionTitle}>Later</h4>
-
-          <div style={styles.disabledItem}>
-            <span>Payment methods</span>
-            <small>later</small>
-          </div>
-
-          <div style={styles.disabledItem}>
-            <span>Theme / Background</span>
-            <small>later</small>
-          </div>
+          <h4 style={styles.sectionTitle}>Support</h4>
 
           <div style={styles.disabledItem}>
             <span>Support / Channel</span>
@@ -2635,8 +2617,7 @@ export default function AppDrawer({
         </section>
 
         <p style={styles.footerNote}>
-          Profile, settings and language live here. Product rooms stay in the
-          bottom navigation.
+          Profile and settings live here. Product rooms stay in the navigation.
         </p>
       </aside>
     </div>
@@ -2799,21 +2780,6 @@ const styles = {
     letterSpacing: "0.06em",
   },
 
-  menuItem: {
-    width: "100%",
-    padding: "12px 12px",
-    border: 0,
-    borderRadius: 15,
-    background: "rgba(255,255,255,0.045)",
-    color: "rgba(255,255,255,0.82)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    cursor: "pointer",
-    fontSize: 14,
-    marginBottom: 8,
-  },
-
   settingsHeader: {
     width: "100%",
     padding: "12px 12px",
@@ -2833,24 +2799,26 @@ const styles = {
     paddingTop: 12,
   },
 
-  settingsRow: {
+  settingsItem: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 15,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.045)",
+    color: "rgba(255,255,255,0.82)",
     display: "flex",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 12,
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 800,
+    marginBottom: 8,
   },
 
-  settingsTitle: {
-    margin: 0,
-    fontSize: 15,
-  },
-
-  settingsText: {
-    margin: "5px 0 0",
-    color: "rgba(255,255,255,0.52)",
-    fontSize: 12,
-    lineHeight: 1.35,
+  settingsItemRight: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
   },
 
   languageBadge: {
@@ -2867,28 +2835,36 @@ const styles = {
     fontWeight: 900,
   },
 
-  languageGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: 8,
+  chevron: {
+    color: "rgba(255,255,255,0.46)",
+    fontSize: 15,
+    fontWeight: 900,
   },
 
-  languageButton: {
-    border: "1px solid rgba(255,255,255,0.09)",
+  languageList: {
+    display: "grid",
+    gap: 7,
+    padding: "0 0 10px",
+  },
+
+  languageOption: {
+    width: "100%",
+    padding: "10px 11px",
     borderRadius: 14,
-    padding: "10px 9px",
-    background: "rgba(255,255,255,0.045)",
-    color: "rgba(255,255,255,0.74)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.035)",
+    color: "rgba(255,255,255,0.7)",
     cursor: "pointer",
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "42px 1fr 20px",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: 8,
-    fontSize: 12,
+    textAlign: "left",
+    fontSize: 13,
     fontWeight: 800,
   },
 
-  languageButtonActive: {
+  languageOptionActive: {
     background: "rgba(76,175,80,0.16)",
     color: "#ffffff",
     border: "1px solid rgba(76,175,80,0.36)",
@@ -2898,11 +2874,24 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 30,
+    minWidth: 34,
     padding: "5px 6px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.07)",
     fontSize: 11,
+  },
+
+  languageName: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  activeMark: {
+    color: "#86efac",
+    fontSize: 14,
+    fontWeight: 900,
+    textAlign: "right",
   },
 
   divider: {
