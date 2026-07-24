@@ -1,21 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  createTranslator,
+  getLanguageName,
+  normalizeLanguage,
+  saveLanguage,
+  supportedLanguages,
+} from "../lib/i18n/language";
 
 const miniRooms = [
-  { id: "game", label: "Game", icon: "⚙" },
-  { id: "squad", label: "Squad", icon: "⬡" },
-  { id: "earn", label: "Earn", icon: "✦" },
-  { id: "allocation", label: "Allocation", icon: "◇" },
-  { id: "wallet", label: "Wallet", icon: "⇄" },
+  { id: "game", labelKey: "nav_game", icon: "⚙" },
+  { id: "squad", labelKey: "nav_squad", icon: "⬡" },
+  { id: "earn", labelKey: "nav_earn", icon: "✦" },
+  { id: "allocation", labelKey: "nav_allocation", icon: "◇" },
+  { id: "wallet", labelKey: "nav_wallet", icon: "⇄" },
 ];
 
 const mainRooms = [
-  { id: "device", label: "Device", icon: "▣" },
-  { id: "collab", label: "Collab", icon: "◈" },
-  { id: "center", label: "Center", icon: "◎" },
-  { id: "market", label: "Market", icon: "◍" },
-  { id: "profile", label: "Profile", icon: "◌" },
+  { id: "device", labelKey: "nav_device", icon: "▣" },
+  { id: "collab", labelKey: "nav_collab", icon: "◈" },
+  { id: "center", labelKey: "nav_center", icon: "◎" },
+  { id: "market", labelKey: "nav_market", icon: "◍" },
+  { id: "profile", labelKey: "nav_profile", icon: "◌" },
 ];
 
 const validRoomIds = [
@@ -63,12 +70,17 @@ export default function Home() {
   const [activeRoom, setActiveRoom] = useState("center");
   const [telegramUser, setTelegramUser] = useState(null);
   const [bootReady, setBootReady] = useState(false);
+  const [language, setLanguage] = useState("ru");
+  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
+
+  const t = useMemo(() => createTranslator(language), [language]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const savedStarted = window.localStorage.getItem("pgm_started") === "1";
     const savedRoom = window.localStorage.getItem("pgm_active_room");
+    const savedLanguage = window.localStorage.getItem("pgm_language");
 
     if (savedStarted) {
       setStarted(true);
@@ -81,11 +93,23 @@ export default function Home() {
     }
 
     const tg = window.Telegram?.WebApp;
+    let tgUser = null;
 
     if (tg) {
       tg.ready();
       tg.expand();
-      setTelegramUser(tg.initDataUnsafe?.user || null);
+      tgUser = tg.initDataUnsafe?.user || null;
+      setTelegramUser(tgUser);
+    }
+
+    const initialLanguage = savedLanguage
+      ? normalizeLanguage(savedLanguage)
+      : normalizeLanguage(tgUser?.language_code);
+
+    setLanguage(initialLanguage);
+
+    if (!savedLanguage) {
+      saveLanguage(initialLanguage);
     }
 
     setBootReady(true);
@@ -117,6 +141,13 @@ export default function Home() {
     }
   }
 
+  function handleLanguageChange(nextLanguage) {
+    const normalizedLanguage = normalizeLanguage(nextLanguage);
+    saveLanguage(normalizedLanguage);
+    setLanguage(normalizedLanguage);
+    setLanguageSheetOpen(false);
+  }
+
   if (!bootReady) {
     return (
       <main style={styles.welcomeRoot}>
@@ -129,13 +160,25 @@ export default function Home() {
   }
 
   if (!started) {
-    return <WelcomeScreen onStart={handleStart} telegramUser={telegramUser} />;
+    return (
+      <WelcomeScreen
+        onStart={handleStart}
+        telegramUser={telegramUser}
+        t={t}
+      />
+    );
   }
 
   return (
     <div style={styles.appRoot}>
       <div style={styles.shell}>
-        <RoomRenderer activeRoom={activeRoom} telegramUser={telegramUser} />
+        <RoomRenderer
+          activeRoom={activeRoom}
+          telegramUser={telegramUser}
+          t={t}
+          language={language}
+          onOpenLanguageSheet={() => setLanguageSheetOpen(true)}
+        />
 
         {activeRoom === "center" && (
           <button
@@ -147,13 +190,25 @@ export default function Home() {
           </button>
         )}
 
-        <DualBottomNav activeRoom={activeRoom} setActiveRoom={handleRoomChange} />
+        <DualBottomNav
+          activeRoom={activeRoom}
+          setActiveRoom={handleRoomChange}
+          t={t}
+        />
+
+        <LanguageSheet
+          open={languageSheetOpen}
+          language={language}
+          t={t}
+          onSelect={handleLanguageChange}
+          onClose={() => setLanguageSheetOpen(false)}
+        />
       </div>
     </div>
   );
 }
 
-function WelcomeScreen({ onStart, telegramUser }) {
+function WelcomeScreen({ onStart, telegramUser, t }) {
   const name = telegramUser?.first_name || telegramUser?.username;
 
   return (
@@ -189,18 +244,33 @@ function WelcomeScreen({ onStart, telegramUser }) {
   );
 }
 
-function RoomRenderer({ activeRoom, telegramUser }) {
-  if (activeRoom === "game") return <GameRoom />;
-  if (activeRoom === "squad") return <SquadRoom telegramUser={telegramUser} />;
-  if (activeRoom === "earn") return <EarnRoom />;
-  if (activeRoom === "allocation") return <AllocationRoom />;
-  if (activeRoom === "wallet") return <WalletRoom />;
-  if (activeRoom === "device") return <DeviceRoom />;
-  if (activeRoom === "collab") return <CollabRoom />;
-  if (activeRoom === "market") return <MarketRoom />;
-  if (activeRoom === "profile") return <ProfileRoom telegramUser={telegramUser} />;
+function RoomRenderer({
+  activeRoom,
+  telegramUser,
+  t,
+  language,
+  onOpenLanguageSheet,
+}) {
+  if (activeRoom === "game") return <GameRoom t={t} />;
+  if (activeRoom === "squad")
+    return <SquadRoom telegramUser={telegramUser} t={t} />;
+  if (activeRoom === "earn") return <EarnRoom t={t} />;
+  if (activeRoom === "allocation") return <AllocationRoom t={t} />;
+  if (activeRoom === "wallet") return <WalletRoom t={t} />;
+  if (activeRoom === "device") return <DeviceRoom t={t} />;
+  if (activeRoom === "collab") return <CollabRoom t={t} />;
+  if (activeRoom === "market") return <MarketRoom t={t} />;
+  if (activeRoom === "profile")
+    return (
+      <ProfileRoom
+        telegramUser={telegramUser}
+        t={t}
+        language={language}
+        onOpenLanguageSheet={onOpenLanguageSheet}
+      />
+    );
 
-  return <CenterRoom telegramUser={telegramUser} />;
+  return <CenterRoom telegramUser={telegramUser} t={t} />;
 }
 
 function RoomHeader({ title, subtitle, pill }) {
@@ -216,13 +286,13 @@ function RoomHeader({ title, subtitle, pill }) {
   );
 }
 
-function CenterRoom({ telegramUser }) {
+function CenterRoom({ telegramUser, t }) {
   const name = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
 
   return (
     <>
       <RoomHeader
-        title="Center Room"
+        title={t("room_center_title")}
         subtitle={`Добро пожаловать, ${name}. Это главный зал Mini App.`}
         pill="Mini Gateway"
       />
@@ -261,11 +331,11 @@ function CenterRoom({ telegramUser }) {
   );
 }
 
-function DeviceRoom() {
+function DeviceRoom({ t }) {
   return (
     <>
       <RoomHeader
-        title="Device Room"
+        title={t("room_device_title")}
         subtitle="Презентация LDPlayer, PC и Android зеркал."
         pill="Native only"
       />
@@ -298,11 +368,11 @@ function DeviceRoom() {
   );
 }
 
-function CollabRoom() {
+function CollabRoom({ t }) {
   return (
     <>
       <RoomHeader
-        title="Collab Room"
+        title={t("room_collab_title")}
         subtitle="Будущая комната совместных проектов и управления доступом."
         pill="Native collab"
       />
@@ -328,7 +398,7 @@ function CollabRoom() {
   );
 }
 
-function MarketRoom() {
+function MarketRoom({ t }) {
   const marketItems = [
     {
       title: "Project Scripts",
@@ -350,7 +420,7 @@ function MarketRoom() {
   return (
     <>
       <RoomHeader
-        title="Market Room"
+        title={t("room_market_title")}
         subtitle="Маркетплейс проектов, зеркал, сценариев и premium-инструментов."
         pill="Marketplace"
       />
@@ -378,7 +448,7 @@ function MarketRoom() {
         </section>
 
         <section style={styles.marketMiniCard}>
-          <strong style={styles.marketMiniValue}>Soon</strong>
+          <strong style={styles.marketMiniValue}>{t("common_soon")}</strong>
           <span>Market status</span>
         </section>
       </div>
@@ -396,7 +466,7 @@ function MarketRoom() {
 
               <p style={styles.cardText}>{item.subtitle}</p>
 
-              <button style={styles.miniButton}>Coming soon</button>
+              <button style={styles.miniButton}>{t("common_soon")}</button>
             </div>
           ))}
         </div>
@@ -410,7 +480,7 @@ function MarketRoom() {
   );
 }
 
-function ProfileRoom({ telegramUser }) {
+function ProfileRoom({ telegramUser, t, language, onOpenLanguageSheet }) {
   const profile = useMemo(() => {
     return {
       name: telegramUser?.username || telegramUser?.first_name || "SceneAgent",
@@ -437,7 +507,7 @@ function ProfileRoom({ telegramUser }) {
   return (
     <>
       <RoomHeader
-        title="Profile Room"
+        title={t("room_profile_title")}
         subtitle="Telegram профиль и будущая связка с native account."
         pill="Account"
       />
@@ -449,7 +519,24 @@ function ProfileRoom({ telegramUser }) {
       </section>
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Account Summary</h3>
+        <div style={styles.settingsTopRow}>
+          <div>
+            <h3 style={styles.cardTitle}>{t("settings_title")}</h3>
+            <p style={styles.cardText}>
+              {t("language_current")}: {getLanguageName(language)}
+            </p>
+          </div>
+
+          <span style={styles.languageBadge}>{language.toUpperCase()}</span>
+        </div>
+
+        <button style={styles.secondaryAction} onClick={onOpenLanguageSheet}>
+          {t("language_change")}
+        </button>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>{t("profile_account_summary")}</h3>
 
         <div style={styles.allocationRow}>
           <span>Available UGT</span>
@@ -468,7 +555,7 @@ function ProfileRoom({ telegramUser }) {
       </section>
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Wallet moved</h3>
+        <h3 style={styles.cardTitle}>{t("profile_wallet_moved_title")}</h3>
         <p style={styles.cardText}>
           Кошельки, swap, connected TON/Phantom и liquidity status вынесены
           в отдельную комнату Wallet над Profile.
@@ -476,21 +563,21 @@ function ProfileRoom({ telegramUser }) {
       </section>
 
       <button style={styles.primaryAction} onClick={openNative}>
-        Open Native App
+        {t("profile_open_native")}
       </button>
 
       <button style={styles.secondaryAction} onClick={resetMiniApp}>
-        Reset Mini App Entrance
+        {t("profile_reset_entrance")}
       </button>
     </>
   );
 }
 
-function GameRoom() {
+function GameRoom({ t }) {
   return (
     <>
       <RoomHeader
-        title="Game Room"
+        title={t("room_game_title")}
         subtitle="Будущий игровой режим Scenario Survival / Factory Line."
         pill="Game"
       />
@@ -528,7 +615,7 @@ function GameRoom() {
   );
 }
 
-function SquadRoom({ telegramUser }) {
+function SquadRoom({ telegramUser, t }) {
   const code = useMemo(() => {
     const raw = telegramUser?.id || telegramUser?.username || "SCENE";
     return `PGM-${String(raw).slice(-6).toUpperCase()}`;
@@ -537,7 +624,7 @@ function SquadRoom({ telegramUser }) {
   return (
     <>
       <RoomHeader
-        title="Squad Room"
+        title={t("room_squad_title")}
         subtitle="Реферальная команда, приглашения и будущие ветки участников."
         pill="Referral"
       />
@@ -580,11 +667,11 @@ function SquadRoom({ telegramUser }) {
   );
 }
 
-function EarnRoom() {
+function EarnRoom({ t }) {
   return (
     <>
       <RoomHeader
-        title="Earn Room"
+        title={t("room_earn_title")}
         subtitle="Daily, rewarded ads, missions, promo UGT и Ad Vault."
         pill="Missions"
       />
@@ -594,12 +681,12 @@ function EarnRoom() {
 
         <div style={styles.missionItem}>
           <span>Open Mini App</span>
-          <strong>Done</strong>
+          <strong>{t("common_done")}</strong>
         </div>
 
         <div style={styles.missionItem}>
           <span>Watch rewarded ad</span>
-          <strong>Soon</strong>
+          <strong>{t("common_soon")}</strong>
         </div>
 
         <div style={styles.missionItem}>
@@ -628,7 +715,7 @@ function EarnRoom() {
 
         <div style={styles.allocationRow}>
           <span>Available ads</span>
-          <strong>dynamic</strong>
+          <strong>{t("common_dynamic")}</strong>
         </div>
 
         <p style={styles.smallNote}>
@@ -642,11 +729,11 @@ function EarnRoom() {
   );
 }
 
-function AllocationRoom() {
+function AllocationRoom({ t }) {
   return (
     <>
       <RoomHeader
-        title="Allocation Room"
+        title={t("room_allocation_title")}
         subtitle="Pre-launch allocation, x2 bonus, locked UGT и статус раунда."
         pill="Pre-launch"
       />
@@ -728,11 +815,11 @@ function AllocationRoom() {
   );
 }
 
-function WalletRoom() {
+function WalletRoom({ t }) {
   return (
     <>
       <RoomHeader
-        title="Wallet Room"
+        title={t("room_wallet_title")}
         subtitle="Connected wallets, UGT balances, swap preview и liquidity status."
         pill="Wallet"
       />
@@ -745,7 +832,7 @@ function WalletRoom() {
             <strong>TON / Tonkeeper</strong>
             <p style={styles.cardText}>Not connected</p>
           </div>
-          <button style={styles.miniButtonInline}>Connect</button>
+          <button style={styles.miniButtonInline}>{t("common_connect")}</button>
         </div>
 
         <div style={styles.walletCard}>
@@ -753,7 +840,7 @@ function WalletRoom() {
             <strong>Solana / Phantom</strong>
             <p style={styles.cardText}>Not connected</p>
           </div>
-          <button style={styles.miniButtonInline}>Connect</button>
+          <button style={styles.miniButtonInline}>{t("common_connect")}</button>
         </div>
       </section>
 
@@ -811,7 +898,7 @@ function Feature({ title, text }) {
   );
 }
 
-function DualBottomNav({ activeRoom, setActiveRoom }) {
+function DualBottomNav({ activeRoom, setActiveRoom, t }) {
   return (
     <div style={styles.navStack}>
       <nav style={styles.topNav}>
@@ -828,7 +915,7 @@ function DualBottomNav({ activeRoom, setActiveRoom }) {
               onClick={() => setActiveRoom(room.id)}
             >
               <span style={styles.navIcon}>{room.icon}</span>
-              <span>{room.label}</span>
+              <span>{t(room.labelKey)}</span>
             </button>
           );
         })}
@@ -848,11 +935,58 @@ function DualBottomNav({ activeRoom, setActiveRoom }) {
               onClick={() => setActiveRoom(room.id)}
             >
               <span style={styles.navIcon}>{room.icon}</span>
-              <span>{room.label}</span>
+              <span>{t(room.labelKey)}</span>
             </button>
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+function LanguageSheet({ open, language, t, onSelect, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div style={styles.sheetOverlay} onClick={onClose}>
+      <section style={styles.languageSheet} onClick={(event) => event.stopPropagation()}>
+        <div style={styles.sheetHandle} />
+
+        <div style={styles.marketplaceTopRow}>
+          <div>
+            <h3 style={styles.cardTitle}>{t("language_title")}</h3>
+            <p style={styles.cardText}>{t("language_subtitle")}</p>
+          </div>
+
+          <span style={styles.languageBadge}>{language.toUpperCase()}</span>
+        </div>
+
+        <div style={styles.languageGrid}>
+          {supportedLanguages.map((languageCode) => {
+            const active = languageCode === language;
+
+            return (
+              <button
+                key={languageCode}
+                style={{
+                  ...styles.languageOption,
+                  ...(active ? styles.languageOptionActive : {}),
+                }}
+                onClick={() => onSelect(languageCode)}
+              >
+                <span style={styles.languageOptionCode}>
+                  {languageCode.toUpperCase()}
+                </span>
+                <span>{getLanguageName(languageCode)}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <button style={styles.sheetCloseButton} onClick={onClose}>
+          {t("language_close")}
+        </button>
+      </section>
     </div>
   );
 }
@@ -1201,6 +1335,28 @@ const styles = {
     margin: "0 0 8px",
   },
 
+  settingsTopRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  languageBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 44,
+    padding: "8px 10px",
+    borderRadius: 999,
+    background: "rgba(34,211,238,0.14)",
+    color: "#a5f3fc",
+    border: "1px solid rgba(165,243,252,0.16)",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+
   floatingButton: {
     position: "fixed",
     left: "50%",
@@ -1535,5 +1691,89 @@ const styles = {
     textAlign: "center",
     padding: "8px 0",
     color: "rgba(255,255,255,0.5)",
+  },
+
+  sheetOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.52)",
+    backdropFilter: "blur(8px)",
+    zIndex: 80,
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    padding: 12,
+    boxSizing: "border-box",
+  },
+
+  languageSheet: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: "26px 26px 20px 20px",
+    padding: "12px 16px 16px",
+    background:
+      "radial-gradient(circle at 50% 0%, rgba(139,92,246,0.22), transparent 34%), rgba(18,18,18,0.98)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    boxShadow: "0 -24px 80px rgba(0,0,0,0.62)",
+    boxSizing: "border-box",
+  },
+
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.2)",
+    margin: "0 auto 14px",
+  },
+
+  languageGrid: {
+    display: "grid",
+    gap: 10,
+    marginTop: 14,
+  },
+
+  languageOption: {
+    width: "100%",
+    border: "1px solid rgba(255,255,255,0.09)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    background: "rgba(255,255,255,0.045)",
+    color: "rgba(255,255,255,0.78)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 700,
+  },
+
+  languageOptionActive: {
+    background: "rgba(76,175,80,0.16)",
+    color: "#ffffff",
+    border: "1px solid rgba(76,175,80,0.36)",
+  },
+
+  languageOptionCode: {
+    display: "inline-flex",
+    minWidth: 42,
+    justifyContent: "center",
+    padding: "6px 8px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.07)",
+    fontSize: 12,
+    marginRight: 10,
+  },
+
+  sheetCloseButton: {
+    width: "100%",
+    marginTop: 12,
+    padding: "13px 18px",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 16,
+    color: "rgba(255,255,255,0.72)",
+    background: "rgba(255,255,255,0.05)",
+    fontWeight: 800,
+    cursor: "pointer",
+    fontSize: 14,
   },
 };
