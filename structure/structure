@@ -780,12 +780,11 @@ ungatus-lab-miniapp/app/page.js
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import AppDrawer from "../components/shell/AppDrawer";
 import {
   createTranslator,
-  getLanguageName,
   normalizeLanguage,
   saveLanguage,
-  supportedLanguages,
 } from "../lib/i18n/language";
 
 const miniRooms = [
@@ -850,7 +849,7 @@ export default function Home() {
   const [telegramUser, setTelegramUser] = useState(null);
   const [bootReady, setBootReady] = useState(false);
   const [language, setLanguage] = useState("ru");
-  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const t = useMemo(() => createTranslator(language), [language]);
 
@@ -924,7 +923,42 @@ export default function Home() {
     const normalizedLanguage = normalizeLanguage(nextLanguage);
     saveLanguage(normalizedLanguage);
     setLanguage(normalizedLanguage);
-    setLanguageSheetOpen(false);
+  }
+
+  function resetMiniAppEntrance() {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.removeItem("pgm_started");
+    window.localStorage.removeItem("pgm_active_room");
+    window.location.reload();
+  }
+
+  function resetTestData() {
+    if (typeof window === "undefined") return;
+
+    const testKeys = [
+      "pgm_game_state",
+      "pgm_game_score",
+      "pgm_operator_xp",
+      "pgm_demo_wallet",
+      "pgm_demo_allocation",
+      "pgm_demo_ledger",
+      "pgm_demo_squad",
+      "pgm_demo_earn",
+      "pgm_demo_missions",
+      "pgm_demo_ads",
+      "pgm_demo_referrals",
+      "pgm_demo_market",
+      "pgm_demo_wallet_balance",
+      "pgm_demo_locked_ugt",
+      "pgm_demo_available_ugt",
+    ];
+
+    testKeys.forEach((key) => {
+      window.localStorage.removeItem(key);
+    });
+
+    window.location.reload();
   }
 
   if (!bootReady) {
@@ -951,12 +985,18 @@ export default function Home() {
   return (
     <div style={styles.appRoot}>
       <div style={styles.shell}>
+        <button
+          style={styles.profileMenuButton}
+          onClick={() => setDrawerOpen(true)}
+          title="Open account menu"
+        >
+          👤
+        </button>
+
         <RoomRenderer
           activeRoom={activeRoom}
           telegramUser={telegramUser}
           t={t}
-          language={language}
-          onOpenLanguageSheet={() => setLanguageSheetOpen(true)}
         />
 
         {activeRoom === "center" && (
@@ -975,12 +1015,16 @@ export default function Home() {
           t={t}
         />
 
-        <LanguageSheet
-          open={languageSheetOpen}
+        <AppDrawer
+          open={drawerOpen}
+          telegramUser={telegramUser}
           language={language}
           t={t}
-          onSelect={handleLanguageChange}
-          onClose={() => setLanguageSheetOpen(false)}
+          onSelectLanguage={handleLanguageChange}
+          onClose={() => setDrawerOpen(false)}
+          onResetEntrance={resetMiniAppEntrance}
+          onResetTestData={resetTestData}
+          onNavigate={handleRoomChange}
         />
       </div>
     </div>
@@ -1023,13 +1067,7 @@ function WelcomeScreen({ onStart, telegramUser, t }) {
   );
 }
 
-function RoomRenderer({
-  activeRoom,
-  telegramUser,
-  t,
-  language,
-  onOpenLanguageSheet,
-}) {
+function RoomRenderer({ activeRoom, telegramUser, t }) {
   if (activeRoom === "game") return <GameRoom t={t} />;
   if (activeRoom === "squad")
     return <SquadRoom telegramUser={telegramUser} t={t} />;
@@ -1040,14 +1078,7 @@ function RoomRenderer({
   if (activeRoom === "collab") return <CollabRoom t={t} />;
   if (activeRoom === "market") return <MarketRoom t={t} />;
   if (activeRoom === "profile")
-    return (
-      <ProfileRoom
-        telegramUser={telegramUser}
-        t={t}
-        language={language}
-        onOpenLanguageSheet={onOpenLanguageSheet}
-      />
-    );
+    return <ProfileRoom telegramUser={telegramUser} t={t} />;
 
   return <CenterRoom telegramUser={telegramUser} t={t} />;
 }
@@ -1259,7 +1290,7 @@ function MarketRoom({ t }) {
   );
 }
 
-function ProfileRoom({ telegramUser, t, language, onOpenLanguageSheet }) {
+function ProfileRoom({ telegramUser, t }) {
   const profile = useMemo(() => {
     return {
       name: telegramUser?.username || telegramUser?.first_name || "SceneAgent",
@@ -1275,14 +1306,6 @@ function ProfileRoom({ telegramUser, t, language, onOpenLanguageSheet }) {
     window.location.href = `pixelgrid://open?telegram_id=${profile.id}`;
   }
 
-  function resetMiniApp() {
-    if (typeof window === "undefined") return;
-
-    window.localStorage.removeItem("pgm_started");
-    window.localStorage.removeItem("pgm_active_room");
-    window.location.reload();
-  }
-
   return (
     <>
       <RoomHeader
@@ -1295,23 +1318,6 @@ function ProfileRoom({ telegramUser, t, language, onOpenLanguageSheet }) {
         <div style={styles.avatarCircle}>👤</div>
         <h2 style={styles.profileName}>{profile.name}</h2>
         <p style={styles.cardText}>Telegram ID: {profile.id}</p>
-      </section>
-
-      <section style={styles.card}>
-        <div style={styles.settingsTopRow}>
-          <div>
-            <h3 style={styles.cardTitle}>{t("settings_title")}</h3>
-            <p style={styles.cardText}>
-              {t("language_current")}: {getLanguageName(language)}
-            </p>
-          </div>
-
-          <span style={styles.languageBadge}>{language.toUpperCase()}</span>
-        </div>
-
-        <button style={styles.secondaryAction} onClick={onOpenLanguageSheet}>
-          {t("language_change")}
-        </button>
       </section>
 
       <section style={styles.card}>
@@ -1343,10 +1349,6 @@ function ProfileRoom({ telegramUser, t, language, onOpenLanguageSheet }) {
 
       <button style={styles.primaryAction} onClick={openNative}>
         {t("profile_open_native")}
-      </button>
-
-      <button style={styles.secondaryAction} onClick={resetMiniApp}>
-        {t("profile_reset_entrance")}
       </button>
     </>
   );
@@ -1723,53 +1725,6 @@ function DualBottomNav({ activeRoom, setActiveRoom, t }) {
   );
 }
 
-function LanguageSheet({ open, language, t, onSelect, onClose }) {
-  if (!open) return null;
-
-  return (
-    <div style={styles.sheetOverlay} onClick={onClose}>
-      <section style={styles.languageSheet} onClick={(event) => event.stopPropagation()}>
-        <div style={styles.sheetHandle} />
-
-        <div style={styles.marketplaceTopRow}>
-          <div>
-            <h3 style={styles.cardTitle}>{t("language_title")}</h3>
-            <p style={styles.cardText}>{t("language_subtitle")}</p>
-          </div>
-
-          <span style={styles.languageBadge}>{language.toUpperCase()}</span>
-        </div>
-
-        <div style={styles.languageGrid}>
-          {supportedLanguages.map((languageCode) => {
-            const active = languageCode === language;
-
-            return (
-              <button
-                key={languageCode}
-                style={{
-                  ...styles.languageOption,
-                  ...(active ? styles.languageOptionActive : {}),
-                }}
-                onClick={() => onSelect(languageCode)}
-              >
-                <span style={styles.languageOptionCode}>
-                  {languageCode.toUpperCase()}
-                </span>
-                <span>{getLanguageName(languageCode)}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <button style={styles.sheetCloseButton} onClick={onClose}>
-          {t("language_close")}
-        </button>
-      </section>
-    </div>
-  );
-}
-
 const styles = {
   appRoot: {
     minHeight: "100vh",
@@ -1784,6 +1739,26 @@ const styles = {
     minHeight: "100vh",
     padding: "18px 16px 170px",
     boxSizing: "border-box",
+  },
+
+  profileMenuButton: {
+    position: "fixed",
+    top: 14,
+    right: 14,
+    width: 42,
+    height: 42,
+    borderRadius: "50%",
+    border: "1px solid rgba(255,255,255,0.11)",
+    background:
+      "radial-gradient(circle at 30% 20%, rgba(34,211,238,0.24), transparent 32%), rgba(18,18,18,0.82)",
+    color: "#ffffff",
+    boxShadow: "0 12px 34px rgba(0,0,0,0.38)",
+    backdropFilter: "blur(14px)",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    fontSize: 18,
+    zIndex: 45,
   },
 
   welcomeRoot: {
@@ -1890,6 +1865,7 @@ const styles = {
     justifyContent: "space-between",
     gap: 16,
     marginBottom: 18,
+    paddingRight: 44,
   },
 
   roomTitle: {
@@ -2112,28 +2088,6 @@ const styles = {
 
   profileName: {
     margin: "0 0 8px",
-  },
-
-  settingsTopRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 14,
-  },
-
-  languageBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 44,
-    padding: "8px 10px",
-    borderRadius: 999,
-    background: "rgba(34,211,238,0.14)",
-    color: "#a5f3fc",
-    border: "1px solid rgba(165,243,252,0.16)",
-    fontSize: 12,
-    fontWeight: 800,
   },
 
   floatingButton: {
@@ -2471,92 +2425,7 @@ const styles = {
     padding: "8px 0",
     color: "rgba(255,255,255,0.5)",
   },
-
-  sheetOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.52)",
-    backdropFilter: "blur(8px)",
-    zIndex: 80,
-    display: "flex",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    padding: 12,
-    boxSizing: "border-box",
-  },
-
-  languageSheet: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: "26px 26px 20px 20px",
-    padding: "12px 16px 16px",
-    background:
-      "radial-gradient(circle at 50% 0%, rgba(139,92,246,0.22), transparent 34%), rgba(18,18,18,0.98)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    boxShadow: "0 -24px 80px rgba(0,0,0,0.62)",
-    boxSizing: "border-box",
-  },
-
-  sheetHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.2)",
-    margin: "0 auto 14px",
-  },
-
-  languageGrid: {
-    display: "grid",
-    gap: 10,
-    marginTop: 14,
-  },
-
-  languageOption: {
-    width: "100%",
-    border: "1px solid rgba(255,255,255,0.09)",
-    borderRadius: 16,
-    padding: "13px 14px",
-    background: "rgba(255,255,255,0.045)",
-    color: "rgba(255,255,255,0.78)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    cursor: "pointer",
-    fontSize: 14,
-    fontWeight: 700,
-  },
-
-  languageOptionActive: {
-    background: "rgba(76,175,80,0.16)",
-    color: "#ffffff",
-    border: "1px solid rgba(76,175,80,0.36)",
-  },
-
-  languageOptionCode: {
-    display: "inline-flex",
-    minWidth: 42,
-    justifyContent: "center",
-    padding: "6px 8px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.07)",
-    fontSize: 12,
-    marginRight: 10,
-  },
-
-  sheetCloseButton: {
-    width: "100%",
-    marginTop: 12,
-    padding: "13px 18px",
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 16,
-    color: "rgba(255,255,255,0.72)",
-    background: "rgba(255,255,255,0.05)",
-    fontWeight: 800,
-    cursor: "pointer",
-    fontSize: 14,
-  },
 };
-
 
 ---
 
