@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const rooms = [
+const miniRooms = [
+  { id: "game", label: "Game", icon: "⚙" },
+  { id: "squad", label: "Squad", icon: "⬡" },
+  { id: "earn", label: "Earn", icon: "✦" },
+  { id: "allocation", label: "Allocation", icon: "◇" },
+  { id: "wallet", label: "Wallet", icon: "⇄" },
+];
+
+const mainRooms = [
   { id: "device", label: "Device", icon: "▣" },
   { id: "collab", label: "Collab", icon: "◈" },
   { id: "center", label: "Center", icon: "◎" },
@@ -10,7 +18,45 @@ const rooms = [
   { id: "profile", label: "Profile", icon: "◌" },
 ];
 
-const validRoomIds = ["device", "collab", "center", "market", "profile"];
+const validRoomIds = [
+  "game",
+  "squad",
+  "earn",
+  "allocation",
+  "wallet",
+  "device",
+  "collab",
+  "center",
+  "market",
+  "profile",
+];
+
+const allocationPacks = [
+  {
+    name: "Starter",
+    entry: "25 000 UGT",
+    bonus: "50 000 locked UGT",
+    note: "Entry allocation",
+  },
+  {
+    name: "Builder",
+    entry: "100 000 UGT",
+    bonus: "200 000 locked UGT",
+    note: "Early builder tier",
+  },
+  {
+    name: "Pro",
+    entry: "400 000 UGT",
+    bonus: "800 000 locked UGT",
+    note: "Advanced operator tier",
+  },
+  {
+    name: "Founder",
+    entry: "1 600 000 UGT",
+    bonus: "3 200 000 locked UGT",
+    note: "Maximum pre-launch tier",
+  },
+];
 
 export default function Home() {
   const [started, setStarted] = useState(false);
@@ -94,14 +140,14 @@ export default function Home() {
         {activeRoom === "center" && (
           <button
             style={styles.floatingButton}
-            onClick={() => handleRoomChange("market")}
-            title="Open Market Room"
+            onClick={() => handleRoomChange("game")}
+            title="Open Game Room"
           >
             ◎
           </button>
         )}
 
-        <BottomNav activeRoom={activeRoom} setActiveRoom={handleRoomChange} />
+        <DualBottomNav activeRoom={activeRoom} setActiveRoom={handleRoomChange} />
       </div>
     </div>
   );
@@ -136,7 +182,7 @@ function WelcomeScreen({ onStart, telegramUser }) {
 
         <p style={styles.smallNote}>
           Полные инструменты работают в native app. Mini App — это вход,
-          кабинет раннего участника и пресейловая витрина.
+          кабинет раннего участника, экономика, обучение и пресейловая витрина.
         </p>
       </section>
     </main>
@@ -144,6 +190,11 @@ function WelcomeScreen({ onStart, telegramUser }) {
 }
 
 function RoomRenderer({ activeRoom, telegramUser }) {
+  if (activeRoom === "game") return <GameRoom />;
+  if (activeRoom === "squad") return <SquadRoom telegramUser={telegramUser} />;
+  if (activeRoom === "earn") return <EarnRoom />;
+  if (activeRoom === "allocation") return <AllocationRoom />;
+  if (activeRoom === "wallet") return <WalletRoom />;
   if (activeRoom === "device") return <DeviceRoom />;
   if (activeRoom === "collab") return <CollabRoom />;
   if (activeRoom === "market") return <MarketRoom />;
@@ -181,7 +232,8 @@ function CenterRoom({ telegramUser }) {
         <p style={styles.cardText}>
           Нативное приложение — это инструмент зеркал, пиксельного сканера,
           записи жестов и multi-device orchestration. Mini App показывает
-          архитектуру, профиль, маркет и путь к полной нативной платформе.
+          архитектуру, профиль, маркет, кошелёк, аллокации и путь к полной
+          нативной платформе.
         </p>
       </section>
 
@@ -194,6 +246,14 @@ function CenterRoom({ telegramUser }) {
           <Feature title="Macro Engine" text="Запись жестов и воспроизведение сценариев." />
           <Feature title="Project Mindmap" text="Блочный конструктор сценариев." />
         </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Mini App Layer</h3>
+        <p style={styles.cardText}>
+          Верхний ряд открывает игровые, экономические и социальные модули:
+          Game, Squad, Earn, Allocation и Wallet.
+        </p>
       </section>
 
       <button style={styles.primaryAction}>Download Native App — soon</button>
@@ -243,55 +303,32 @@ function CollabRoom() {
     <>
       <RoomHeader
         title="Collab Room"
-        subtitle="Зал будущих команд, рефералов и совместных проектов."
-        pill="Community"
+        subtitle="Будущая комната совместных проектов и управления доступом."
+        pill="Native collab"
       />
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Invite builders</h3>
+        <h3 style={styles.cardTitle}>Shared workspaces</h3>
         <p style={styles.cardText}>
-          В Mini App эта комната может стать местом приглашений, раннего доступа,
-          реферальных веток и командных комнат.
-        </p>
-      </section>
-
-      <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Native collaboration</h3>
-        <p style={styles.cardText}>
-          В native app позже будут общие проекты, зеркала, права управления,
+          В native app здесь будут общие проекты, зеркала, права управления,
           совместное редактирование сценариев и рабочие комнаты.
         </p>
       </section>
 
-      <button style={styles.primaryAction}>Share Mini App — soon</button>
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Командная работа без смешения с рефералкой</h3>
+        <p style={styles.cardText}>
+          Реферальная и squad-логика вынесена в верхнюю комнату Squad. Collab Room
+          остаётся местом будущей настоящей совместной работы.
+        </p>
+      </section>
+
+      <button style={styles.primaryAction}>Create Collab Room — soon</button>
     </>
   );
 }
 
 function MarketRoom() {
-  const allocationPacks = [
-    {
-      name: "Starter",
-      entry: "25 000 UGT",
-      bonus: "50 000 locked UGT",
-    },
-    {
-      name: "Builder",
-      entry: "100 000 UGT",
-      bonus: "200 000 locked UGT",
-    },
-    {
-      name: "Pro",
-      entry: "400 000 UGT",
-      bonus: "800 000 locked UGT",
-    },
-    {
-      name: "Founder",
-      entry: "1 600 000 UGT",
-      bonus: "3 200 000 locked UGT",
-    },
-  ];
-
   const marketItems = [
     {
       title: "Project Scripts",
@@ -314,8 +351,8 @@ function MarketRoom() {
     <>
       <RoomHeader
         title="Market Room"
-        subtitle="Маркетплейс проектов, зеркал, UGT-пакетов и ранних аллокаций."
-        pill="UGT Market"
+        subtitle="Маркетплейс проектов, зеркал, сценариев и premium-инструментов."
+        pill="Marketplace"
       />
 
       <section style={styles.marketHero}>
@@ -324,25 +361,25 @@ function MarketRoom() {
           <p style={styles.cardText}>
             Здесь позже будут продаваться и сдаваться в аренду проекты,
             сценарии автоматизации, emulator-зеркала и цифровые возможности
-            экосистемы. Аллокации — отдельный ранний раздел внутри рынка.
+            экосистемы. Аллокации вынесены в отдельную комнату Allocation.
           </p>
         </div>
       </section>
 
       <div style={styles.marketStatsGrid}>
         <section style={styles.marketMiniCard}>
-          <strong style={styles.marketMiniValue}>0 UGT</strong>
-          <span>Available balance</span>
+          <strong style={styles.marketMiniValue}>0</strong>
+          <span>Listed projects</span>
         </section>
 
         <section style={styles.marketMiniCard}>
-          <strong style={styles.marketMiniValue}>0 UGT</strong>
-          <span>Locked allocation pool</span>
+          <strong style={styles.marketMiniValue}>0</strong>
+          <span>Mirror rentals</span>
         </section>
 
         <section style={styles.marketMiniCard}>
-          <strong style={styles.marketMiniValue}>Pre-launch</strong>
-          <span>Round status</span>
+          <strong style={styles.marketMiniValue}>Soon</strong>
+          <span>Market status</span>
         </section>
       </div>
 
@@ -365,81 +402,9 @@ function MarketRoom() {
         </div>
       </section>
 
-      <section style={styles.allocationDashboard}>
-        <div style={styles.marketplaceTopRow}>
-          <div>
-            <h3 style={styles.cardTitle}>Allocation Dashboard</h3>
-            <p style={styles.cardText}>
-              Общий пул раннего участия. Сюда могут попадать купленные пакеты,
-              доливы и locked UGT за рекламу.
-            </p>
-          </div>
-
-          <span style={styles.chip}>Locked</span>
-        </div>
-
-        <div style={styles.allocationRow}>
-          <span>Total acquired allocation</span>
-          <strong>0 UGT</strong>
-        </div>
-
-        <div style={styles.allocationRow}>
-          <span>Ad rewards added</span>
-          <strong>0 UGT</strong>
-        </div>
-
-        <div style={styles.allocationRow}>
-          <span>Available to withdraw</span>
-          <strong>0 UGT</strong>
-        </div>
-
-        <div style={styles.progressTrack}>
-          <div style={styles.progressFill} />
-        </div>
-
-        <div style={styles.chipRow}>
-          <span style={styles.chip}>Buy pack</span>
-          <span style={styles.chip}>Add to pool</span>
-          <span style={styles.chip}>Watch ads</span>
-        </div>
-      </section>
-
-      <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Pre-launch Allocation Packs</h3>
-
-        <div style={styles.packGrid}>
-          {allocationPacks.map((pack) => (
-            <section key={pack.name} style={styles.allocationCard}>
-              <h3 style={styles.allocationTitle}>{pack.name}</h3>
-
-              <div style={styles.allocationRow}>
-                <span>Взнос</span>
-                <strong>{pack.entry}</strong>
-              </div>
-
-              <div style={styles.allocationRow}>
-                <span>Pre-launch bonus</span>
-                <strong>{pack.bonus}</strong>
-              </div>
-
-              <button style={styles.miniButton}>Select package</button>
-            </section>
-          ))}
-        </div>
-      </section>
-
-      <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Watch Ads → locked UGT</h3>
-        <p style={styles.cardText}>
-          Идея: за просмотр рекламы пользователь получает 1–2 locked UGT
-          в свой allocation pool. Это не выводимый баланс, а внутренняя
-          ранняя награда экосистемы.
-        </p>
-      </section>
-
       <p style={styles.smallNote}>
-        UGT — внутренняя utility-валюта приложения для цифровых функций,
-        аренды, покупок и доступа внутри PixelGridMacro.
+        Market Room — это будущая экономика сценариев, зеркал, premium-функций
+        и цифровых инструментов. Pre-launch пакеты находятся в Allocation Room.
       </p>
     </>
   );
@@ -473,7 +438,7 @@ function ProfileRoom({ telegramUser }) {
     <>
       <RoomHeader
         title="Profile Room"
-        subtitle="Telegram профиль, UGT баланс и будущая связка с native account."
+        subtitle="Telegram профиль и будущая связка с native account."
         pill="Account"
       />
 
@@ -484,7 +449,7 @@ function ProfileRoom({ telegramUser }) {
       </section>
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Баланс</h3>
+        <h3 style={styles.cardTitle}>Account Summary</h3>
 
         <div style={styles.allocationRow}>
           <span>Available UGT</span>
@@ -502,6 +467,14 @@ function ProfileRoom({ telegramUser }) {
         </div>
       </section>
 
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Wallet moved</h3>
+        <p style={styles.cardText}>
+          Кошельки, swap, connected TON/Phantom и liquidity status вынесены
+          в отдельную комнату Wallet над Profile.
+        </p>
+      </section>
+
       <button style={styles.primaryAction} onClick={openNative}>
         Open Native App
       </button>
@@ -509,6 +482,322 @@ function ProfileRoom({ telegramUser }) {
       <button style={styles.secondaryAction} onClick={resetMiniApp}>
         Reset Mini App Entrance
       </button>
+    </>
+  );
+}
+
+function GameRoom() {
+  return (
+    <>
+      <RoomHeader
+        title="Game Room"
+        subtitle="Будущий игровой режим Scenario Survival / Factory Line."
+        pill="Game"
+      />
+
+      <section style={styles.gameHero}>
+        <div style={styles.gameScreen}>
+          <div style={styles.factoryPipe} />
+          <div style={styles.factoryDrop} />
+          <div style={styles.factoryBelt}>
+            <div style={styles.factoryFlow} />
+          </div>
+          <div style={styles.factoryWarning}>Scenario Survival</div>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Scenario Survival — coming soon</h3>
+        <p style={styles.cardText}>
+          Игра будет обучать сценарному мышлению: сцены, эталоны, макросы,
+          fallback-ветки, случайные сбои, ленты, патрубки, переливы и
+          автоматизация процесса.
+        </p>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Game launcher placeholder</h3>
+        <p style={styles.cardText}>
+          Позже эта кнопка будет запускать отдельный игровой компонент/документ,
+          который мы вынесем из большого app/page.js.
+        </p>
+
+        <button style={styles.primaryAction}>Launch Game — soon</button>
+      </section>
+    </>
+  );
+}
+
+function SquadRoom({ telegramUser }) {
+  const code = useMemo(() => {
+    const raw = telegramUser?.id || telegramUser?.username || "SCENE";
+    return `PGM-${String(raw).slice(-6).toUpperCase()}`;
+  }, [telegramUser]);
+
+  return (
+    <>
+      <RoomHeader
+        title="Squad Room"
+        subtitle="Реферальная команда, приглашения и будущие ветки участников."
+        pill="Referral"
+      />
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>My Squad</h3>
+
+        <div style={styles.allocationRow}>
+          <span>Referral code</span>
+          <strong>{code}</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Invited users</span>
+          <strong>0</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Squad activity</span>
+          <strong>0</strong>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Future Squad Mechanics</h3>
+        <p style={styles.cardText}>
+          Здесь будет invite link, реферальные ветки, squad rewards,
+          активность команды, будущие проценты лидера и связь с Collab Room.
+        </p>
+
+        <div style={styles.chipRow}>
+          <span style={styles.chip}>Invite</span>
+          <span style={styles.chip}>Branches</span>
+          <span style={styles.chip}>Leader rewards</span>
+        </div>
+      </section>
+
+      <button style={styles.primaryAction}>Share Invite — soon</button>
+    </>
+  );
+}
+
+function EarnRoom() {
+  return (
+    <>
+      <RoomHeader
+        title="Earn Room"
+        subtitle="Daily, rewarded ads, missions, promo UGT и Ad Vault."
+        pill="Missions"
+      />
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Today Missions</h3>
+
+        <div style={styles.missionItem}>
+          <span>Open Mini App</span>
+          <strong>Done</strong>
+        </div>
+
+        <div style={styles.missionItem}>
+          <span>Watch rewarded ad</span>
+          <strong>Soon</strong>
+        </div>
+
+        <div style={styles.missionItem}>
+          <span>Open Allocation Room</span>
+          <strong>0 / 1</strong>
+        </div>
+
+        <div style={styles.missionItem}>
+          <span>Start Scenario Survival</span>
+          <strong>0 / 1</strong>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Ad Vault</h3>
+
+        <div style={styles.allocationRow}>
+          <span>Pending ad UGT</span>
+          <strong>0</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Confirmed promo UGT</span>
+          <strong>0</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Available ads</span>
+          <strong>dynamic</strong>
+        </div>
+
+        <p style={styles.smallNote}>
+          Реальные начисления будут происходить только после подтверждения
+          просмотра рекламной сетью.
+        </p>
+      </section>
+
+      <button style={styles.primaryAction}>Watch Ad — soon</button>
+    </>
+  );
+}
+
+function AllocationRoom() {
+  return (
+    <>
+      <RoomHeader
+        title="Allocation Room"
+        subtitle="Pre-launch allocation, x2 bonus, locked UGT и статус раунда."
+        pill="Pre-launch"
+      />
+
+      <section style={styles.allocationDashboard}>
+        <div style={styles.marketplaceTopRow}>
+          <div>
+            <h3 style={styles.cardTitle}>Allocation Dashboard</h3>
+            <p style={styles.cardText}>
+              Общий пул раннего участия. Сюда могут попадать купленные пакеты,
+              доливы, Promo UGT и locked UGT за подтверждённые активности.
+            </p>
+          </div>
+
+          <span style={styles.chip}>Locked</span>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Total acquired allocation</span>
+          <strong>0 UGT</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Ad rewards added</span>
+          <strong>0 UGT</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Available to withdraw</span>
+          <strong>0 UGT</strong>
+        </div>
+
+        <div style={styles.progressTrack}>
+          <div style={styles.progressFill} />
+        </div>
+
+        <div style={styles.chipRow}>
+          <span style={styles.chip}>Pre-launch x2</span>
+          <span style={styles.chip}>Round 1</span>
+          <span style={styles.chip}>Liquidity forming</span>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Pre-launch Allocation Packs</h3>
+
+        <div style={styles.packGrid}>
+          {allocationPacks.map((pack) => (
+            <section key={pack.name} style={styles.allocationCard}>
+              <h3 style={styles.allocationTitle}>{pack.name}</h3>
+
+              <div style={styles.allocationRow}>
+                <span>Взнос</span>
+                <strong>{pack.entry}</strong>
+              </div>
+
+              <div style={styles.allocationRow}>
+                <span>Pre-launch bonus</span>
+                <strong>{pack.bonus}</strong>
+              </div>
+
+              <p style={styles.smallNote}>{pack.note}</p>
+
+              <button style={styles.miniButton}>Select package — soon</button>
+            </section>
+          ))}
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Release Schedule Preview</h3>
+        <p style={styles.cardText}>
+          Вывод и обмен аллокационных UGT будут зависеть от запуска раунда,
+          статуса ликвидности и графика release. До запуска это pre-launch
+          locked allocation.
+        </p>
+      </section>
+    </>
+  );
+}
+
+function WalletRoom() {
+  return (
+    <>
+      <RoomHeader
+        title="Wallet Room"
+        subtitle="Connected wallets, UGT balances, swap preview и liquidity status."
+        pill="Wallet"
+      />
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>Connected Wallets</h3>
+
+        <div style={styles.walletCard}>
+          <div>
+            <strong>TON / Tonkeeper</strong>
+            <p style={styles.cardText}>Not connected</p>
+          </div>
+          <button style={styles.miniButtonInline}>Connect</button>
+        </div>
+
+        <div style={styles.walletCard}>
+          <div>
+            <strong>Solana / Phantom</strong>
+            <p style={styles.cardText}>Not connected</p>
+          </div>
+          <button style={styles.miniButtonInline}>Connect</button>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <h3 style={styles.cardTitle}>UGT Wallet Summary</h3>
+
+        <div style={styles.allocationRow}>
+          <span>Backed UGT</span>
+          <strong>0</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Promo UGT</span>
+          <strong>0</strong>
+        </div>
+
+        <div style={styles.allocationRow}>
+          <span>Locked Allocation UGT</span>
+          <strong>0</strong>
+        </div>
+      </section>
+
+      <section style={styles.swapPreview}>
+        <h3 style={styles.cardTitle}>Swap Preview</h3>
+
+        <div style={styles.swapBox}>
+          <span>You send</span>
+          <strong>25 USDC</strong>
+        </div>
+
+        <div style={styles.swapArrow}>↓</div>
+
+        <div style={styles.swapBox}>
+          <span>You receive</span>
+          <strong>24 250 UGT</strong>
+        </div>
+
+        <p style={styles.smallNote}>
+          Demo rate: 1000 UGT = €1. PixelGrid service fee and gateway/network
+          fees will be shown before confirmation.
+        </p>
+
+        <button style={styles.primaryAction}>Swap — soon</button>
+      </section>
     </>
   );
 }
@@ -522,27 +811,49 @@ function Feature({ title, text }) {
   );
 }
 
-function BottomNav({ activeRoom, setActiveRoom }) {
+function DualBottomNav({ activeRoom, setActiveRoom }) {
   return (
-    <nav style={styles.bottomNav}>
-      {rooms.map((room) => {
-        const active = activeRoom === room.id;
+    <div style={styles.navStack}>
+      <nav style={styles.topNav}>
+        {miniRooms.map((room) => {
+          const active = activeRoom === room.id;
 
-        return (
-          <button
-            key={room.id}
-            style={{
-              ...styles.navItem,
-              ...(active ? styles.navItemActive : {}),
-            }}
-            onClick={() => setActiveRoom(room.id)}
-          >
-            <span style={styles.navIcon}>{room.icon}</span>
-            <span>{room.label}</span>
-          </button>
-        );
-      })}
-    </nav>
+          return (
+            <button
+              key={room.id}
+              style={{
+                ...styles.navItem,
+                ...(active ? styles.navItemActiveTop : {}),
+              }}
+              onClick={() => setActiveRoom(room.id)}
+            >
+              <span style={styles.navIcon}>{room.icon}</span>
+              <span>{room.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <nav style={styles.bottomNav}>
+        {mainRooms.map((room) => {
+          const active = activeRoom === room.id;
+
+          return (
+            <button
+              key={room.id}
+              style={{
+                ...styles.navItem,
+                ...(active ? styles.navItemActive : {}),
+              }}
+              onClick={() => setActiveRoom(room.id)}
+            >
+              <span style={styles.navIcon}>{room.icon}</span>
+              <span>{room.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
 
@@ -558,7 +869,7 @@ const styles = {
 
   shell: {
     minHeight: "100vh",
-    padding: "18px 16px 108px",
+    padding: "18px 16px 170px",
     boxSizing: "border-box",
   },
 
@@ -721,7 +1032,7 @@ const styles = {
   },
 
   smallNote: {
-    margin: "22px 0 0",
+    margin: "12px 0 0",
     color: "rgba(255,255,255,0.42)",
     fontSize: 12,
     lineHeight: 1.45,
@@ -893,7 +1204,7 @@ const styles = {
   floatingButton: {
     position: "fixed",
     left: "50%",
-    bottom: 76,
+    bottom: 142,
     transform: "translateX(-50%)",
     width: 66,
     height: 66,
@@ -907,11 +1218,28 @@ const styles = {
     zIndex: 20,
   },
 
-  bottomNav: {
+  navStack: {
     position: "fixed",
     left: 12,
     right: 12,
     bottom: 12,
+    display: "grid",
+    gap: 7,
+    zIndex: 30,
+  },
+
+  topNav: {
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: 6,
+    padding: 8,
+    borderRadius: 24,
+    background: "rgba(18,18,18,0.88)",
+    border: "1px solid rgba(139,92,246,0.18)",
+    backdropFilter: "blur(18px)",
+  },
+
+  bottomNav: {
     display: "grid",
     gridTemplateColumns: "repeat(5, 1fr)",
     gap: 6,
@@ -920,7 +1248,6 @@ const styles = {
     background: "rgba(18,18,18,0.92)",
     border: "1px solid rgba(255,255,255,0.09)",
     backdropFilter: "blur(18px)",
-    zIndex: 30,
   },
 
   navItem: {
@@ -941,6 +1268,12 @@ const styles = {
     background: "rgba(76,175,80,0.18)",
     color: "#ffffff",
     boxShadow: "inset 0 0 0 1px rgba(76,175,80,0.35)",
+  },
+
+  navItemActiveTop: {
+    background: "rgba(139,92,246,0.2)",
+    color: "#ffffff",
+    boxShadow: "inset 0 0 0 1px rgba(216,180,254,0.22)",
   },
 
   navIcon: {
@@ -1037,6 +1370,18 @@ const styles = {
     fontSize: 13,
   },
 
+  miniButtonInline: {
+    padding: "9px 12px",
+    borderRadius: 13,
+    border: "1px solid rgba(255,255,255,0.1)",
+    background: "rgba(255,255,255,0.055)",
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 12,
+    whiteSpace: "nowrap",
+  },
+
   allocationDashboard: {
     borderRadius: 22,
     padding: 18,
@@ -1061,5 +1406,134 @@ const styles = {
     height: "100%",
     borderRadius: 999,
     background: "linear-gradient(135deg, #4caf50, #22d3ee)",
+  },
+
+  gameHero: {
+    borderRadius: 24,
+    padding: 16,
+    background:
+      "radial-gradient(circle at 50% 0%, rgba(236,72,153,0.2), transparent 36%), rgba(20,20,20,0.9)",
+    border: "1px solid rgba(255,255,255,0.09)",
+    marginBottom: 14,
+  },
+
+  gameScreen: {
+    position: "relative",
+    height: 210,
+    borderRadius: 20,
+    overflow: "hidden",
+    background:
+      "linear-gradient(180deg, rgba(17,24,39,0.92), rgba(12,12,12,0.98))",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+
+  factoryPipe: {
+    position: "absolute",
+    top: 28,
+    left: "50%",
+    width: 34,
+    height: 78,
+    transform: "translateX(-50%)",
+    borderRadius: 16,
+    background: "linear-gradient(180deg, #6b7280, #1f2937)",
+    boxShadow: "0 0 18px rgba(255,255,255,0.08)",
+  },
+
+  factoryDrop: {
+    position: "absolute",
+    top: 94,
+    left: "50%",
+    width: 20,
+    height: 48,
+    transform: "translateX(-50%)",
+    borderRadius: "50% 50% 45% 45%",
+    background: "linear-gradient(180deg, #ffb347, #8b3a0e)",
+    boxShadow: "0 0 26px rgba(255,179,71,0.35)",
+  },
+
+  factoryBelt: {
+    position: "absolute",
+    left: 24,
+    right: 24,
+    bottom: 42,
+    height: 42,
+    borderRadius: 14,
+    background:
+      "repeating-linear-gradient(90deg, #1f2937 0px, #1f2937 18px, #111827 18px, #111827 36px)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+
+  factoryFlow: {
+    position: "absolute",
+    left: "36%",
+    top: 9,
+    width: "32%",
+    height: 24,
+    borderRadius: 999,
+    background: "linear-gradient(90deg, #9a3412, #f97316, #7c2d12)",
+    boxShadow: "0 0 18px rgba(249,115,22,0.3)",
+  },
+
+  factoryWarning: {
+    position: "absolute",
+    left: 14,
+    top: 14,
+    padding: "7px 10px",
+    borderRadius: 999,
+    background: "rgba(0,0,0,0.48)",
+    color: "rgba(255,255,255,0.84)",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+
+  missionItem: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "11px 0",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 14,
+  },
+
+  walletCard: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+    background: "rgba(255,255,255,0.045)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    marginBottom: 10,
+  },
+
+  swapPreview: {
+    borderRadius: 22,
+    padding: 18,
+    background:
+      "radial-gradient(circle at 0% 0%, rgba(34,211,238,0.18), transparent 34%), rgba(20,20,20,0.9)",
+    border: "1px solid rgba(34,211,238,0.16)",
+    boxShadow: "0 16px 42px rgba(0,0,0,0.28)",
+    marginBottom: 14,
+  },
+
+  swapBox: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    background: "rgba(255,255,255,0.045)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,0.66)",
+  },
+
+  swapArrow: {
+    textAlign: "center",
+    padding: "8px 0",
+    color: "rgba(255,255,255,0.5)",
   },
 };
