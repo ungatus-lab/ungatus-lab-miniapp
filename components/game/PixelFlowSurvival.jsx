@@ -408,12 +408,25 @@ export default function PixelFlowSurvival({ open, onClose }) {
 function maybeRecordFix(current, fixType) {
   if (!current.recordMode) return {};
 
+  const learnedFixes = {
+    ...current.learnedFixes,
+  };
+
+  if (fixType === "narrow") {
+    learnedFixes.narrow = true;
+  }
+
+  if (fixType === "overflow") {
+    learnedFixes.overflow = true;
+  }
+
+  if (fixType === "jam") {
+    learnedFixes.jam = true;
+  }
+
   return {
     recordMode: false,
-    learnedFixes: {
-      ...current.learnedFixes,
-      true,
-    },
+    learnedFixes,
     status: `Fix recorded: ${fixType}. Auto Scenario can now use it.`,
   };
 }
