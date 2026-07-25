@@ -2516,401 +2516,305 @@ ungatus-lab-miniapp/components/game/PixelFlowSurvival.jsx
 
 import { useEffect, useMemo, useState } from "react";
 
+const LINE_COUNT = 5;
+
+function makeLine(id, unlocked = false) {
+  return {
+    id,
+    unlocked,
+    running: false,
+    valve: 50,
+    clog: 18,
+    beltWidth: 42,
+    heat: 52,
+    hopper: 0,
+    cart: 0,
+    gateOpen: true,
+    changingCart: false,
+    changeTimer: 0,
+    wetJam: 0,
+    spill: 0,
+    produced: 0,
+    status: unlocked ? "Ready" : "Locked",
+  };
+}
+
 const initialGame = {
   running: true,
+  paused: false,
   time: 0,
-  score: 0,
-  loss: 0,
-  flow: 72,
-  clog: 4,
-  collector: 0,
-  stability: 100,
-  round: 1,
-  scanSaved: false,
-  autoEnabled: false,
-  recordMode: false,
-  learnedFixes: {
-    narrow: false,
-    overflow: false,
-    jam: false,
-  },
-  status: "Virtual emulator feed started.",
-  lastIssue: "normal",
+  gold: 0,
+  penalties: 0,
+  cartsFilled: 0,
+  selectedLineId: 1,
+  message: "Manual operator mode. Start Line 1 and keep production stable.",
+  lines: Array.from({ length: LINE_COUNT }, (_, index) => makeLine(index + 1, index === 0)),
 };
 
 export default function PixelFlowSurvival({ open, onClose }) {
   const [game, setGame] = useState(initialGame);
 
-  const effectiveFlow = Math.max(0, Math.min(110, game.flow - game.clog * 0.62));
-  const issue = getIssue(effectiveFlow, game.collector, game.loss);
-
-  const pixelCells = useMemo(() => {
-    return buildPixelCells(effectiveFlow, game.collector, issue, game.time);
-  }, [effectiveFlow, game.collector, issue, game.time]);
+  const selectedLine = useMemo(() => {
+    return game.lines.find((line) => line.id === game.selectedLineId) || game.lines[0];
+  }, [game.lines, game.selectedLineId]);
 
   useEffect(() => {
     if (!open) return;
 
     setGame({
       ...initialGame,
-      status: "Round 1 started. Keep the virtual process stable.",
+      message: "Operator room started. Start Line 1 and watch the camera feeds.",
     });
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
     if (!game.running) return;
+    if (game.paused) return;
 
     const timer = window.setInterval(() => {
-      setGame((current) => {
-        if (!current.running) return current;
-
-        const nextTime = current.time + 1;
-        const round = 1 + Math.floor(nextTime / 45);
-
-        let nextFlow = current.flow;
-        let nextClog = current.clog + 0.18 + round * 0.035;
-        let nextCollector = current.collector;
-        let nextScore = current.score;
-        let nextLoss = current.loss;
-        let nextStatus = current.status;
-
-        const effective = Math.max(0, Math.min(110, nextFlow - nextClog * 0.62));
-        const currentIssue = getIssue(effective, current.collector, current.loss);
-
-        if (current.autoEnabled) {
-          if (currentIssue === "narrow" && current.learnedFixes.narrow) {
-            nextFlow += 2.6;
-            nextStatus = "Auto scenario: narrow-flow fix executed.";
-          }
-
-          if (currentIssue === "overflow" && current.learnedFixes.overflow) {
-            nextFlow -= 3.2;
-            nextStatus = "Auto scenario: overflow fix executed.";
-          }
-
-          if (currentIssue === "jam" && current.learnedFixes.jam) {
-            nextCollector = Math.max(0, nextCollector - 7);
-            nextFlow = Math.max(25, nextFlow - 1.2);
-            nextStatus = "Auto scenario: collector-jam fix executed.";
-          }
-        }
-
-        const adjustedEffective = Math.max(
-          0,
-          Math.min(110, nextFlow - nextClog * 0.62)
-        );
-
-        if (adjustedEffective >= 58 && adjustedEffective <= 82 && nextCollector < 62) {
-          nextScore += 9 + round * 2;
-          nextLoss = Math.max(0, nextLoss - 1.2);
-          nextCollector = Math.max(0, nextCollector - 0.55);
-        } else if (adjustedEffective < 42) {
-          nextScore += 1;
-          nextLoss += 2.2 + round * 0.25;
-          nextStatus = "Warning: flow is too narrow. Process is losing output.";
-        } else if (adjustedEffective > 90) {
-          nextLoss += 3.5 + round * 0.32;
-          nextCollector += 2.8 + round * 0.24;
-          nextScore = Math.max(0, nextScore - 5);
-          nextStatus = "Alarm: overflow detected near the channel edge.";
-        } else {
-          nextScore += 3;
-          nextLoss += 0.8 + round * 0.12;
-        }
-
-        if (adjustedEffective > 78) {
-          nextCollector += 0.8 + round * 0.08;
-        }
-
-        if (nextCollector > 78) {
-          nextLoss += 2.4;
-          nextStatus = "Alarm: collector jam is forming.";
-        }
-
-        nextFlow += Math.sin(nextTime / 5) * 0.45;
-        nextFlow = Math.max(10, Math.min(105, nextFlow));
-        nextClog = Math.max(0, Math.min(88, nextClog));
-        nextCollector = Math.max(0, Math.min(100, nextCollector));
-        nextLoss = Math.max(0, Math.min(100, nextLoss));
-
-        const stability = Math.max(0, Math.min(100, 100 - nextLoss));
-
-        if (nextLoss >= 100) {
-          return {
-            ...current,
-            running: false,
-            time: nextTime,
-            score: Math.floor(nextScore),
-            loss: 100,
-            flow: nextFlow,
-            clog: nextClog,
-            collector: nextCollector,
-            stability: 0,
-            round,
-            status: "Game Over. The virtual process collapsed.",
-            lastIssue: "gameover",
-          };
-        }
-
-        return {
-          ...current,
-          time: nextTime,
-          score: Math.floor(nextScore),
-          loss: nextLoss,
-          flow: nextFlow,
-          clog: nextClog,
-          collector: nextCollector,
-          stability,
-          round,
-          status: nextStatus,
-          lastIssue: currentIssue,
-        };
-      });
+      setGame((current) => stepGame(current));
     }, 700);
 
     return () => window.clearInterval(timer);
-  }, [open, game.running, game.autoEnabled]);
+  }, [open, game.running, game.paused]);
 
   if (!open) return null;
 
-  function adjustFlow(amount) {
-    setGame((current) => {
-      const nextFlow = Math.max(10, Math.min(105, current.flow + amount));
-      const fixType = amount > 0 ? "narrow" : "overflow";
-      const fixed = maybeRecordFix(current, fixType);
-
-      return {
-        ...current,
-        ...fixed,
-        flow: nextFlow,
-        status:
-          fixed.status ||
-          (amount > 0 ? "Manual action: flow opened." : "Manual action: flow reduced."),
-      };
-    });
-  }
-
-  function cleanChannel() {
-    setGame((current) => {
-      const fixType = current.lastIssue === "jam" ? "jam" : "narrow";
-      const fixed = maybeRecordFix(current, fixType);
-
-      return {
-        ...current,
-        ...fixed,
-        clog: Math.max(0, current.clog - 12),
-        collector: Math.max(0, current.collector - 8),
-        status: fixed.status || "Manual action: channel cleaned.",
-      };
-    });
-  }
-
-  function scanEtalon() {
+  function startLine(lineId) {
     setGame((current) => ({
       ...current,
-      scanSaved: true,
-      status: "Etalon saved: 15-frame virtual buffer captured.",
+      lines: current.lines.map((line) => {
+        if (line.id !== lineId || !line.unlocked) return line;
+
+        return {
+          ...line,
+          running: true,
+          status: "Running",
+        };
+      }),
+      selectedLineId: lineId,
+      message: `Line ${lineId} started. Keep resin centered and change carts on time.`,
     }));
   }
 
-  function startRecordFix() {
+  function stopLine(lineId) {
     setGame((current) => ({
       ...current,
-      recordMode: true,
-      status: "Record Fix armed. Press the corrective action now.",
+      lines: current.lines.map((line) => {
+        if (line.id !== lineId) return line;
+
+        return {
+          ...line,
+          running: false,
+          status: "Stopped",
+        };
+      }),
+      message: `Line ${lineId} stopped. Production pauses, but hopper risks remain.`,
     }));
   }
 
-  function toggleAuto() {
-    setGame((current) => {
-      const canAuto =
-        current.learnedFixes.narrow ||
-        current.learnedFixes.overflow ||
-        current.learnedFixes.jam;
+  function adjustValve(lineId, amount) {
+    setGame((current) => ({
+      ...current,
+      selectedLineId: lineId,
+      lines: current.lines.map((line) => {
+        if (line.id !== lineId || !line.unlocked) return line;
 
-      if (!canAuto) {
+        const nextValve = clamp(line.valve + amount, 0, 100);
+
+        return {
+          ...line,
+          valve: nextValve,
+          status: amount > 0 ? "Valve opened" : "Valve closed",
+        };
+      }),
+      message:
+        amount > 0
+          ? `Line ${lineId}: valve opened by 5%.`
+          : `Line ${lineId}: valve closed by 5%.`,
+    }));
+  }
+
+  function toggleGate(lineId) {
+    setGame((current) => ({
+      ...current,
+      selectedLineId: lineId,
+      lines: current.lines.map((line) => {
+        if (line.id !== lineId || !line.unlocked) return line;
+
+        return {
+          ...line,
+          gateOpen: !line.gateOpen,
+          status: !line.gateOpen ? "Gate open" : "Gate closed",
+        };
+      }),
+      message: `Line ${lineId}: bunker gate toggled.`,
+    }));
+  }
+
+  function changeCart(lineId) {
+    setGame((current) => ({
+      ...current,
+      selectedLineId: lineId,
+      lines: current.lines.map((line) => {
+        if (line.id !== lineId || !line.unlocked) return line;
+        if (line.changingCart) return line;
+
+        return {
+          ...line,
+          gateOpen: false,
+          changingCart: true,
+          changeTimer: 5,
+          status: "Changing cart",
+        };
+      }),
+      message: `Line ${lineId}: cart change started. Gate closed while cart moves out.`,
+    }));
+  }
+
+  function unlockNextLine() {
+    setGame((current) => {
+      const nextLocked = current.lines.find((line) => !line.unlocked);
+      if (!nextLocked) {
         return {
           ...current,
-          status: "Record at least one fix before enabling Auto Scenario.",
+          message: "All lines are already unlocked.",
+        };
+      }
+
+      const cost = nextLocked.id * 450;
+      if (current.gold < cost) {
+        return {
+          ...current,
+          message: `Need ${cost} gold to unlock Line ${nextLocked.id}.`,
         };
       }
 
       return {
         ...current,
-        autoEnabled: !current.autoEnabled,
-        status: !current.autoEnabled
-          ? "Auto Scenario enabled."
-          : "Auto Scenario disabled.",
+        gold: current.gold - cost,
+        selectedLineId: nextLocked.id,
+        lines: current.lines.map((line) => {
+          if (line.id !== nextLocked.id) return line;
+          return makeLine(line.id, true);
+        }),
+        message: `Line ${nextLocked.id} unlocked. Manual load increased.`,
       };
     });
+  }
+
+  function togglePause() {
+    setGame((current) => ({
+      ...current,
+      paused: !current.paused,
+      message: !current.paused ? "Paused." : "Production resumed.",
+    }));
   }
 
   function restartGame() {
     setGame({
       ...initialGame,
-      status: "Round restarted. Virtual emulator feed started.",
+      message: "Operator room restarted. Start Line 1 again.",
     });
   }
 
-  const timeText = formatTime(game.time);
-  const normal = issue === "normal";
+  const gameOver = game.penalties >= 100;
+  const activeLines = game.lines.filter((line) => line.unlocked).length;
+  const nextLineCost = (activeLines + 1) * 450;
 
   return (
     <div style={styles.overlay}>
-      <section style={styles.gameShell}>
-        <header style={styles.topBar}>
-          <div>
-            <p style={styles.kicker}>Scenario Survival</p>
-            <h1 style={styles.title}>Pixel Flow</h1>
+      <section style={styles.landscapeShell}>
+        <header style={styles.topHud}>
+          <div style={styles.modeBadge}>
+            <span>OPERATOR MODE</span>
+            <strong>MANUAL CONTROL</strong>
           </div>
 
-          <button style={styles.exitButton} onClick={onClose}>
-            Exit
+          <Hud label="TIME" value={formatTime(game.time)} />
+          <Hud label="GOLD" value={game.gold} />
+          <Hud label="CARTS" value={game.cartsFilled} />
+          <Hud label="PENALTY" value={`${game.penalties}%`} danger={game.penalties > 60} />
+
+          <button style={styles.topButton} onClick={togglePause}>
+            {game.paused ? "RESUME" : "PAUSE"}
+          </button>
+
+          <button style={styles.topButton} onClick={onClose}>
+            EXIT
           </button>
         </header>
 
-        <section style={styles.hudGrid}>
-          <Hud label="Round" value={game.round} />
-          <Hud label="Time" value={timeText} />
-          <Hud label="Score" value={game.score} />
-          <Hud label="Stability" value={`${Math.floor(game.stability)}%`} />
-        </section>
-
-        <section
-          style={{
-            ...styles.feedFrame,
-            ...(game.loss > 65 ? styles.feedFrameAlarm : {}),
-          }}
-        >
-          <div style={styles.feedHeader}>
-            <span>VIRTUAL EMULATOR / CAM-01</span>
-            <strong>{normal ? "MATCH OK" : issue.toUpperCase()}</strong>
-          </div>
-
-          <div style={styles.pixelWorld}>
-            <div style={styles.pipeBlock}>
-              <div style={styles.pipeGlow} />
-              <span>ENCODER</span>
-            </div>
-
-            <div style={styles.gateTrack}>
-              <div
-                style={{
-                  ...styles.gateFill,
-                  width: `${Math.max(8, Math.min(92, effectiveFlow))}%`,
-                }}
+        <main style={styles.factoryRoom}>
+          <section style={styles.linesArea}>
+            {game.lines.map((line) => (
+              <ProductionLine
+                key={line.id}
+                line={line}
+                selected={line.id === game.selectedLineId}
+                onSelect={() =>
+                  setGame((current) => ({
+                    ...current,
+                    selectedLineId: line.id,
+                    message: line.unlocked
+                      ? `Line ${line.id} selected. Cameras switched.`
+                      : `Line ${line.id} is locked.`,
+                  }))
+                }
+                onStart={() => startLine(line.id)}
+                onStop={() => stopLine(line.id)}
+                onOpen={() => adjustValve(line.id, 5)}
+                onCloseValve={() => adjustValve(line.id, -5)}
+                onGate={() => toggleGate(line.id)}
+                onCart={() => changeCart(line.id)}
               />
-              <div style={styles.gateLabel}>FLOW {Math.floor(effectiveFlow)}%</div>
-            </div>
+            ))}
+          </section>
 
-            <div style={styles.scanGrid}>
-              {pixelCells.map((cell, index) => (
-                <span
-                  key={`${cell}-${index}`}
-                  style={{
-                    ...styles.pixelCell,
-                    ...(cell === "flow" ? styles.pixelFlow : {}),
-                    ...(cell === "edge" ? styles.pixelEdge : {}),
-                    ...(cell === "jam" ? styles.pixelJam : {}),
-                    ...(cell === "scan" ? styles.pixelScan : {}),
-                  }}
-                />
-              ))}
-            </div>
+          <aside style={styles.rightPanel}>
+            <section style={styles.messageBox}>
+              <strong>STATUS</strong>
+              <span>{game.message}</span>
+            </section>
 
-            <div style={styles.collectorBox}>
-              <span>COLLECTOR</span>
-              <div style={styles.collectorTrack}>
-                <div
-                  style={{
-                    ...styles.collectorFill,
-                    height: `${game.collector}%`,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+            <section style={styles.taskBox}>
+              <strong>GOALS</strong>
+              <span>Keep resin centered</span>
+              <span>Dry before bunker</span>
+              <span>Change carts on time</span>
+              <span>Unlock more lines</span>
+            </section>
 
-          <div style={styles.scanLine} />
+            <button style={styles.unlockButton} onClick={unlockNextLine}>
+              Unlock Next Line
+              <small>{activeLines < LINE_COUNT ? `${nextLineCost} gold` : "complete"}</small>
+            </button>
+          </aside>
+        </main>
+
+        <section style={styles.cameraDock}>
+          <CameraCard title="CAM 1 / PIPE" unlocked={selectedLine?.unlocked}>
+            <PipeCamera line={selectedLine} />
+          </CameraCard>
+
+          <CameraCard title="CAM 2 / BELT TOP VIEW" unlocked={selectedLine?.unlocked}>
+            <BeltCamera line={selectedLine} />
+          </CameraCard>
+
+          <CameraCard title="CAM 3 / BUNKER + CART" unlocked={selectedLine?.unlocked}>
+            <BunkerCamera line={selectedLine} />
+          </CameraCard>
         </section>
 
-        <section style={styles.metricsPanel}>
-          <Metric label="Flow" value={Math.floor(game.flow)} danger={game.flow > 92} />
-          <Metric label="Clog" value={Math.floor(game.clog)} danger={game.clog > 54} />
-          <Metric
-            label="Collector"
-            value={Math.floor(game.collector)}
-            danger={game.collector > 70}
-          />
-          <Metric label="Loss" value={Math.floor(game.loss)} danger={game.loss > 55} />
-        </section>
-
-        <section style={styles.statusBox}>
-          <span style={styles.statusDot} />
-          <p>{game.status}</p>
-        </section>
-
-        <section style={styles.toolPanel}>
-          <button style={styles.actionButton} onClick={() => adjustFlow(-5)}>
-            − Flow
-          </button>
-
-          <button style={styles.actionButton} onClick={() => adjustFlow(5)}>
-            + Flow
-          </button>
-
-          <button style={styles.actionButton} onClick={cleanChannel}>
-            Clean
-          </button>
-
-          <button
-            style={{
-              ...styles.actionButton,
-              ...(game.scanSaved ? styles.actionButtonActive : {}),
-            }}
-            onClick={scanEtalon}
-          >
-            Scan
-          </button>
-
-          <button
-            style={{
-              ...styles.actionButton,
-              ...(game.recordMode ? styles.actionButtonRecord : {}),
-            }}
-            onClick={startRecordFix}
-          >
-            Record Fix
-          </button>
-
-          <button
-            style={{
-              ...styles.actionButton,
-              ...(game.autoEnabled ? styles.actionButtonActive : {}),
-            }}
-            onClick={toggleAuto}
-          >
-            Auto
-          </button>
-        </section>
-
-        <section style={styles.learnedPanel}>
-          <Badge active={game.scanSaved} label="Etalon" />
-          <Badge active={game.learnedFixes.narrow} label="Narrow Fix" />
-          <Badge active={game.learnedFixes.overflow} label="Overflow Fix" />
-          <Badge active={game.learnedFixes.jam} label="Jam Fix" />
-        </section>
-
-        {!game.running && (
+        {gameOver && (
           <section style={styles.gameOver}>
-            <h2>Game Over</h2>
+            <h2>Production Failed</h2>
             <p>
-              Score: <strong>{game.score}</strong> · Time:{" "}
-              <strong>{timeText}</strong>
+              Penalties reached 100%. Carts filled: <strong>{game.cartsFilled}</strong>.
             </p>
             <button style={styles.restartButton} onClick={restartGame}>
-              Restart Round
+              Restart Factory
             </button>
           </section>
         )}
@@ -2919,70 +2823,415 @@ export default function PixelFlowSurvival({ open, onClose }) {
   );
 }
 
-function maybeRecordFix(current, fixType) {
-  if (!current.recordMode) return {};
+function stepGame(current) {
+  if (!current.running || current.paused) return current;
 
-  const learnedFixes = {
-    ...current.learnedFixes,
-  };
+  let goldDelta = 0;
+  let penaltyDelta = 0;
+  let cartsDelta = 0;
+  let message = current.message;
 
-  if (fixType === "narrow") {
-    learnedFixes.narrow = true;
-  }
+  const nextLines = current.lines.map((line) => {
+    if (!line.unlocked) return line;
 
-  if (fixType === "overflow") {
-    learnedFixes.overflow = true;
-  }
+    let next = { ...line };
 
-  if (fixType === "jam") {
-    learnedFixes.jam = true;
-  }
+    if (next.changingCart) {
+      next.changeTimer -= 1;
 
-  return {
-    recordMode: false,
-    learnedFixes,
-    status: `Fix recorded: ${fixType}. Auto Scenario can now use it.`,
-  };
-}
-
-function getIssue(effectiveFlow, collector, loss) {
-  if (loss >= 100) return "gameover";
-  if (collector > 74) return "jam";
-  if (effectiveFlow > 88) return "overflow";
-  if (effectiveFlow < 44) return "narrow";
-  return "normal";
-}
-
-function buildPixelCells(effectiveFlow, collector, issue, time) {
-  const cells = [];
-  const width = 14;
-  const height = 8;
-  const flowWidth = Math.max(
-    2,
-    Math.min(width, Math.round((effectiveFlow / 100) * width))
-  );
-  const start = Math.floor((width - flowWidth) / 2);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const scanPulse = (x + y + time) % 13 === 0;
-      const inFlow = x >= start && x <= start + flowWidth;
-
-      if (scanPulse) {
-        cells.push("scan");
-      } else if (collector > 72 && y > 5 && x > 8) {
-        cells.push("jam");
-      } else if (issue === "overflow" && (x === 0 || x === width - 1) && y > 1) {
-        cells.push("edge");
-      } else if (inFlow && y > 1 && y < 7) {
-        cells.push("flow");
-      } else {
-        cells.push("empty");
+      if (next.changeTimer <= 0) {
+        next.changingCart = false;
+        next.cart = 0;
+        next.gateOpen = true;
+        next.status = "New cart ready";
+        message = `Line ${next.id}: new empty cart arrived.`;
       }
     }
+
+    if (!next.running) {
+      if (next.hopper > 0 && !next.gateOpen) {
+        next.hopper = clamp(next.hopper + 0.4, 0, 120);
+      }
+
+      if (next.hopper > 100) {
+        penaltyDelta += 1;
+        next.status = "Idle overflow risk";
+      }
+
+      return next;
+    }
+
+    const feed = clamp(next.valve - next.clog * 0.33, 0, 120);
+    const heat = clamp(next.valve * 0.92 + feed * 0.18, 0, 120);
+    const beltWidth = clamp(feed * 0.9 + next.valve * 0.16, 0, 120);
+
+    next.beltWidth = beltWidth;
+    next.heat = heat;
+
+    next.clog = clamp(next.clog + 0.35 + Math.max(0, 42 - next.valve) * 0.015, 0, 100);
+
+    if (next.valve > 60 && feed > 35) {
+      next.clog = clamp(next.clog - (next.valve - 60) * 0.04, 0, 100);
+    }
+
+    const tooNarrow = beltWidth < 25;
+    const idealWidth = beltWidth >= 35 && beltWidth <= 72;
+    const tooWide = beltWidth > 88;
+    const tooHot = heat > 76;
+    const tooCold = heat < 34;
+
+    let product = 0;
+
+    if (idealWidth && !tooHot && !tooCold) {
+      product = 4.5 + beltWidth * 0.035;
+      next.status = "Stable product";
+    } else if (tooNarrow) {
+      product = 1.4;
+      penaltyDelta += 0.4;
+      next.status = "Weak stream";
+    } else if (tooWide) {
+      product = 2.0;
+      next.spill = clamp(next.spill + 4, 0, 100);
+      penaltyDelta += 1.2;
+      next.status = "Belt edge spill";
+      message = `Line ${next.id}: valve too open, resin is reaching belt edges.`;
+    } else if (tooHot) {
+      product = 2.2;
+      next.wetJam = clamp(next.wetJam + 5, 0, 100);
+      penaltyDelta += 1;
+      next.status = "Wet bunker risk";
+      message = `Line ${next.id}: product is too hot near bunker.`;
+    } else {
+      product = 2.4;
+      penaltyDelta += 0.3;
+      next.status = "Uneven drying";
+    }
+
+    next.hopper = clamp(next.hopper + product * 0.55, 0, 130);
+    next.produced += product;
+
+    if (next.gateOpen && !next.changingCart) {
+      const transfer = Math.min(next.hopper, 6);
+      next.hopper = clamp(next.hopper - transfer, 0, 130);
+      next.cart = clamp(next.cart + transfer * 0.85, 0, 130);
+    }
+
+    if (!next.gateOpen && next.running) {
+      next.hopper = clamp(next.hopper + 0.8, 0, 130);
+    }
+
+    if (next.cart >= 100) {
+      if (next.gateOpen) {
+        penaltyDelta += 1.4;
+        next.status = "Cart overflow";
+        message = `Line ${next.id}: cart is full. Close gate and change cart.`;
+      } else {
+        goldDelta += 160;
+        cartsDelta += 1;
+        next.cart = 0;
+        next.status = "Cart counted";
+        message = `Line ${next.id}: full cart secured. +160 gold.`;
+      }
+    }
+
+    if (next.hopper > 100) {
+      penaltyDelta += 1.8;
+      next.status = "Bunker overflow";
+      message = `Line ${next.id}: bunker is overflowing.`;
+    }
+
+    if (next.wetJam > 80) {
+      penaltyDelta += 1.6;
+      next.status = "Wet jam";
+    }
+
+    next.wetJam = clamp(next.wetJam - 1.1, 0, 100);
+    next.spill = clamp(next.spill - 1.4, 0, 100);
+
+    return next;
+  });
+
+  const nextPenalty = clamp(current.penalties + penaltyDelta, 0, 100);
+
+  return {
+    ...current,
+    time: current.time + 1,
+    gold: Math.floor(current.gold + goldDelta),
+    penalties: Math.floor(nextPenalty),
+    cartsFilled: current.cartsFilled + cartsDelta,
+    lines: nextLines,
+    message,
+    running: nextPenalty < 100,
+  };
+}
+
+function ProductionLine({
+  line,
+  selected,
+  onSelect,
+  onStart,
+  onStop,
+  onOpen,
+  onCloseValve,
+  onGate,
+  onCart,
+}) {
+  const resinColor = getResinColor(line.heat);
+  const steamWidth = clamp(line.heat - 35, 0, 65);
+  const dryZone = clamp(100 - line.heat * 0.75, 12, 70);
+  const productPieces = Math.max(2, Math.floor(line.beltWidth / 18));
+
+  if (!line.unlocked) {
+    return (
+      <div style={{ ...styles.lineRow, ...styles.lockedLine }} onClick={onSelect}>
+        <div style={styles.lockedValve}>LOCKED</div>
+        <div style={styles.lockedBelt}>NO PRODUCT LINE</div>
+        <div style={styles.lockedBunker}>NO CART</div>
+      </div>
+    );
   }
 
-  return cells;
+  return (
+    <div
+      style={{
+        ...styles.lineRow,
+        ...(selected ? styles.selectedLine : {}),
+      }}
+      onClick={onSelect}
+    >
+      <div style={styles.valvePanel}>
+        <strong>LINE {line.id}</strong>
+        <div style={styles.valveWheel}>◉</div>
+        <span>VALVE {Math.round(line.valve)}%</span>
+
+        <div style={styles.valveButtons}>
+          <button style={styles.smallControl} onClick={(event) => stopEvent(event, onOpen)}>
+            +
+          </button>
+          <button style={styles.smallControl} onClick={(event) => stopEvent(event, onCloseValve)}>
+            −
+          </button>
+        </div>
+
+        {!line.running ? (
+          <button style={styles.lineStart} onClick={(event) => stopEvent(event, onStart)}>
+            START
+          </button>
+        ) : (
+          <button style={styles.lineStop} onClick={(event) => stopEvent(event, onStop)}>
+            STOP
+          </button>
+        )}
+      </div>
+
+      <div style={styles.pipeNozzle}>
+        <div style={styles.pipeBody}>
+          <div
+            style={{
+              ...styles.pipeClog,
+              width: `${line.clog}%`,
+            }}
+          />
+          <div style={styles.pipeStream} />
+        </div>
+      </div>
+
+      <div style={styles.belt}>
+        <div
+          style={{
+            ...styles.steam,
+            width: `${steamWidth}%`,
+          }}
+        />
+        <div
+          style={{
+            ...styles.resinStrip,
+            width: `${clamp(line.beltWidth, 8, 96)}%`,
+            background: resinColor,
+          }}
+        />
+        <div
+          style={{
+            ...styles.dryLayer,
+            width: `${dryZone}%`,
+          }}
+        />
+        <div style={styles.crackZone}>
+          {Array.from({ length: productPieces }).map((_, index) => (
+            <span key={index} style={styles.fallingPiece} />
+          ))}
+        </div>
+      </div>
+
+      <div style={styles.bunkerArea}>
+        <div style={styles.bunkerTop}>
+          <div
+            style={{
+              ...styles.hopperFill,
+              height: `${clamp(line.hopper, 0, 100)}%`,
+            }}
+          />
+        </div>
+
+        <div style={styles.gateRow}>
+          <button style={styles.gateButton} onClick={(event) => stopEvent(event, onGate)}>
+            {line.gateOpen ? "CLOSE GATE" : "OPEN GATE"}
+          </button>
+        </div>
+
+        <div style={styles.cartTrack}>
+          <div
+            style={{
+              ...styles.cart,
+              transform: line.changingCart ? "translateX(26px)" : "translateX(0)",
+              opacity: line.changingCart ? 0.55 : 1,
+            }}
+          >
+            <div
+              style={{
+                ...styles.cartFill,
+                height: `${clamp(line.cart, 0, 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <button style={styles.cartButton} onClick={(event) => stopEvent(event, onCart)}>
+          {line.changingCart ? `CHANGING ${line.changeTimer}` : "CHANGE CART"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CameraCard({ title, unlocked, children }) {
+  return (
+    <section style={styles.cameraCard}>
+      <div style={styles.cameraTitle}>
+        <span>{title}</span>
+        <strong>{unlocked ? "LIVE" : "NO SIGNAL"}</strong>
+      </div>
+      <div style={styles.cameraScreen}>{unlocked ? children : <NoSignal />}</div>
+    </section>
+  );
+}
+
+function PipeCamera({ line }) {
+  const resinColor = getResinColor(line.heat);
+
+  return (
+    <div style={styles.pipeCam}>
+      <div style={styles.camValve}>VALVE {Math.round(line.valve)}%</div>
+      <div style={styles.pipeCut}>
+        <div
+          style={{
+            ...styles.pipeCutClog,
+            width: `${line.clog}%`,
+          }}
+        />
+        <div style={{ ...styles.pipeCutResin, background: resinColor }} />
+      </div>
+      <div style={styles.camInfo}>
+        <span>CLOG {Math.round(line.clog)}%</span>
+        <span>HEAT {Math.round(line.heat)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function BeltCamera({ line }) {
+  const resinColor = getResinColor(line.heat);
+  const steamLength = clamp(line.heat - 30, 5, 85);
+  const width = clamp(line.beltWidth, 8, 96);
+
+  return (
+    <div style={styles.beltCam}>
+      <div style={styles.topBeltRails}>
+        <div
+          style={{
+            ...styles.topSteam,
+            height: `${steamLength}%`,
+          }}
+        />
+        <div
+          style={{
+            ...styles.topResin,
+            width: `${width}%`,
+            background: resinColor,
+          }}
+        />
+        <div style={styles.topCracks}>
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BunkerCamera({ line }) {
+  return (
+    <div style={styles.bunkerCam}>
+      <div style={styles.camBeltEnd}>
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <div style={styles.camBunker}>
+        <div
+          style={{
+            ...styles.camHopperFill,
+            height: `${clamp(line.hopper, 0, 100)}%`,
+          }}
+        />
+      </div>
+      <div style={styles.camGate}>{line.gateOpen ? "GATE OPEN" : "GATE CLOSED"}</div>
+      <div style={styles.camCart}>
+        <div
+          style={{
+            ...styles.camCartFill,
+            height: `${clamp(line.cart, 0, 100)}%`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function NoSignal() {
+  return (
+    <div style={styles.noSignal}>
+      <span>NO SIGNAL</span>
+    </div>
+  );
+}
+
+function Hud({ label, value, danger }) {
+  return (
+    <div style={{ ...styles.hudBox, ...(danger ? styles.hudDanger : {}) }}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function stopEvent(event, callback) {
+  event.stopPropagation();
+  callback();
+}
+
+function getResinColor(heat) {
+  if (heat > 78) {
+    return "linear-gradient(90deg, #fff1a8, #f59e0b, #f97316)";
+  }
+
+  if (heat < 35) {
+    return "linear-gradient(90deg, #9a6a1f, #b7791f, #7c4a12)";
+  }
+
+  return "linear-gradient(90deg, #facc15, #f59e0b, #d97706)";
 }
 
 function formatTime(seconds) {
@@ -2991,35 +3240,8 @@ function formatTime(seconds) {
   return `${minutes}:${rest}`;
 }
 
-function Hud({ label, value }) {
-  return (
-    <div style={styles.hudItem}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function Metric({ label, value, danger }) {
-  return (
-    <div style={styles.metricItem}>
-      <span>{label}</span>
-      <strong style={danger ? styles.metricDanger : undefined}>{value}%</strong>
-    </div>
-  );
-}
-
-function Badge({ active, label }) {
-  return (
-    <span
-      style={{
-        ...styles.badge,
-        ...(active ? styles.badgeActive : {}),
-      }}
-    >
-      {active ? "✓" : "○"} {label}
-    </span>
-  );
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 const styles = {
@@ -3028,361 +3250,643 @@ const styles = {
     inset: 0,
     zIndex: 120,
     background:
-      "radial-gradient(circle at 50% 0%, rgba(34,211,238,0.16), transparent 34%), linear-gradient(180deg, #050505 0%, #111827 100%)",
-    color: "#ffffff",
-    overflowY: "auto",
+      "radial-gradient(circle at 50% 0%, rgba(245,158,11,0.16), transparent 32%), linear-gradient(180deg, #090909 0%, #17120a 100%)",
+    color: "#f8fafc",
+    overflow: "hidden",
     fontFamily:
       "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
 
-  gameShell: {
-    minHeight: "100vh",
-    padding: "16px 14px 24px",
+  landscapeShell: {
+    width: "100vw",
+    height: "100vh",
+    minHeight: 620,
+    display: "grid",
+    gridTemplateRows: "68px 1fr 170px",
+    gap: 8,
+    padding: 8,
     boxSizing: "border-box",
   },
 
-  topBar: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 12,
-  },
-
-  kicker: {
-    margin: 0,
-    color: "#67e8f9",
-    fontSize: 11,
-    fontWeight: 900,
-    letterSpacing: "0.12em",
-    textTransform: "uppercase",
-  },
-
-  title: {
-    margin: "3px 0 0",
-    fontSize: 28,
-    letterSpacing: "-0.04em",
-  },
-
-  exitButton: {
-    border: "1px solid rgba(255,255,255,0.11)",
-    borderRadius: 999,
-    padding: "10px 14px",
-    color: "rgba(255,255,255,0.76)",
-    background: "rgba(255,255,255,0.055)",
-    cursor: "pointer",
-    fontWeight: 800,
-  },
-
-  hudGrid: {
+  topHud: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: 7,
-    marginBottom: 10,
+    gridTemplateColumns: "170px repeat(4, 1fr) 92px 72px",
+    gap: 8,
   },
 
-  hudItem: {
-    minHeight: 54,
-    borderRadius: 16,
-    background: "rgba(255,255,255,0.055)",
-    border: "1px solid rgba(255,255,255,0.08)",
+  modeBadge: {
+    borderRadius: 8,
+    border: "1px solid rgba(245,158,11,0.36)",
+    background: "rgba(15,23,42,0.78)",
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
-    gap: 4,
-    padding: 9,
-    boxSizing: "border-box",
-    fontSize: 10,
-    color: "rgba(255,255,255,0.52)",
-  },
-
-  feedFrame: {
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: 24,
-    background:
-      "radial-gradient(circle at 20% 0%, rgba(139,92,246,0.22), transparent 30%), rgba(12,12,12,0.94)",
-    border: "1px solid rgba(34,211,238,0.18)",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
-    marginBottom: 10,
-  },
-
-  feedFrameAlarm: {
-    border: "1px solid rgba(248,113,113,0.46)",
-    boxShadow:
-      "0 0 28px rgba(248,113,113,0.18), 0 20px 60px rgba(0,0,0,0.45)",
-  },
-
-  feedHeader: {
-    height: 34,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
     padding: "0 12px",
-    background: "rgba(0,0,0,0.42)",
-    color: "rgba(255,255,255,0.56)",
-    fontSize: 10,
+    color: "#fbbf24",
     fontWeight: 900,
-    letterSpacing: "0.08em",
-  },
-
-  pixelWorld: {
-    position: "relative",
-    minHeight: 310,
-    padding: 16,
-    boxSizing: "border-box",
-    display: "grid",
-    gridTemplateRows: "52px 42px 1fr 52px",
-    gap: 12,
-  },
-
-  pipeBlock: {
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: 18,
-    background: "linear-gradient(135deg, #1f2937, #111827)",
-    border: "1px solid rgba(255,255,255,0.09)",
-    display: "grid",
-    placeItems: "center",
-    color: "rgba(255,255,255,0.64)",
     fontSize: 12,
-    fontWeight: 900,
-    letterSpacing: "0.1em",
   },
 
-  pipeGlow: {
-    position: "absolute",
-    width: 90,
-    height: 90,
-    borderRadius: "50%",
-    background: "rgba(34,211,238,0.18)",
-    filter: "blur(16px)",
-  },
-
-  gateTrack: {
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.055)",
-    border: "1px solid rgba(255,255,255,0.08)",
-  },
-
-  gateFill: {
-    height: "100%",
-    borderRadius: 999,
-    background: "linear-gradient(90deg, #22d3ee, #8b5cf6, #ec4899)",
-    transition: "width 0.22s ease",
-  },
-
-  gateLabel: {
-    position: "absolute",
-    inset: 0,
-    display: "grid",
-    placeItems: "center",
+  hudBox: {
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,0.13)",
+    background: "rgba(15,23,42,0.78)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 3,
+    color: "rgba(255,255,255,0.62)",
     fontSize: 11,
     fontWeight: 900,
-    textShadow: "0 2px 8px rgba(0,0,0,0.8)",
   },
 
-  scanGrid: {
+  hudDanger: {
+    border: "1px solid rgba(248,113,113,0.45)",
+    color: "#fecaca",
+  },
+
+  topButton: {
+    border: "1px solid rgba(255,255,255,0.13)",
+    borderRadius: 8,
+    background: "rgba(255,255,255,0.055)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  factoryRoom: {
+    minHeight: 0,
     display: "grid",
-    gridTemplateColumns: "repeat(14, 1fr)",
-    gap: 5,
-    padding: 12,
-    borderRadius: 18,
+    gridTemplateColumns: "1fr 190px",
+    gap: 8,
+  },
+
+  linesArea: {
+    display: "grid",
+    gridTemplateRows: "repeat(5, 1fr)",
+    gap: 7,
+    minHeight: 0,
+  },
+
+  lineRow: {
+    position: "relative",
+    minHeight: 76,
+    display: "grid",
+    gridTemplateColumns: "116px 84px 1fr 170px",
+    gap: 8,
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.1)",
     background:
-      "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025))",
-    border: "1px solid rgba(255,255,255,0.07)",
+      "linear-gradient(180deg, rgba(31,41,55,0.86), rgba(17,24,39,0.92))",
+    padding: 6,
+    boxSizing: "border-box",
+    cursor: "pointer",
+    overflow: "hidden",
   },
 
-  pixelCell: {
-    aspectRatio: "1 / 1",
-    borderRadius: 5,
-    background: "rgba(255,255,255,0.045)",
-    border: "1px solid rgba(255,255,255,0.03)",
+  selectedLine: {
+    border: "1px solid rgba(251,191,36,0.55)",
+    boxShadow: "0 0 22px rgba(251,191,36,0.12)",
   },
 
-  pixelFlow: {
-    background: "linear-gradient(135deg, #a855f7, #22d3ee)",
-    boxShadow: "0 0 10px rgba(34,211,238,0.25)",
+  lockedLine: {
+    opacity: 0.42,
+    gridTemplateColumns: "116px 1fr 150px",
   },
 
-  pixelEdge: {
-    background: "#ef4444",
-    boxShadow: "0 0 12px rgba(239,68,68,0.55)",
+  lockedValve: {
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 8,
+    background: "rgba(0,0,0,0.28)",
+    color: "rgba(255,255,255,0.48)",
+    fontWeight: 900,
   },
 
-  pixelJam: {
-    background: "#f97316",
-    boxShadow: "0 0 12px rgba(249,115,22,0.5)",
+  lockedBelt: {
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 8,
+    border: "1px dashed rgba(255,255,255,0.14)",
+    color: "rgba(255,255,255,0.35)",
+    fontWeight: 900,
   },
 
-  pixelScan: {
-    background: "#86efac",
-    boxShadow: "0 0 12px rgba(134,239,172,0.45)",
+  lockedBunker: {
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 8,
+    background: "rgba(0,0,0,0.24)",
+    color: "rgba(255,255,255,0.35)",
+    fontWeight: 900,
   },
 
-  collectorBox: {
+  valvePanel: {
+    display: "grid",
+    gridTemplateColumns: "1fr 30px",
+    gridTemplateRows: "18px 1fr 18px 24px",
+    gap: 4,
+    alignItems: "center",
+    color: "#fbbf24",
+    fontSize: 11,
+    fontWeight: 900,
+  },
+
+  valveWheel: {
+    gridColumn: "1 / 2",
+    gridRow: "2 / 3",
+    width: 42,
+    height: 42,
+    borderRadius: "50%",
+    border: "3px solid #b45309",
+    display: "grid",
+    placeItems: "center",
+    color: "#fbbf24",
+    boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.42)",
+  },
+
+  valveButtons: {
+    gridColumn: "2 / 3",
+    gridRow: "1 / 5",
+    display: "grid",
+    gap: 4,
+  },
+
+  smallControl: {
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 6,
+    background: "rgba(251,191,36,0.14)",
+    color: "#fef3c7",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  lineStart: {
+    gridColumn: "1 / 3",
+    border: 0,
+    borderRadius: 6,
+    background: "linear-gradient(135deg, #16a34a, #22c55e)",
+    color: "#fff",
+    fontWeight: 900,
+    cursor: "pointer",
+    fontSize: 10,
+  },
+
+  lineStop: {
+    gridColumn: "1 / 3",
+    border: 0,
+    borderRadius: 6,
+    background: "linear-gradient(135deg, #991b1b, #ef4444)",
+    color: "#fff",
+    fontWeight: 900,
+    cursor: "pointer",
+    fontSize: 10,
+  },
+
+  pipeNozzle: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    borderRadius: 18,
-    padding: "9px 12px",
-    background: "rgba(0,0,0,0.25)",
-    border: "1px solid rgba(255,255,255,0.07)",
-    color: "rgba(255,255,255,0.58)",
-    fontSize: 11,
-    fontWeight: 900,
-    letterSpacing: "0.08em",
   },
 
-  collectorTrack: {
+  pipeBody: {
     position: "relative",
-    width: 42,
+    width: "100%",
     height: 34,
-    borderRadius: 10,
+    borderRadius: 999,
     overflow: "hidden",
-    background: "rgba(255,255,255,0.08)",
+    background: "linear-gradient(180deg, #4b5563, #111827)",
+    border: "1px solid rgba(255,255,255,0.16)",
   },
 
-  collectorFill: {
+  pipeClog: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    background: "linear-gradient(90deg, rgba(92,38,8,0.4), rgba(41,21,7,0.95))",
+  },
+
+  pipeStream: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    top: 12,
+    height: 10,
+    borderRadius: 999,
+    background: "linear-gradient(90deg, #facc15, #f59e0b)",
+    boxShadow: "0 0 12px rgba(245,158,11,0.4)",
+  },
+
+  belt: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 8,
+    background:
+      "repeating-linear-gradient(90deg, #111827 0px, #111827 22px, #1f2937 22px, #1f2937 44px)",
+    border: "1px solid rgba(255,255,255,0.12)",
+  },
+
+  resinStrip: {
+    position: "absolute",
+    left: "2%",
+    top: "35%",
+    height: "28%",
+    borderRadius: 999,
+    boxShadow: "0 0 18px rgba(245,158,11,0.28)",
+  },
+
+  steam: {
+    position: "absolute",
+    left: "4%",
+    top: "4%",
+    bottom: "4%",
+    background:
+      "radial-gradient(circle, rgba(255,255,255,0.3), transparent 62%)",
+    opacity: 0.45,
+    filter: "blur(5px)",
+  },
+
+  dryLayer: {
+    position: "absolute",
+    right: 0,
+    top: "35%",
+    height: "28%",
+    background:
+      "linear-gradient(90deg, rgba(120,53,15,0), rgba(120,53,15,0.35), rgba(250,204,21,0.15))",
+  },
+
+  crackZone: {
+    position: "absolute",
+    right: 0,
+    top: "18%",
+    bottom: "18%",
+    width: 54,
+  },
+
+  fallingPiece: {
+    position: "relative",
+    display: "inline-block",
+    width: 8,
+    height: 8,
+    margin: 2,
+    borderRadius: 2,
+    background: "#fbbf24",
+    transform: "rotate(20deg)",
+  },
+
+  bunkerArea: {
+    position: "relative",
+    display: "grid",
+    gridTemplateColumns: "70px 1fr",
+    gridTemplateRows: "1fr 24px 34px",
+    gap: 4,
+  },
+
+  bunkerTop: {
+    gridRow: "1 / 3",
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: "8px 8px 4px 4px",
+    background: "linear-gradient(180deg, #374151, #111827)",
+    border: "1px solid rgba(255,255,255,0.14)",
+  },
+
+  hopperFill: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    background: "linear-gradient(180deg, #f97316, #ef4444)",
+    background: "linear-gradient(180deg, #fbbf24, #92400e)",
   },
 
-  scanLine: {
+  gateRow: {
+    display: "grid",
+  },
+
+  gateButton: {
+    border: 0,
+    borderRadius: 6,
+    background: "rgba(59,130,246,0.22)",
+    color: "#bfdbfe",
+    fontWeight: 900,
+    cursor: "pointer",
+    fontSize: 9,
+  },
+
+  cartTrack: {
+    gridColumn: "1 / 2",
+    gridRow: "3 / 4",
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 5,
+    background: "rgba(0,0,0,0.35)",
+  },
+
+  cart: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 2,
+    height: 28,
+    borderRadius: "4px 4px 8px 8px",
+    background: "#4b5563",
+    border: "1px solid rgba(255,255,255,0.2)",
+    overflow: "hidden",
+    transition: "0.35s ease",
+  },
+
+  cartFill: {
     position: "absolute",
     left: 0,
     right: 0,
-    top: "48%",
-    height: 1,
-    background: "rgba(134,239,172,0.52)",
-    boxShadow: "0 0 14px rgba(134,239,172,0.42)",
+    bottom: 0,
+    background: "linear-gradient(180deg, #fbbf24, #a16207)",
   },
 
-  metricsPanel: {
+  cartButton: {
+    gridColumn: "2 / 3",
+    gridRow: "3 / 4",
+    border: 0,
+    borderRadius: 6,
+    background: "rgba(251,191,36,0.18)",
+    color: "#fde68a",
+    fontWeight: 900,
+    cursor: "pointer",
+    fontSize: 9,
+  },
+
+  rightPanel: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: 7,
-    marginBottom: 10,
+    gridTemplateRows: "92px 1fr 70px",
+    gap: 8,
   },
 
-  metricItem: {
-    borderRadius: 15,
-    padding: 9,
-    background: "rgba(255,255,255,0.045)",
-    border: "1px solid rgba(255,255,255,0.07)",
+  messageBox: {
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(15,23,42,0.78)",
+    padding: 12,
     display: "flex",
     flexDirection: "column",
-    gap: 4,
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 10,
-  },
-
-  metricDanger: {
-    color: "#fecaca",
-  },
-
-  statusBox: {
-    display: "flex",
-    alignItems: "center",
     gap: 8,
-    borderRadius: 16,
-    padding: "10px 12px",
-    background: "rgba(255,255,255,0.045)",
-    border: "1px solid rgba(255,255,255,0.07)",
-    marginBottom: 10,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.7)",
   },
 
-  statusDot: {
-    width: 9,
-    height: 9,
-    borderRadius: "50%",
-    background: "#22d3ee",
-    boxShadow: "0 0 10px rgba(34,211,238,0.55)",
-    flexShrink: 0,
+  taskBox: {
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(15,23,42,0.78)",
+    padding: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.7)",
   },
 
-  toolPanel: {
+  unlockButton: {
+    border: 0,
+    borderRadius: 10,
+    background: "linear-gradient(135deg, #7c3aed, #f59e0b)",
+    color: "#fff",
+    fontWeight: 900,
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+
+  cameraDock: {
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
     gap: 8,
-    marginBottom: 10,
   },
 
-  actionButton: {
-    minHeight: 48,
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 16,
-    background: "rgba(255,255,255,0.055)",
-    color: "rgba(255,255,255,0.82)",
-    cursor: "pointer",
+  cameraCard: {
+    minHeight: 0,
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(15,23,42,0.82)",
+    overflow: "hidden",
+  },
+
+  cameraTitle: {
+    height: 30,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 10px",
+    background: "rgba(0,0,0,0.35)",
+    color: "#fbbf24",
+    fontSize: 11,
+    fontWeight: 900,
+  },
+
+  cameraScreen: {
+    position: "relative",
+    height: 132,
+    overflow: "hidden",
+    background: "#050505",
+  },
+
+  noSignal: {
+    height: "100%",
+    display: "grid",
+    placeItems: "center",
+    color: "rgba(255,255,255,0.28)",
+    fontWeight: 900,
+    letterSpacing: "0.16em",
+  },
+
+  pipeCam: {
+    height: "100%",
+    padding: 12,
+    boxSizing: "border-box",
+    display: "grid",
+    gridTemplateRows: "24px 1fr 24px",
+    gap: 8,
+  },
+
+  camValve: {
+    color: "#fbbf24",
     fontWeight: 900,
     fontSize: 12,
   },
 
-  actionButtonActive: {
-    background: "rgba(76,175,80,0.2)",
-    border: "1px solid rgba(76,175,80,0.38)",
-    color: "#ffffff",
-  },
-
-  actionButtonRecord: {
-    background: "rgba(236,72,153,0.2)",
-    border: "1px solid rgba(236,72,153,0.4)",
-    color: "#ffffff",
-  },
-
-  learnedPanel: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 7,
-    marginBottom: 10,
-  },
-
-  badge: {
-    padding: "7px 9px",
+  pipeCut: {
+    position: "relative",
+    overflow: "hidden",
     borderRadius: 999,
-    background: "rgba(255,255,255,0.045)",
-    border: "1px solid rgba(255,255,255,0.07)",
-    color: "rgba(255,255,255,0.48)",
-    fontSize: 11,
-    fontWeight: 800,
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "linear-gradient(180deg, #6b7280, #111827)",
   },
 
-  badgeActive: {
-    color: "#bbf7d0",
-    background: "rgba(76,175,80,0.14)",
-    border: "1px solid rgba(76,175,80,0.3)",
+  pipeCutClog: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    background: "linear-gradient(90deg, rgba(120,53,15,0.32), rgba(41,21,7,0.96))",
+  },
+
+  pipeCutResin: {
+    position: "absolute",
+    left: "8%",
+    right: "8%",
+    top: "38%",
+    height: "24%",
+    borderRadius: 999,
+  },
+
+  camInfo: {
+    display: "flex",
+    justifyContent: "space-between",
+    color: "rgba(255,255,255,0.62)",
+    fontSize: 11,
+  },
+
+  beltCam: {
+    height: "100%",
+    padding: 12,
+    boxSizing: "border-box",
+  },
+
+  topBeltRails: {
+    position: "relative",
+    height: "100%",
+    borderRadius: 10,
+    background:
+      "linear-gradient(90deg, #111827 0%, #1f2937 12%, #111827 12%, #111827 88%, #1f2937 88%, #111827 100%)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    overflow: "hidden",
+  },
+
+  topSteam: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: "100%",
+    background:
+      "radial-gradient(circle at 50% 20%, rgba(255,255,255,0.28), transparent 64%)",
+    filter: "blur(6px)",
+    opacity: 0.55,
+  },
+
+  topResin: {
+    position: "absolute",
+    left: "50%",
+    top: 0,
+    bottom: 0,
+    transform: "translateX(-50%)",
+    borderRadius: 999,
+    opacity: 0.96,
+  },
+
+  topCracks: {
+    position: "absolute",
+    left: "18%",
+    right: "18%",
+    bottom: 8,
+    height: 18,
+    display: "flex",
+    justifyContent: "space-around",
+  },
+
+  bunkerCam: {
+    height: "100%",
+    display: "grid",
+    gridTemplateColumns: "1fr 90px 1fr",
+    gridTemplateRows: "42px 20px 1fr",
+    gap: 6,
+    padding: 10,
+    boxSizing: "border-box",
+  },
+
+  camBeltEnd: {
+    gridColumn: "1 / 2",
+    gridRow: "1 / 4",
+    borderRadius: 8,
+    background: "rgba(31,41,55,0.92)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+
+  camBunker: {
+    gridColumn: "2 / 3",
+    gridRow: "1 / 3",
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: "8px 8px 4px 4px",
+    background: "#374151",
+    border: "1px solid rgba(255,255,255,0.16)",
+  },
+
+  camHopperFill: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "linear-gradient(180deg, #fbbf24, #92400e)",
+  },
+
+  camGate: {
+    gridColumn: "2 / 3",
+    gridRow: "3 / 4",
+    display: "grid",
+    placeItems: "center",
+    color: "#bfdbfe",
+    fontSize: 10,
+    fontWeight: 900,
+  },
+
+  camCart: {
+    gridColumn: "3 / 4",
+    gridRow: "2 / 4",
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 8,
+    background: "#4b5563",
+    border: "1px solid rgba(255,255,255,0.16)",
+  },
+
+  camCartFill: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "linear-gradient(180deg, #fbbf24, #a16207)",
   },
 
   gameOver: {
     position: "fixed",
-    left: 12,
-    right: 12,
-    bottom: 12,
-    zIndex: 130,
-    borderRadius: 24,
-    padding: 18,
-    background: "rgba(18,18,18,0.96)",
-    border: "1px solid rgba(248,113,113,0.3)",
-    boxShadow: "0 -20px 60px rgba(0,0,0,0.56)",
+    left: "50%",
+    top: "50%",
+    width: "min(420px, calc(100% - 28px))",
+    transform: "translate(-50%, -50%)",
+    zIndex: 150,
+    borderRadius: 22,
+    padding: 22,
+    background: "rgba(15,23,42,0.97)",
+    border: "1px solid rgba(248,113,113,0.42)",
     textAlign: "center",
+    boxShadow: "0 30px 100px rgba(0,0,0,0.7)",
   },
 
   restartButton: {
     width: "100%",
     border: 0,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: "13px 16px",
-    color: "#ffffff",
-    background: "linear-gradient(135deg, #7c3aed, #ec4899)",
-    cursor: "pointer",
+    background: "linear-gradient(135deg, #7c3aed, #f59e0b)",
+    color: "#fff",
     fontWeight: 900,
+    cursor: "pointer",
   },
 };
 
