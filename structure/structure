@@ -781,6 +781,7 @@ ungatus-lab-miniapp/app/page.js
 
 import { useEffect, useMemo, useState } from "react";
 import AppDrawer from "../components/shell/AppDrawer";
+import PixelFlowSurvival from "../components/game/PixelFlowSurvival";
 import {
   createTranslator,
   normalizeLanguage,
@@ -850,6 +851,7 @@ export default function Home() {
   const [language, setLanguage] = useState("ru");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nativeNoticeOpen, setNativeNoticeOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
 
   const t = useMemo(() => createTranslator(language), [language]);
 
@@ -931,6 +933,14 @@ export default function Home() {
     setNativeNoticeOpen(true);
   }
 
+  function openGame() {
+    setGameOpen(true);
+  }
+
+  function closeGame() {
+    setGameOpen(false);
+  }
+
   function resetMiniAppEntrance() {
     if (typeof window === "undefined") return;
 
@@ -1003,6 +1013,7 @@ export default function Home() {
           activeRoom={activeRoom}
           telegramUser={telegramUser}
           t={t}
+          onLaunchGame={openGame}
         />
 
         <DualBottomNav
@@ -1027,6 +1038,8 @@ export default function Home() {
           open={nativeNoticeOpen}
           onClose={() => setNativeNoticeOpen(false)}
         />
+
+        <PixelFlowSurvival open={gameOpen} onClose={closeGame} />
       </div>
     </div>
   );
@@ -1068,10 +1081,15 @@ function WelcomeScreen({ onStart, telegramUser, t }) {
   );
 }
 
-function RoomRenderer({ activeRoom, telegramUser, t }) {
-  if (activeRoom === "game") return <GameRoom t={t} />;
-  if (activeRoom === "squad")
+function RoomRenderer({ activeRoom, telegramUser, t, onLaunchGame }) {
+  if (activeRoom === "game") {
+    return <GameRoom t={t} onLaunchGame={onLaunchGame} />;
+  }
+
+  if (activeRoom === "squad") {
     return <SquadRoom telegramUser={telegramUser} t={t} />;
+  }
+
   if (activeRoom === "earn") return <EarnRoom t={t} />;
   if (activeRoom === "allocation") return <AllocationRoom t={t} />;
   if (activeRoom === "wallet") return <WalletRoom t={t} />;
@@ -1120,10 +1138,22 @@ function CenterRoom({ telegramUser, t }) {
         <h3 style={styles.cardTitle}>Launch Center</h3>
 
         <div style={styles.featureGrid}>
-          <Feature title="Native Builder" text="Scenario constructor, macro recorder и player." />
-          <Feature title="Remote Mirrors" text="PC, Android и LDPlayer-зеркала." />
-          <Feature title="Pixel Scanner" text="Эталонные цветовые массивы по сценам." />
-          <Feature title="Project Mindmap" text="Блочный конструктор сценариев." />
+          <Feature
+            title="Native Builder"
+            text="Scenario constructor, macro recorder и player."
+          />
+          <Feature
+            title="Remote Mirrors"
+            text="PC, Android и LDPlayer-зеркала."
+          />
+          <Feature
+            title="Pixel Scanner"
+            text="Эталонные цветовые массивы по сценам."
+          />
+          <Feature
+            title="Project Mindmap"
+            text="Блочный конструктор сценариев."
+          />
         </div>
       </section>
 
@@ -1290,12 +1320,12 @@ function MarketRoom({ t }) {
   );
 }
 
-function GameRoom({ t }) {
+function GameRoom({ t, onLaunchGame }) {
   return (
     <>
       <RoomHeader
         title={t("room_game_title")}
-        subtitle="Будущий игровой режим Scenario Survival / Factory Line."
+        subtitle="Виртуальный тренажёр сканера, эталонов, макросов и Auto Scenario."
         pill="Game"
       />
 
@@ -1311,22 +1341,25 @@ function GameRoom({ t }) {
       </section>
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Scenario Survival — coming soon</h3>
+        <h3 style={styles.cardTitle}>Scenario Survival: Pixel Flow</h3>
         <p style={styles.cardText}>
-          Игра будет обучать сценарному мышлению: сцены, эталоны, макросы,
-          fallback-ветки, случайные сбои, ленты, патрубки, переливы и
-          автоматизация процесса.
+          Игра имитирует виртуальный эмулятор с камерой процесса. Игрок сначала
+          вручную держит поток стабильным, затем сканирует эталоны, записывает
+          исправления и включает Auto Scenario.
         </p>
       </section>
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Game launcher placeholder</h3>
+        <h3 style={styles.cardTitle}>Training loop</h3>
         <p style={styles.cardText}>
-          Позже эта кнопка будет запускать отдельный игровой компонент/документ,
-          который мы вынесем из большого app/page.js.
+          Сначала управляй процессом руками. Когда появится отклонение — сделай
+          Scan, включи Record Fix и запиши корректирующее действие. После этого
+          Auto сможет использовать этот fix в похожей ситуации.
         </p>
 
-        <button style={styles.primaryAction}>Launch Game — soon</button>
+        <button style={styles.primaryAction} onClick={onLaunchGame}>
+          Launch Scenario Survival
+        </button>
       </section>
     </>
   );
@@ -1680,7 +1713,10 @@ function NativeSoonSheet({ open, onClose }) {
 
   return (
     <div style={styles.sheetOverlay} onClick={onClose}>
-      <section style={styles.nativeSheet} onClick={(event) => event.stopPropagation()}>
+      <section
+        style={styles.nativeSheet}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div style={styles.sheetHandle} />
 
         <div style={styles.nativeSheetIcon}>◎</div>
@@ -2461,6 +2497,7 @@ const styles = {
 };
 
 
+
 ---
 
 2) папка 2 : components
@@ -2640,27 +2677,31 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function adjustFlow(amount) {
     setGame((current) => {
       const nextFlow = Math.max(10, Math.min(105, current.flow + amount));
-      const fixed = maybeRecordFix(current, amount > 0 ? "narrow" : "overflow");
+      const fixType = amount > 0 ? "narrow" : "overflow";
+      const fixed = maybeRecordFix(current, fixType);
 
       return {
         ...current,
         ...fixed,
         flow: nextFlow,
-        status: amount > 0 ? "Manual action: flow opened." : "Manual action: flow reduced.",
+        status:
+          fixed.status ||
+          (amount > 0 ? "Manual action: flow opened." : "Manual action: flow reduced."),
       };
     });
   }
 
   function cleanChannel() {
     setGame((current) => {
-      const fixed = maybeRecordFix(current, current.lastIssue === "jam" ? "jam" : "narrow");
+      const fixType = current.lastIssue === "jam" ? "jam" : "narrow";
+      const fixed = maybeRecordFix(current, fixType);
 
       return {
         ...current,
         ...fixed,
         clog: Math.max(0, current.clog - 12),
         collector: Math.max(0, current.collector - 8),
-        status: "Manual action: channel cleaned.",
+        status: fixed.status || "Manual action: channel cleaned.",
       };
     });
   }
