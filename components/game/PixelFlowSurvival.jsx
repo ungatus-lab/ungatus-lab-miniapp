@@ -430,7 +430,10 @@ function buildPixelCells(effectiveFlow, collector, issue, time) {
   const cells = [];
   const width = 14;
   const height = 8;
-  const flowWidth = Math.max(2, Math.min(width, Math.round((effectiveFlow / 100) * width)));
+  const flowWidth = Math.max(
+    2,
+    Math.min(width, Math.round((effectiveFlow / 100) * width))
+  );
   const start = Math.floor((width - flowWidth) / 2);
 
   for (let y = 0; y < height; y += 1) {
