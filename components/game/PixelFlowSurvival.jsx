@@ -163,27 +163,31 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function adjustFlow(amount) {
     setGame((current) => {
       const nextFlow = Math.max(10, Math.min(105, current.flow + amount));
-      const fixed = maybeRecordFix(current, amount > 0 ? "narrow" : "overflow");
+      const fixType = amount > 0 ? "narrow" : "overflow";
+      const fixed = maybeRecordFix(current, fixType);
 
       return {
         ...current,
         ...fixed,
         flow: nextFlow,
-        status: amount > 0 ? "Manual action: flow opened." : "Manual action: flow reduced.",
+        status:
+          fixed.status ||
+          (amount > 0 ? "Manual action: flow opened." : "Manual action: flow reduced."),
       };
     });
   }
 
   function cleanChannel() {
     setGame((current) => {
-      const fixed = maybeRecordFix(current, current.lastIssue === "jam" ? "jam" : "narrow");
+      const fixType = current.lastIssue === "jam" ? "jam" : "narrow";
+      const fixed = maybeRecordFix(current, fixType);
 
       return {
         ...current,
         ...fixed,
         clog: Math.max(0, current.clog - 12),
         collector: Math.max(0, current.collector - 8),
-        status: "Manual action: channel cleaned.",
+        status: fixed.status || "Manual action: channel cleaned.",
       };
     });
   }
