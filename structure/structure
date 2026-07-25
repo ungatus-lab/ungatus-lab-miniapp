@@ -790,9 +790,9 @@ import {
 const miniRooms = [
   { id: "game", labelKey: "nav_game", icon: "⚙" },
   { id: "squad", labelKey: "nav_squad", icon: "⬡" },
+  { id: "native", label: "Native", icon: "◎", nativeAction: true },
   { id: "earn", labelKey: "nav_earn", icon: "✦" },
   { id: "allocation", labelKey: "nav_allocation", icon: "◇" },
-  { id: "wallet", labelKey: "nav_wallet", icon: "⇄" },
 ];
 
 const mainRooms = [
@@ -800,7 +800,7 @@ const mainRooms = [
   { id: "collab", labelKey: "nav_collab", icon: "◈" },
   { id: "center", labelKey: "nav_center", icon: "◎" },
   { id: "market", labelKey: "nav_market", icon: "◍" },
-  { id: "profile", labelKey: "nav_profile", icon: "◌" },
+  { id: "wallet", labelKey: "nav_wallet", icon: "⇄" },
 ];
 
 const validRoomIds = [
@@ -813,7 +813,6 @@ const validRoomIds = [
   "collab",
   "center",
   "market",
-  "profile",
 ];
 
 const allocationPacks = [
@@ -850,6 +849,7 @@ export default function Home() {
   const [bootReady, setBootReady] = useState(false);
   const [language, setLanguage] = useState("ru");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [nativeNoticeOpen, setNativeNoticeOpen] = useState(false);
 
   const t = useMemo(() => createTranslator(language), [language]);
 
@@ -912,6 +912,8 @@ export default function Home() {
   }
 
   function handleRoomChange(roomId) {
+    if (!validRoomIds.includes(roomId)) return;
+
     setActiveRoom(roomId);
 
     if (typeof window !== "undefined") {
@@ -923,6 +925,10 @@ export default function Home() {
     const normalizedLanguage = normalizeLanguage(nextLanguage);
     saveLanguage(normalizedLanguage);
     setLanguage(normalizedLanguage);
+  }
+
+  function openNativeBuilderPreview() {
+    setNativeNoticeOpen(true);
   }
 
   function resetMiniAppEntrance() {
@@ -999,20 +1005,11 @@ export default function Home() {
           t={t}
         />
 
-        {activeRoom === "center" && (
-          <button
-            style={styles.floatingButton}
-            onClick={() => handleRoomChange("game")}
-            title="Open Game Room"
-          >
-            ◎
-          </button>
-        )}
-
         <DualBottomNav
           activeRoom={activeRoom}
           setActiveRoom={handleRoomChange}
           t={t}
+          onNativeLaunch={openNativeBuilderPreview}
         />
 
         <AppDrawer
@@ -1024,7 +1021,11 @@ export default function Home() {
           onClose={() => setDrawerOpen(false)}
           onResetEntrance={resetMiniAppEntrance}
           onResetTestData={resetTestData}
-          onNavigate={handleRoomChange}
+        />
+
+        <NativeSoonSheet
+          open={nativeNoticeOpen}
+          onClose={() => setNativeNoticeOpen(false)}
         />
       </div>
     </div>
@@ -1077,8 +1078,6 @@ function RoomRenderer({ activeRoom, telegramUser, t }) {
   if (activeRoom === "device") return <DeviceRoom t={t} />;
   if (activeRoom === "collab") return <CollabRoom t={t} />;
   if (activeRoom === "market") return <MarketRoom t={t} />;
-  if (activeRoom === "profile")
-    return <ProfileRoom telegramUser={telegramUser} t={t} />;
 
   return <CenterRoom telegramUser={telegramUser} t={t} />;
 }
@@ -1112,18 +1111,18 @@ function CenterRoom({ telegramUser, t }) {
         <p style={styles.cardText}>
           Нативное приложение — это инструмент зеркал, пиксельного сканера,
           записи жестов и multi-device orchestration. Mini App показывает
-          архитектуру, профиль, маркет, кошелёк, аллокации и путь к полной
-          нативной платформе.
+          архитектуру, маркет, кошелёк, аллокации и путь к полной нативной
+          платформе.
         </p>
       </section>
 
       <section style={styles.card}>
-        <h3 style={styles.cardTitle}>Что будет раскрыто через native app</h3>
+        <h3 style={styles.cardTitle}>Launch Center</h3>
 
         <div style={styles.featureGrid}>
+          <Feature title="Native Builder" text="Scenario constructor, macro recorder и player." />
           <Feature title="Remote Mirrors" text="PC, Android и LDPlayer-зеркала." />
           <Feature title="Pixel Scanner" text="Эталонные цветовые массивы по сценам." />
-          <Feature title="Macro Engine" text="Запись жестов и воспроизведение сценариев." />
           <Feature title="Project Mindmap" text="Блочный конструктор сценариев." />
         </div>
       </section>
@@ -1131,8 +1130,9 @@ function CenterRoom({ telegramUser, t }) {
       <section style={styles.card}>
         <h3 style={styles.cardTitle}>Mini App Layer</h3>
         <p style={styles.cardText}>
-          Верхний ряд открывает игровые, экономические и социальные модули:
-          Game, Squad, Earn, Allocation и Wallet.
+          Верхний ряд открывает игровые, командные и экономические модули:
+          Game, Squad, Earn и Allocation. Нижний ряд держит Device, Collab,
+          Center, Market и Wallet.
         </p>
       </section>
 
@@ -1286,70 +1286,6 @@ function MarketRoom({ t }) {
         Market Room — это будущая экономика сценариев, зеркал, premium-функций
         и цифровых инструментов. Pre-launch пакеты находятся в Allocation Room.
       </p>
-    </>
-  );
-}
-
-function ProfileRoom({ telegramUser, t }) {
-  const profile = useMemo(() => {
-    return {
-      name: telegramUser?.username || telegramUser?.first_name || "SceneAgent",
-      id: telegramUser?.id || "browser-preview",
-      balance: 0,
-      locked: 0,
-      allocations: 0,
-    };
-  }, [telegramUser]);
-
-  function openNative() {
-    if (typeof window === "undefined") return;
-    window.location.href = `pixelgrid://open?telegram_id=${profile.id}`;
-  }
-
-  return (
-    <>
-      <RoomHeader
-        title={t("room_profile_title")}
-        subtitle="Telegram профиль и будущая связка с native account."
-        pill="Account"
-      />
-
-      <section style={styles.profileCard}>
-        <div style={styles.avatarCircle}>👤</div>
-        <h2 style={styles.profileName}>{profile.name}</h2>
-        <p style={styles.cardText}>Telegram ID: {profile.id}</p>
-      </section>
-
-      <section style={styles.card}>
-        <h3 style={styles.cardTitle}>{t("profile_account_summary")}</h3>
-
-        <div style={styles.allocationRow}>
-          <span>Available UGT</span>
-          <strong>{profile.balance}</strong>
-        </div>
-
-        <div style={styles.allocationRow}>
-          <span>Locked allocation UGT</span>
-          <strong>{profile.locked}</strong>
-        </div>
-
-        <div style={styles.allocationRow}>
-          <span>Allocations</span>
-          <strong>{profile.allocations}</strong>
-        </div>
-      </section>
-
-      <section style={styles.card}>
-        <h3 style={styles.cardTitle}>{t("profile_wallet_moved_title")}</h3>
-        <p style={styles.cardText}>
-          Кошельки, swap, connected TON/Phantom и liquidity status вынесены
-          в отдельную комнату Wallet над Profile.
-        </p>
-      </section>
-
-      <button style={styles.primaryAction} onClick={openNative}>
-        {t("profile_open_native")}
-      </button>
     </>
   );
 }
@@ -1679,11 +1615,25 @@ function Feature({ title, text }) {
   );
 }
 
-function DualBottomNav({ activeRoom, setActiveRoom, t }) {
+function DualBottomNav({ activeRoom, setActiveRoom, t, onNativeLaunch }) {
   return (
     <div style={styles.navStack}>
       <nav style={styles.topNav}>
         {miniRooms.map((room) => {
+          if (room.nativeAction) {
+            return (
+              <button
+                key={room.id}
+                style={styles.nativeNavButton}
+                onClick={onNativeLaunch}
+                title="Native Builder"
+              >
+                <span style={styles.nativeNavIcon}>{room.icon}</span>
+                <span style={styles.nativeNavLabel}>{room.label}</span>
+              </button>
+            );
+          }
+
           const active = activeRoom === room.id;
 
           return (
@@ -1721,6 +1671,32 @@ function DualBottomNav({ activeRoom, setActiveRoom, t }) {
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+function NativeSoonSheet({ open, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div style={styles.sheetOverlay} onClick={onClose}>
+      <section style={styles.nativeSheet} onClick={(event) => event.stopPropagation()}>
+        <div style={styles.sheetHandle} />
+
+        <div style={styles.nativeSheetIcon}>◎</div>
+
+        <h3 style={styles.nativeSheetTitle}>Native Builder — soon</h3>
+
+        <p style={styles.nativeSheetText}>
+          Настоящий Scenario Constructor, macro recorder, player и project
+          mindmap будут открываться через native app. В Mini App эта кнопка
+          останется главным мостом к нативному инструменту.
+        </p>
+
+        <button style={styles.primaryAction} onClick={onClose}>
+          Got it
+        </button>
+      </section>
     </div>
   );
 }
@@ -2064,47 +2040,8 @@ const styles = {
     fontSize: 14,
   },
 
-  profileCard: {
-    borderRadius: 22,
-    padding: 22,
-    background: "rgba(20,20,20,0.88)",
-    border: "1px solid rgba(255,255,255,0.09)",
-    boxShadow: "0 16px 42px rgba(0,0,0,0.28)",
-    marginBottom: 14,
-    textAlign: "center",
-  },
-
-  avatarCircle: {
-    width: 96,
-    height: 96,
-    margin: "0 auto 14px",
-    borderRadius: "50%",
-    display: "grid",
-    placeItems: "center",
-    background: "linear-gradient(135deg, #1f2937, #111827)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    fontSize: 38,
-  },
-
-  profileName: {
-    margin: "0 0 8px",
-  },
-
   floatingButton: {
-    position: "fixed",
-    left: "50%",
-    bottom: 142,
-    transform: "translateX(-50%)",
-    width: 66,
-    height: 66,
-    borderRadius: "50%",
-    border: 0,
-    color: "white",
-    background: "linear-gradient(135deg, #7c3aed, #ec4899)",
-    boxShadow: "0 0 30px rgba(236,72,153,0.55)",
-    fontSize: 24,
-    cursor: "pointer",
-    zIndex: 20,
+    display: "none",
   },
 
   navStack: {
@@ -2151,6 +2088,42 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     gap: 3,
+  },
+
+  nativeNavButton: {
+    border: 0,
+    borderRadius: 22,
+    padding: "6px 4px 7px",
+    background:
+      "radial-gradient(circle at 30% 20%, rgba(34,211,238,0.26), transparent 34%), linear-gradient(135deg, rgba(124,58,237,0.82), rgba(236,72,153,0.78))",
+    color: "#ffffff",
+    boxShadow:
+      "0 0 22px rgba(236,72,153,0.42), inset 0 0 0 1px rgba(255,255,255,0.14)",
+    fontSize: 11,
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+    transform: "translateY(-9px)",
+    minHeight: 58,
+  },
+
+  nativeNavIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: "50%",
+    display: "grid",
+    placeItems: "center",
+    background: "rgba(0,0,0,0.26)",
+    fontSize: 20,
+    lineHeight: 1,
+  },
+
+  nativeNavLabel: {
+    fontSize: 10,
+    fontWeight: 800,
   },
 
   navItemActive: {
@@ -2425,7 +2398,68 @@ const styles = {
     padding: "8px 0",
     color: "rgba(255,255,255,0.5)",
   },
+
+  sheetOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 90,
+    background: "rgba(0,0,0,0.52)",
+    backdropFilter: "blur(8px)",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    padding: 12,
+    boxSizing: "border-box",
+  },
+
+  nativeSheet: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: "26px 26px 20px 20px",
+    padding: "12px 16px 16px",
+    background:
+      "radial-gradient(circle at 50% 0%, rgba(139,92,246,0.22), transparent 34%), rgba(18,18,18,0.98)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    boxShadow: "0 -24px 80px rgba(0,0,0,0.62)",
+    boxSizing: "border-box",
+    textAlign: "center",
+  },
+
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.2)",
+    margin: "0 auto 14px",
+  },
+
+  nativeSheetIcon: {
+    width: 70,
+    height: 70,
+    margin: "4px auto 14px",
+    borderRadius: "50%",
+    display: "grid",
+    placeItems: "center",
+    background: "linear-gradient(135deg, #7c3aed, #ec4899, #22d3ee)",
+    boxShadow:
+      "0 0 26px rgba(236,72,153,0.46), 0 0 70px rgba(34,211,238,0.18)",
+    fontSize: 28,
+    fontWeight: 900,
+  },
+
+  nativeSheetTitle: {
+    margin: "0 0 8px",
+    fontSize: 20,
+  },
+
+  nativeSheetText: {
+    margin: "0 0 16px",
+    color: "rgba(255,255,255,0.62)",
+    lineHeight: 1.5,
+    fontSize: 14,
+  },
 };
+
 
 ---
 
