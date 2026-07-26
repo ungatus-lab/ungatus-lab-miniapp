@@ -33,8 +33,10 @@ const initialGame = {
   penalties: 0,
   cartsFilled: 0,
   selectedLineId: 1,
-  message: "Manual operator mode. Start Line 1 and keep production stable.",
-  lines: Array.from({ length: LINE_COUNT }, (_, index) => makeLine(index + 1, index === 0)),
+  message: "Start Line 1. Keep resin centered, dry it before the bunker, and change carts on time.",
+  lines: Array.from({ length: LINE_COUNT }, (_, index) =>
+    makeLine(index + 1, index === 0)
+  ),
 };
 
 export default function PixelFlowSurvival({ open, onClose }) {
@@ -49,7 +51,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     setGame({
       ...initialGame,
-      message: "Operator room started. Start Line 1 and watch the camera feeds.",
+      message: "Factory room started. Start Line 1 and watch the camera feeds.",
     });
   }, [open]);
 
@@ -70,6 +72,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function startLine(lineId) {
     setGame((current) => ({
       ...current,
+      selectedLineId: lineId,
       lines: current.lines.map((line) => {
         if (line.id !== lineId || !line.unlocked) return line;
 
@@ -79,14 +82,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
           status: "Running",
         };
       }),
-      selectedLineId: lineId,
-      message: `Line ${lineId} started. Keep resin centered and change carts on time.`,
+      message: `Line ${lineId} started. Watch the belt edges and the cart.`,
     }));
   }
 
   function stopLine(lineId) {
     setGame((current) => ({
       ...current,
+      selectedLineId: lineId,
       lines: current.lines.map((line) => {
         if (line.id !== lineId) return line;
 
@@ -96,7 +99,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
           status: "Stopped",
         };
       }),
-      message: `Line ${lineId} stopped. Production pauses, but hopper risks remain.`,
+      message: `Line ${lineId} stopped.`,
     }));
   }
 
@@ -155,13 +158,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
           status: "Changing cart",
         };
       }),
-      message: `Line ${lineId}: cart change started. Gate closed while cart moves out.`,
+      message: `Line ${lineId}: cart change started. Gate is closed while cart moves.`,
     }));
   }
 
   function unlockNextLine() {
     setGame((current) => {
       const nextLocked = current.lines.find((line) => !line.unlocked);
+
       if (!nextLocked) {
         return {
           ...current,
@@ -170,6 +174,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       }
 
       const cost = nextLocked.id * 450;
+
       if (current.gold < cost) {
         return {
           ...current,
@@ -185,7 +190,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
           if (line.id !== nextLocked.id) return line;
           return makeLine(line.id, true);
         }),
-        message: `Line ${nextLocked.id} unlocked. Manual load increased.`,
+        message: `Line ${nextLocked.id} unlocked.`,
       };
     });
   }
@@ -201,7 +206,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function restartGame() {
     setGame({
       ...initialGame,
-      message: "Operator room restarted. Start Line 1 again.",
+      message: "Factory restarted. Start Line 1 again.",
     });
   }
 
@@ -211,11 +216,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   return (
     <div style={styles.overlay}>
-      <section style={styles.landscapeShell}>
+      <section style={styles.shell}>
         <header style={styles.topHud}>
-          <div style={styles.modeBadge}>
-            <span>OPERATOR MODE</span>
-            <strong>MANUAL CONTROL</strong>
+          <div style={styles.brandPanel}>
+            <span>RESIN FACTORY</span>
+            <strong>MANUAL OPERATOR</strong>
           </div>
 
           <Hud label="TIME" value={formatTime(game.time)} />
@@ -232,19 +237,32 @@ export default function PixelFlowSurvival({ open, onClose }) {
           </button>
         </header>
 
-        <main style={styles.factoryRoom}>
-          <section style={styles.linesArea}>
-            {game.lines.map((line) => (
-              <ProductionLine
+        <main style={styles.stageWrap}>
+          <section style={styles.factoryStage}>
+            <div style={styles.backWall} />
+            <div style={styles.floorGrid} />
+            <div style={styles.lightConeLeft} />
+            <div style={styles.lightConeRight} />
+
+            <div style={styles.pipeHeader}>
+              <div style={styles.pipeHeaderLight} />
+              <span>HOT RESIN FEED</span>
+            </div>
+
+            <div style={styles.cartRail} />
+
+            {game.lines.map((line, index) => (
+              <FactoryLine
                 key={line.id}
                 line={line}
+                index={index}
                 selected={line.id === game.selectedLineId}
                 onSelect={() =>
                   setGame((current) => ({
                     ...current,
                     selectedLineId: line.id,
                     message: line.unlocked
-                      ? `Line ${line.id} selected. Cameras switched.`
+                      ? `Line ${line.id} selected. Camera deck switched.`
                       : `Line ${line.id} is locked.`,
                   }))
                 }
@@ -256,31 +274,30 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 onCart={() => changeCart(line.id)}
               />
             ))}
+
+            <aside style={styles.sideConsole}>
+              <section style={styles.messageBox}>
+                <strong>STATUS</strong>
+                <span>{game.message}</span>
+              </section>
+
+              <button style={styles.unlockButton} onClick={unlockNextLine}>
+                Unlock Next Line
+                <small>{activeLines < LINE_COUNT ? `${nextLineCost} gold` : "complete"}</small>
+              </button>
+
+              <section style={styles.tipBox}>
+                <strong>Manual rules</strong>
+                <span>Too narrow: open valve.</span>
+                <span>Too wide: close valve.</span>
+                <span>Cart full: close gate, change cart.</span>
+              </section>
+            </aside>
           </section>
-
-          <aside style={styles.rightPanel}>
-            <section style={styles.messageBox}>
-              <strong>STATUS</strong>
-              <span>{game.message}</span>
-            </section>
-
-            <section style={styles.taskBox}>
-              <strong>GOALS</strong>
-              <span>Keep resin centered</span>
-              <span>Dry before bunker</span>
-              <span>Change carts on time</span>
-              <span>Unlock more lines</span>
-            </section>
-
-            <button style={styles.unlockButton} onClick={unlockNextLine}>
-              Unlock Next Line
-              <small>{activeLines < LINE_COUNT ? `${nextLineCost} gold` : "complete"}</small>
-            </button>
-          </aside>
         </main>
 
         <section style={styles.cameraDock}>
-          <CameraCard title="CAM 1 / PIPE" unlocked={selectedLine?.unlocked}>
+          <CameraCard title="CAM 1 / PIPE CUT" unlocked={selectedLine?.unlocked}>
             <PipeCamera line={selectedLine} />
           </CameraCard>
 
@@ -288,7 +305,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
             <BeltCamera line={selectedLine} />
           </CameraCard>
 
-          <CameraCard title="CAM 3 / BUNKER + CART" unlocked={selectedLine?.unlocked}>
+          <CameraCard title="CAM 3 / BUNKER RAIL" unlocked={selectedLine?.unlocked}>
             <BunkerCamera line={selectedLine} />
           </CameraCard>
         </section>
@@ -297,7 +314,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
           <section style={styles.gameOver}>
             <h2>Production Failed</h2>
             <p>
-              Penalties reached 100%. Carts filled: <strong>{game.cartsFilled}</strong>.
+              Penalty reached 100%. Carts filled: <strong>{game.cartsFilled}</strong>.
             </p>
             <button style={styles.restartButton} onClick={restartGame}>
               Restart Factory
@@ -320,7 +337,7 @@ function stepGame(current) {
   const nextLines = current.lines.map((line) => {
     if (!line.unlocked) return line;
 
-    let next = { ...line };
+    const next = { ...line };
 
     if (next.changingCart) {
       next.changeTimer -= 1;
@@ -335,13 +352,9 @@ function stepGame(current) {
     }
 
     if (!next.running) {
-      if (next.hopper > 0 && !next.gateOpen) {
-        next.hopper = clamp(next.hopper + 0.4, 0, 120);
-      }
-
       if (next.hopper > 100) {
-        penaltyDelta += 1;
-        next.status = "Idle overflow risk";
+        penaltyDelta += 0.8;
+        next.status = "Idle overflow";
       }
 
       return next;
@@ -354,7 +367,11 @@ function stepGame(current) {
     next.beltWidth = beltWidth;
     next.heat = heat;
 
-    next.clog = clamp(next.clog + 0.35 + Math.max(0, 42 - next.valve) * 0.015, 0, 100);
+    next.clog = clamp(
+      next.clog + 0.35 + Math.max(0, 42 - next.valve) * 0.015,
+      0,
+      100
+    );
 
     if (next.valve > 60 && feed > 35) {
       next.clog = clamp(next.clog - (next.valve - 60) * 0.04, 0, 100);
@@ -379,14 +396,14 @@ function stepGame(current) {
       product = 2.0;
       next.spill = clamp(next.spill + 4, 0, 100);
       penaltyDelta += 1.2;
-      next.status = "Belt edge spill";
-      message = `Line ${next.id}: valve too open, resin is reaching belt edges.`;
+      next.status = "Belt spill";
+      message = `Line ${next.id}: resin is reaching the belt edge.`;
     } else if (tooHot) {
       product = 2.2;
       next.wetJam = clamp(next.wetJam + 5, 0, 100);
       penaltyDelta += 1;
       next.status = "Wet bunker risk";
-      message = `Line ${next.id}: product is too hot near bunker.`;
+      message = `Line ${next.id}: product is too hot near the bunker.`;
     } else {
       product = 2.4;
       penaltyDelta += 0.3;
@@ -451,8 +468,9 @@ function stepGame(current) {
   };
 }
 
-function ProductionLine({
+function FactoryLine({
   line,
+  index,
   selected,
   onSelect,
   onStart,
@@ -462,114 +480,131 @@ function ProductionLine({
   onGate,
   onCart,
 }) {
+  const top = 94 + index * 72;
   const resinColor = getResinColor(line.heat);
-  const steamWidth = clamp(line.heat - 35, 0, 65);
-  const dryZone = clamp(100 - line.heat * 0.75, 12, 70);
-  const productPieces = Math.max(2, Math.floor(line.beltWidth / 18));
-
-  if (!line.unlocked) {
-    return (
-      <div style={{ ...styles.lineRow, ...styles.lockedLine }} onClick={onSelect}>
-        <div style={styles.lockedValve}>LOCKED</div>
-        <div style={styles.lockedBelt}>NO PRODUCT LINE</div>
-        <div style={styles.lockedBunker}>NO CART</div>
-      </div>
-    );
-  }
+  const steamWidth = clamp(line.heat - 35, 0, 72);
+  const dryWidth = clamp(100 - line.heat * 0.74, 12, 70);
+  const productPieces = Math.max(3, Math.floor(line.beltWidth / 17));
+  const activeOpacity = line.unlocked ? 1 : 0.27;
 
   return (
     <div
       style={{
-        ...styles.lineRow,
-        ...(selected ? styles.selectedLine : {}),
+        ...styles.factoryLine,
+        top,
+        opacity: activeOpacity,
+        ...(selected ? styles.selectedFactoryLine : {}),
       }}
       onClick={onSelect}
     >
-      <div style={styles.valvePanel}>
-        <strong>LINE {line.id}</strong>
-        <div style={styles.valveWheel}>◉</div>
-        <span>VALVE {Math.round(line.valve)}%</span>
+      <div style={styles.lineShadow} />
 
-        <div style={styles.valveButtons}>
-          <button style={styles.smallControl} onClick={(event) => stopEvent(event, onOpen)}>
-            +
-          </button>
-          <button style={styles.smallControl} onClick={(event) => stopEvent(event, onCloseValve)}>
-            −
-          </button>
-        </div>
+      <div style={styles.machineBase}>
+        <div style={styles.machineCap} />
+        <div style={styles.valveWheelLarge} />
+        <div style={styles.valveLabel}>L{line.id}</div>
 
-        {!line.running ? (
-          <button style={styles.lineStart} onClick={(event) => stopEvent(event, onStart)}>
-            START
-          </button>
-        ) : (
-          <button style={styles.lineStop} onClick={(event) => stopEvent(event, onStop)}>
-            STOP
-          </button>
+        {line.unlocked && (
+          <div style={styles.valveControls}>
+            <button style={styles.roundControl} onClick={(event) => stopEvent(event, onOpen)}>
+              +
+            </button>
+            <button
+              style={styles.roundControl}
+              onClick={(event) => stopEvent(event, onCloseValve)}
+            >
+              -
+            </button>
+          </div>
+        )}
+
+        {line.unlocked && (
+          <div style={styles.valvePercent}>{Math.round(line.valve)}%</div>
         )}
       </div>
 
-      <div style={styles.pipeNozzle}>
-        <div style={styles.pipeBody}>
+      <div style={styles.nozzleBlock}>
+        <div style={styles.nozzlePipe}>
           <div
             style={{
-              ...styles.pipeClog,
+              ...styles.nozzleClog,
               width: `${line.clog}%`,
             }}
           />
-          <div style={styles.pipeStream} />
+          {line.running && <div style={styles.nozzleGlow} />}
         </div>
       </div>
 
-      <div style={styles.belt}>
-        <div
-          style={{
-            ...styles.steam,
-            width: `${steamWidth}%`,
-          }}
-        />
-        <div
-          style={{
-            ...styles.resinStrip,
-            width: `${clamp(line.beltWidth, 8, 96)}%`,
-            background: resinColor,
-          }}
-        />
-        <div
-          style={{
-            ...styles.dryLayer,
-            width: `${dryZone}%`,
-          }}
-        />
-        <div style={styles.crackZone}>
-          {Array.from({ length: productPieces }).map((_, index) => (
-            <span key={index} style={styles.fallingPiece} />
-          ))}
-        </div>
+      <div style={styles.longBelt}>
+        <div style={styles.beltRails} />
+        <div style={styles.beltMotion} />
+
+        {line.unlocked && line.running && (
+          <>
+            <div
+              style={{
+                ...styles.steamCloud,
+                width: `${steamWidth}%`,
+              }}
+            />
+            <div
+              style={{
+                ...styles.resinRibbon,
+                width: `${clamp(line.beltWidth, 8, 96)}%`,
+                background: resinColor,
+              }}
+            />
+            <div
+              style={{
+                ...styles.dryOverlay,
+                width: `${dryWidth}%`,
+              }}
+            />
+            <div style={styles.endCrackArea}>
+              {Array.from({ length: productPieces }).map((_, pieceIndex) => (
+                <span
+                  key={pieceIndex}
+                  style={{
+                    ...styles.fallingChunk,
+                    left: `${12 + pieceIndex * 10}px`,
+                    animationDelay: `${pieceIndex * 0.12}s`,
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {!line.running && line.unlocked && (
+          <div style={styles.idleBeltText}>READY</div>
+        )}
+
+        {!line.unlocked && <div style={styles.lockedText}>LOCKED LINE</div>}
       </div>
 
-      <div style={styles.bunkerArea}>
-        <div style={styles.bunkerTop}>
+      <div style={styles.bunkerCluster}>
+        <div style={styles.bunkerBody}>
           <div
             style={{
-              ...styles.hopperFill,
+              ...styles.bunkerFill,
               height: `${clamp(line.hopper, 0, 100)}%`,
             }}
           />
         </div>
 
-        <div style={styles.gateRow}>
-          <button style={styles.gateButton} onClick={(event) => stopEvent(event, onGate)}>
-            {line.gateOpen ? "CLOSE GATE" : "OPEN GATE"}
-          </button>
-        </div>
+        <div style={styles.bunkerLegs} />
 
-        <div style={styles.cartTrack}>
+        {line.unlocked && (
+          <button style={styles.gateSwitch} onClick={(event) => stopEvent(event, onGate)}>
+            {line.gateOpen ? "GATE" : "CLOSED"}
+          </button>
+        )}
+
+        <div style={styles.cartRails}>
           <div
             style={{
-              ...styles.cart,
-              transform: line.changingCart ? "translateX(26px)" : "translateX(0)",
+              ...styles.cartCar,
+              transform: line.changingCart ? "translateX(42px)" : "translateX(0)",
               opacity: line.changingCart ? 0.55 : 1,
             }}
           >
@@ -582,10 +617,24 @@ function ProductionLine({
           </div>
         </div>
 
-        <button style={styles.cartButton} onClick={(event) => stopEvent(event, onCart)}>
-          {line.changingCart ? `CHANGING ${line.changeTimer}` : "CHANGE CART"}
-        </button>
+        {line.unlocked && (
+          <button style={styles.cartSwitch} onClick={(event) => stopEvent(event, onCart)}>
+            {line.changingCart ? `CART ${line.changeTimer}` : "CHANGE"}
+          </button>
+        )}
       </div>
+
+      {line.unlocked && (
+        <button
+          style={{
+            ...styles.runButton,
+            ...(line.running ? styles.stopButton : {}),
+          }}
+          onClick={(event) => stopEvent(event, line.running ? onStop : onStart)}
+        >
+          {line.running ? "STOP" : "START"}
+        </button>
+      )}
     </div>
   );
 }
@@ -607,17 +656,23 @@ function PipeCamera({ line }) {
 
   return (
     <div style={styles.pipeCam}>
-      <div style={styles.camValve}>VALVE {Math.round(line.valve)}%</div>
-      <div style={styles.pipeCut}>
+      <div style={styles.cameraGlow} />
+      <div style={styles.pipeCutTitle}>VALVE {Math.round(line.valve)}%</div>
+      <div style={styles.pipeCutView}>
         <div
           style={{
             ...styles.pipeCutClog,
             width: `${line.clog}%`,
           }}
         />
-        <div style={{ ...styles.pipeCutResin, background: resinColor }} />
+        <div
+          style={{
+            ...styles.pipeCutResin,
+            background: resinColor,
+          }}
+        />
       </div>
-      <div style={styles.camInfo}>
+      <div style={styles.cameraStats}>
         <span>CLOG {Math.round(line.clog)}%</span>
         <span>HEAT {Math.round(line.heat)}%</span>
       </div>
@@ -627,12 +682,13 @@ function PipeCamera({ line }) {
 
 function BeltCamera({ line }) {
   const resinColor = getResinColor(line.heat);
-  const steamLength = clamp(line.heat - 30, 5, 85);
+  const steamLength = clamp(line.heat - 30, 5, 86);
   const width = clamp(line.beltWidth, 8, 96);
 
   return (
     <div style={styles.beltCam}>
-      <div style={styles.topBeltRails}>
+      <div style={styles.cameraGlow} />
+      <div style={styles.topBeltView}>
         <div
           style={{
             ...styles.topSteam,
@@ -646,7 +702,10 @@ function BeltCamera({ line }) {
             background: resinColor,
           }}
         />
+        <div style={styles.topEdgeGuardLeft} />
+        <div style={styles.topEdgeGuardRight} />
         <div style={styles.topCracks}>
+          <span />
           <span />
           <span />
           <span />
@@ -659,12 +718,14 @@ function BeltCamera({ line }) {
 function BunkerCamera({ line }) {
   return (
     <div style={styles.bunkerCam}>
+      <div style={styles.cameraGlow} />
       <div style={styles.camBeltEnd}>
         <span />
         <span />
         <span />
         <span />
       </div>
+
       <div style={styles.camBunker}>
         <div
           style={{
@@ -673,7 +734,9 @@ function BunkerCamera({ line }) {
           }}
         />
       </div>
+
       <div style={styles.camGate}>{line.gateOpen ? "GATE OPEN" : "GATE CLOSED"}</div>
+
       <div style={styles.camCart}>
         <div
           style={{
@@ -710,14 +773,14 @@ function stopEvent(event, callback) {
 
 function getResinColor(heat) {
   if (heat > 78) {
-    return "linear-gradient(90deg, #fff1a8, #f59e0b, #f97316)";
+    return "linear-gradient(90deg, #fff7ad, #facc15, #f97316)";
   }
 
   if (heat < 35) {
-    return "linear-gradient(90deg, #9a6a1f, #b7791f, #7c4a12)";
+    return "linear-gradient(90deg, #8a5a13, #b7791f, #6b3f0c)";
   }
 
-  return "linear-gradient(90deg, #facc15, #f59e0b, #d97706)";
+  return "linear-gradient(90deg, #fde047, #f59e0b, #d97706)";
 }
 
 function formatTime(seconds) {
@@ -736,19 +799,19 @@ const styles = {
     inset: 0,
     zIndex: 120,
     background:
-      "radial-gradient(circle at 50% 0%, rgba(245,158,11,0.16), transparent 32%), linear-gradient(180deg, #090909 0%, #17120a 100%)",
+      "radial-gradient(circle at 45% 0%, rgba(245,158,11,0.22), transparent 34%), linear-gradient(180deg, #070707 0%, #15100a 100%)",
     color: "#f8fafc",
     overflow: "hidden",
     fontFamily:
       "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
 
-  landscapeShell: {
+  shell: {
     width: "100vw",
     height: "100vh",
     minHeight: 620,
     display: "grid",
-    gridTemplateRows: "68px 1fr 170px",
+    gridTemplateRows: "62px 1fr 168px",
     gap: 8,
     padding: 8,
     boxSizing: "border-box",
@@ -756,289 +819,420 @@ const styles = {
 
   topHud: {
     display: "grid",
-    gridTemplateColumns: "170px repeat(4, 1fr) 92px 72px",
+    gridTemplateColumns: "180px repeat(4, 1fr) 88px 72px",
     gap: 8,
   },
 
-  modeBadge: {
-    borderRadius: 8,
-    border: "1px solid rgba(245,158,11,0.36)",
-    background: "rgba(15,23,42,0.78)",
+  brandPanel: {
+    borderRadius: 14,
+    border: "1px solid rgba(251,191,36,0.34)",
+    background:
+      "linear-gradient(180deg, rgba(31,41,55,0.92), rgba(15,23,42,0.88))",
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
-    padding: "0 12px",
+    padding: "0 14px",
     color: "#fbbf24",
     fontWeight: 900,
     fontSize: 12,
+    boxShadow: "inset 0 0 24px rgba(245,158,11,0.07)",
   },
 
   hudBox: {
-    borderRadius: 8,
-    border: "1px solid rgba(255,255,255,0.13)",
-    background: "rgba(15,23,42,0.78)",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(15,23,42,0.82)",
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
     gap: 3,
-    color: "rgba(255,255,255,0.62)",
+    color: "rgba(255,255,255,0.64)",
     fontSize: 11,
     fontWeight: 900,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.24)",
   },
 
   hudDanger: {
-    border: "1px solid rgba(248,113,113,0.45)",
+    border: "1px solid rgba(248,113,113,0.46)",
     color: "#fecaca",
   },
 
   topButton: {
     border: "1px solid rgba(255,255,255,0.13)",
-    borderRadius: 8,
+    borderRadius: 14,
     background: "rgba(255,255,255,0.055)",
     color: "#ffffff",
     fontWeight: 900,
     cursor: "pointer",
   },
 
-  factoryRoom: {
+  stageWrap: {
     minHeight: 0,
-    display: "grid",
-    gridTemplateColumns: "1fr 190px",
-    gap: 8,
-  },
-
-  linesArea: {
-    display: "grid",
-    gridTemplateRows: "repeat(5, 1fr)",
-    gap: 7,
-    minHeight: 0,
-  },
-
-  lineRow: {
-    position: "relative",
-    minHeight: 76,
-    display: "grid",
-    gridTemplateColumns: "116px 84px 1fr 170px",
-    gap: 8,
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.1)",
-    background:
-      "linear-gradient(180deg, rgba(31,41,55,0.86), rgba(17,24,39,0.92))",
-    padding: 6,
-    boxSizing: "border-box",
-    cursor: "pointer",
     overflow: "hidden",
   },
 
-  selectedLine: {
-    border: "1px solid rgba(251,191,36,0.55)",
-    boxShadow: "0 0 22px rgba(251,191,36,0.12)",
+  factoryStage: {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    minHeight: 380,
+    borderRadius: 24,
+    overflow: "hidden",
+    border: "1px solid rgba(255,255,255,0.12)",
+    background:
+      "radial-gradient(circle at 22% 8%, rgba(251,191,36,0.16), transparent 26%), radial-gradient(circle at 82% 10%, rgba(34,211,238,0.1), transparent 28%), linear-gradient(180deg, #1f2937 0%, #111827 36%, #090909 100%)",
+    boxShadow: "0 22px 70px rgba(0,0,0,0.54)",
   },
 
-  lockedLine: {
-    opacity: 0.42,
-    gridTemplateColumns: "116px 1fr 150px",
+  backWall: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 96,
+    background:
+      "linear-gradient(180deg, rgba(148,163,184,0.12), rgba(15,23,42,0)), repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 2px, transparent 2px, transparent 72px)",
   },
 
-  lockedValve: {
-    display: "grid",
-    placeItems: "center",
-    borderRadius: 8,
-    background: "rgba(0,0,0,0.28)",
-    color: "rgba(255,255,255,0.48)",
-    fontWeight: 900,
+  floorGrid: {
+    position: "absolute",
+    left: -40,
+    right: -40,
+    top: 86,
+    bottom: 0,
+    background:
+      "linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,0.04) 1px, transparent 1px)",
+    backgroundSize: "86px 54px",
+    transform: "perspective(700px) rotateX(58deg) translateY(20px)",
+    transformOrigin: "50% 0%",
+    opacity: 0.36,
   },
 
-  lockedBelt: {
-    display: "grid",
-    placeItems: "center",
-    borderRadius: 8,
-    border: "1px dashed rgba(255,255,255,0.14)",
-    color: "rgba(255,255,255,0.35)",
-    fontWeight: 900,
+  lightConeLeft: {
+    position: "absolute",
+    left: 120,
+    top: 0,
+    width: 260,
+    height: 330,
+    background:
+      "radial-gradient(circle at 50% 0%, rgba(251,191,36,0.18), transparent 66%)",
+    filter: "blur(4px)",
+    opacity: 0.75,
   },
 
-  lockedBunker: {
-    display: "grid",
-    placeItems: "center",
-    borderRadius: 8,
-    background: "rgba(0,0,0,0.24)",
-    color: "rgba(255,255,255,0.35)",
-    fontWeight: 900,
+  lightConeRight: {
+    position: "absolute",
+    right: 210,
+    top: 0,
+    width: 280,
+    height: 340,
+    background:
+      "radial-gradient(circle at 50% 0%, rgba(56,189,248,0.12), transparent 66%)",
+    filter: "blur(4px)",
+    opacity: 0.7,
   },
 
-  valvePanel: {
-    display: "grid",
-    gridTemplateColumns: "1fr 30px",
-    gridTemplateRows: "18px 1fr 18px 24px",
-    gap: 4,
-    alignItems: "center",
+  pipeHeader: {
+    position: "absolute",
+    left: 34,
+    top: 34,
+    width: 132,
+    height: 38,
+    borderRadius: 12,
+    border: "1px solid rgba(251,191,36,0.28)",
+    background: "rgba(15,23,42,0.78)",
     color: "#fbbf24",
+    fontSize: 10,
+    fontWeight: 900,
+    display: "grid",
+    placeItems: "center",
+    boxShadow: "0 10px 34px rgba(0,0,0,0.28)",
+  },
+
+  pipeHeaderLight: {
+    position: "absolute",
+    left: 12,
+    top: 12,
+    width: 10,
+    height: 10,
+    borderRadius: "50%",
+    background: "#22c55e",
+    boxShadow: "0 0 14px rgba(34,197,94,0.8)",
+  },
+
+  cartRail: {
+    position: "absolute",
+    right: 80,
+    top: 78,
+    bottom: 26,
+    width: 190,
+    borderLeft: "2px solid rgba(148,163,184,0.2)",
+    borderRight: "2px solid rgba(148,163,184,0.2)",
+    background:
+      "repeating-linear-gradient(180deg, transparent 0px, transparent 34px, rgba(148,163,184,0.16) 34px, rgba(148,163,184,0.16) 38px)",
+    opacity: 0.65,
+  },
+
+  factoryLine: {
+    position: "absolute",
+    left: 38,
+    right: 288,
+    height: 62,
+    cursor: "pointer",
+  },
+
+  selectedFactoryLine: {
+    filter: "drop-shadow(0 0 14px rgba(251,191,36,0.38))",
+  },
+
+  lineShadow: {
+    position: "absolute",
+    left: 150,
+    right: -12,
+    bottom: -10,
+    height: 16,
+    borderRadius: "50%",
+    background: "rgba(0,0,0,0.34)",
+    filter: "blur(8px)",
+  },
+
+  machineBase: {
+    position: "absolute",
+    left: 0,
+    top: 2,
+    width: 104,
+    height: 58,
+    borderRadius: 18,
+    background:
+      "linear-gradient(145deg, #4b5563 0%, #1f2937 52%, #111827 100%)",
+    border: "1px solid rgba(255,255,255,0.16)",
+    boxShadow:
+      "inset 0 0 18px rgba(255,255,255,0.05), 0 10px 30px rgba(0,0,0,0.34)",
+  },
+
+  machineCap: {
+    position: "absolute",
+    left: 12,
+    top: -12,
+    width: 64,
+    height: 24,
+    borderRadius: "12px 12px 4px 4px",
+    background: "linear-gradient(180deg, #6b7280, #374151)",
+    border: "1px solid rgba(255,255,255,0.14)",
+  },
+
+  valveWheelLarge: {
+    position: "absolute",
+    left: 14,
+    top: 16,
+    width: 34,
+    height: 34,
+    borderRadius: "50%",
+    border: "4px solid #b45309",
+    boxShadow: "inset 0 0 0 4px rgba(0,0,0,0.22)",
+  },
+
+  valveLabel: {
+    position: "absolute",
+    right: 12,
+    top: 10,
+    color: "#fbbf24",
+    fontSize: 12,
+    fontWeight: 900,
+  },
+
+  valvePercent: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    color: "#fde68a",
     fontSize: 11,
     fontWeight: 900,
   },
 
-  valveWheel: {
-    gridColumn: "1 / 2",
-    gridRow: "2 / 3",
-    width: 42,
-    height: 42,
-    borderRadius: "50%",
-    border: "3px solid #b45309",
+  valveControls: {
+    position: "absolute",
+    left: 58,
+    top: 15,
     display: "grid",
-    placeItems: "center",
-    color: "#fbbf24",
-    boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.42)",
-  },
-
-  valveButtons: {
-    gridColumn: "2 / 3",
-    gridRow: "1 / 5",
-    display: "grid",
+    gridTemplateRows: "1fr 1fr",
     gap: 4,
   },
 
-  smallControl: {
-    border: "1px solid rgba(255,255,255,0.18)",
-    borderRadius: 6,
-    background: "rgba(251,191,36,0.14)",
-    color: "#fef3c7",
+  roundControl: {
+    width: 24,
+    height: 18,
+    border: "1px solid rgba(251,191,36,0.45)",
+    borderRadius: 8,
+    background: "rgba(251,191,36,0.16)",
+    color: "#fde68a",
     fontWeight: 900,
     cursor: "pointer",
+    lineHeight: 1,
   },
 
-  lineStart: {
-    gridColumn: "1 / 3",
-    border: 0,
-    borderRadius: 6,
-    background: "linear-gradient(135deg, #16a34a, #22c55e)",
-    color: "#fff",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontSize: 10,
+  nozzleBlock: {
+    position: "absolute",
+    left: 104,
+    top: 18,
+    width: 90,
+    height: 26,
   },
 
-  lineStop: {
-    gridColumn: "1 / 3",
-    border: 0,
-    borderRadius: 6,
-    background: "linear-gradient(135deg, #991b1b, #ef4444)",
-    color: "#fff",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontSize: 10,
-  },
-
-  pipeNozzle: {
-    display: "flex",
-    alignItems: "center",
-  },
-
-  pipeBody: {
+  nozzlePipe: {
     position: "relative",
     width: "100%",
-    height: 34,
-    borderRadius: 999,
+    height: "100%",
+    borderRadius: "0 999px 999px 0",
     overflow: "hidden",
-    background: "linear-gradient(180deg, #4b5563, #111827)",
+    background: "linear-gradient(180deg, #6b7280, #1f2937)",
     border: "1px solid rgba(255,255,255,0.16)",
   },
 
-  pipeClog: {
+  nozzleClog: {
     position: "absolute",
     right: 0,
     top: 0,
     bottom: 0,
-    background: "linear-gradient(90deg, rgba(92,38,8,0.4), rgba(41,21,7,0.95))",
-  },
-
-  pipeStream: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    top: 12,
-    height: 10,
-    borderRadius: 999,
-    background: "linear-gradient(90deg, #facc15, #f59e0b)",
-    boxShadow: "0 0 12px rgba(245,158,11,0.4)",
-  },
-
-  belt: {
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: 8,
     background:
-      "repeating-linear-gradient(90deg, #111827 0px, #111827 22px, #1f2937 22px, #1f2937 44px)",
-    border: "1px solid rgba(255,255,255,0.12)",
+      "linear-gradient(90deg, rgba(120,53,15,0.2), rgba(41,21,7,0.96))",
   },
 
-  resinStrip: {
+  nozzleGlow: {
     position: "absolute",
-    left: "2%",
-    top: "35%",
-    height: "28%",
+    right: -8,
+    top: 6,
+    width: 28,
+    height: 12,
     borderRadius: 999,
-    boxShadow: "0 0 18px rgba(245,158,11,0.28)",
+    background: "#facc15",
+    boxShadow: "0 0 20px rgba(250,204,21,0.8)",
   },
 
-  steam: {
+  longBelt: {
+    position: "absolute",
+    left: 190,
+    right: 132,
+    top: 8,
+    height: 46,
+    borderRadius: 12,
+    overflow: "hidden",
+    background:
+      "linear-gradient(180deg, rgba(31,41,55,0.95), rgba(15,23,42,0.98))",
+    border: "1px solid rgba(255,255,255,0.14)",
+    transform: "skewX(-7deg)",
+    boxShadow:
+      "inset 0 0 18px rgba(255,255,255,0.035), 0 10px 26px rgba(0,0,0,0.36)",
+  },
+
+  beltRails: {
+    position: "absolute",
+    inset: 0,
+    background:
+      "linear-gradient(180deg, rgba(148,163,184,0.22) 0px, transparent 7px, transparent calc(100% - 7px), rgba(148,163,184,0.22) 100%)",
+  },
+
+  beltMotion: {
+    position: "absolute",
+    inset: 0,
+    background:
+      "repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 12px, transparent 12px, transparent 32px)",
+    animation: "none",
+  },
+
+  steamCloud: {
+    position: "absolute",
+    left: "3%",
+    top: "-14%",
+    bottom: "-14%",
+    background:
+      "radial-gradient(circle at 20% 45%, rgba(255,255,255,0.38), transparent 28%), radial-gradient(circle at 48% 50%, rgba(255,255,255,0.28), transparent 32%), radial-gradient(circle at 78% 42%, rgba(255,255,255,0.2), transparent 34%)",
+    opacity: 0.48,
+    filter: "blur(6px)",
+  },
+
+  resinRibbon: {
     position: "absolute",
     left: "4%",
-    top: "4%",
-    bottom: "4%",
-    background:
-      "radial-gradient(circle, rgba(255,255,255,0.3), transparent 62%)",
-    opacity: 0.45,
-    filter: "blur(5px)",
+    top: "31%",
+    height: "38%",
+    borderRadius: 999,
+    boxShadow: "0 0 20px rgba(245,158,11,0.46)",
   },
 
-  dryLayer: {
+  dryOverlay: {
     position: "absolute",
     right: 0,
-    top: "35%",
-    height: "28%",
+    top: "31%",
+    height: "38%",
     background:
-      "linear-gradient(90deg, rgba(120,53,15,0), rgba(120,53,15,0.35), rgba(250,204,21,0.15))",
+      "linear-gradient(90deg, rgba(120,53,15,0), rgba(120,53,15,0.28), rgba(252,211,77,0.08))",
   },
 
-  crackZone: {
+  endCrackArea: {
     position: "absolute",
     right: 0,
-    top: "18%",
-    bottom: "18%",
-    width: 54,
+    top: 0,
+    bottom: 0,
+    width: 78,
   },
 
-  fallingPiece: {
-    position: "relative",
-    display: "inline-block",
-    width: 8,
-    height: 8,
-    margin: 2,
-    borderRadius: 2,
+  fallingChunk: {
+    position: "absolute",
+    top: 18,
+    width: 9,
+    height: 9,
+    borderRadius: 3,
     background: "#fbbf24",
-    transform: "rotate(20deg)",
+    transform: "rotate(18deg)",
+    boxShadow: "0 0 10px rgba(251,191,36,0.45)",
   },
 
-  bunkerArea: {
-    position: "relative",
+  idleBeltText: {
+    position: "absolute",
+    inset: 0,
     display: "grid",
-    gridTemplateColumns: "70px 1fr",
-    gridTemplateRows: "1fr 24px 34px",
-    gap: 4,
+    placeItems: "center",
+    color: "rgba(255,255,255,0.36)",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.16em",
   },
 
-  bunkerTop: {
-    gridRow: "1 / 3",
-    position: "relative",
+  lockedText: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    color: "rgba(255,255,255,0.24)",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.16em",
+  },
+
+  bunkerCluster: {
+    position: "absolute",
+    right: 0,
+    top: -8,
+    width: 130,
+    height: 82,
+  },
+
+  bunkerBody: {
+    position: "absolute",
+    left: 18,
+    top: 0,
+    width: 54,
+    height: 56,
+    borderRadius: "12px 12px 8px 8px",
     overflow: "hidden",
-    borderRadius: "8px 8px 4px 4px",
-    background: "linear-gradient(180deg, #374151, #111827)",
-    border: "1px solid rgba(255,255,255,0.14)",
+    background: "linear-gradient(180deg, #6b7280, #1f2937)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    clipPath: "polygon(0 0, 100% 0, 86% 100%, 14% 100%)",
   },
 
-  hopperFill: {
+  bunkerFill: {
     position: "absolute",
     left: 0,
     right: 0,
@@ -1046,39 +1240,53 @@ const styles = {
     background: "linear-gradient(180deg, #fbbf24, #92400e)",
   },
 
-  gateRow: {
-    display: "grid",
+  bunkerLegs: {
+    position: "absolute",
+    left: 24,
+    top: 53,
+    width: 42,
+    height: 18,
+    borderLeft: "3px solid rgba(148,163,184,0.5)",
+    borderRight: "3px solid rgba(148,163,184,0.5)",
   },
 
-  gateButton: {
+  gateSwitch: {
+    position: "absolute",
+    left: 78,
+    top: 5,
+    width: 48,
+    height: 25,
     border: 0,
-    borderRadius: 6,
+    borderRadius: 8,
     background: "rgba(59,130,246,0.22)",
     color: "#bfdbfe",
+    fontSize: 8,
     fontWeight: 900,
     cursor: "pointer",
-    fontSize: 9,
   },
 
-  cartTrack: {
-    gridColumn: "1 / 2",
-    gridRow: "3 / 4",
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: 5,
-    background: "rgba(0,0,0,0.35)",
-  },
-
-  cart: {
+  cartRails: {
     position: "absolute",
-    left: 8,
-    right: 8,
-    bottom: 2,
-    height: 28,
-    borderRadius: "4px 4px 8px 8px",
-    background: "#4b5563",
-    border: "1px solid rgba(255,255,255,0.2)",
+    left: 4,
+    right: 10,
+    bottom: 0,
+    height: 30,
+    borderRadius: 8,
+    background:
+      "linear-gradient(180deg, rgba(0,0,0,0.2), rgba(0,0,0,0.42)), repeating-linear-gradient(90deg, rgba(148,163,184,0.3) 0px, rgba(148,163,184,0.3) 2px, transparent 2px, transparent 22px)",
     overflow: "hidden",
+  },
+
+  cartCar: {
+    position: "absolute",
+    left: 18,
+    bottom: 3,
+    width: 58,
+    height: 23,
+    borderRadius: "5px 5px 10px 10px",
+    overflow: "hidden",
+    background: "#475569",
+    border: "1px solid rgba(255,255,255,0.22)",
     transition: "0.35s ease",
   },
 
@@ -1090,63 +1298,92 @@ const styles = {
     background: "linear-gradient(180deg, #fbbf24, #a16207)",
   },
 
-  cartButton: {
-    gridColumn: "2 / 3",
-    gridRow: "3 / 4",
+  cartSwitch: {
+    position: "absolute",
+    right: 8,
+    bottom: 3,
+    width: 48,
+    height: 24,
     border: 0,
-    borderRadius: 6,
+    borderRadius: 8,
     background: "rgba(251,191,36,0.18)",
     color: "#fde68a",
+    fontSize: 8,
     fontWeight: 900,
     cursor: "pointer",
-    fontSize: 9,
   },
 
-  rightPanel: {
+  runButton: {
+    position: "absolute",
+    left: 112,
+    top: -2,
+    width: 54,
+    height: 22,
+    border: 0,
+    borderRadius: 8,
+    background: "linear-gradient(135deg, #16a34a, #22c55e)",
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  stopButton: {
+    background: "linear-gradient(135deg, #991b1b, #ef4444)",
+  },
+
+  sideConsole: {
+    position: "absolute",
+    right: 16,
+    top: 22,
+    width: 246,
+    bottom: 22,
     display: "grid",
-    gridTemplateRows: "92px 1fr 70px",
-    gap: 8,
+    gridTemplateRows: "112px 62px 1fr",
+    gap: 10,
   },
 
   messageBox: {
-    borderRadius: 10,
+    borderRadius: 16,
     border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(15,23,42,0.78)",
+    background: "rgba(15,23,42,0.84)",
     padding: 12,
     display: "flex",
     flexDirection: "column",
     gap: 8,
+    color: "rgba(255,255,255,0.68)",
     fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
-  },
-
-  taskBox: {
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(15,23,42,0.78)",
-    padding: 12,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
+    boxShadow: "0 12px 36px rgba(0,0,0,0.28)",
   },
 
   unlockButton: {
     border: 0,
-    borderRadius: 10,
+    borderRadius: 16,
     background: "linear-gradient(135deg, #7c3aed, #f59e0b)",
-    color: "#fff",
+    color: "#ffffff",
     fontWeight: 900,
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
     gap: 3,
   },
 
+  tipBox: {
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(15,23,42,0.72)",
+    padding: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 9,
+    color: "rgba(255,255,255,0.58)",
+    fontSize: 12,
+  },
+
   cameraDock: {
+    minHeight: 0,
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
     gap: 8,
@@ -1154,10 +1391,11 @@ const styles = {
 
   cameraCard: {
     minHeight: 0,
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(15,23,42,0.82)",
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.13)",
+    background: "rgba(15,23,42,0.88)",
     overflow: "hidden",
+    boxShadow: "0 14px 38px rgba(0,0,0,0.34)",
   },
 
   cameraTitle: {
@@ -1165,18 +1403,28 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "0 10px",
-    background: "rgba(0,0,0,0.35)",
+    padding: "0 12px",
+    background: "rgba(0,0,0,0.36)",
     color: "#fbbf24",
     fontSize: 11,
     fontWeight: 900,
+    letterSpacing: "0.04em",
   },
 
   cameraScreen: {
     position: "relative",
-    height: 132,
+    height: 130,
     overflow: "hidden",
-    background: "#050505",
+    background:
+      "radial-gradient(circle at 50% 20%, rgba(34,211,238,0.08), transparent 45%), #050505",
+  },
+
+  cameraGlow: {
+    position: "absolute",
+    inset: 0,
+    background:
+      "linear-gradient(180deg, rgba(34,211,238,0.08), transparent 34%), repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px)",
+    pointerEvents: "none",
   },
 
   noSignal: {
@@ -1189,21 +1437,22 @@ const styles = {
   },
 
   pipeCam: {
+    position: "relative",
     height: "100%",
     padding: 12,
     boxSizing: "border-box",
     display: "grid",
-    gridTemplateRows: "24px 1fr 24px",
+    gridTemplateRows: "20px 1fr 22px",
     gap: 8,
   },
 
-  camValve: {
+  pipeCutTitle: {
     color: "#fbbf24",
     fontWeight: 900,
     fontSize: 12,
   },
 
-  pipeCut: {
+  pipeCutView: {
     position: "relative",
     overflow: "hidden",
     borderRadius: 999,
@@ -1216,37 +1465,41 @@ const styles = {
     right: 0,
     top: 0,
     bottom: 0,
-    background: "linear-gradient(90deg, rgba(120,53,15,0.32), rgba(41,21,7,0.96))",
+    background:
+      "linear-gradient(90deg, rgba(120,53,15,0.22), rgba(41,21,7,0.96))",
   },
 
   pipeCutResin: {
     position: "absolute",
-    left: "8%",
-    right: "8%",
-    top: "38%",
-    height: "24%",
+    left: "7%",
+    right: "7%",
+    top: "37%",
+    height: "26%",
     borderRadius: 999,
+    boxShadow: "0 0 18px rgba(245,158,11,0.42)",
   },
 
-  camInfo: {
+  cameraStats: {
     display: "flex",
     justifyContent: "space-between",
-    color: "rgba(255,255,255,0.62)",
+    color: "rgba(255,255,255,0.64)",
     fontSize: 11,
+    fontWeight: 800,
   },
 
   beltCam: {
+    position: "relative",
     height: "100%",
-    padding: 12,
+    padding: 10,
     boxSizing: "border-box",
   },
 
-  topBeltRails: {
+  topBeltView: {
     position: "relative",
     height: "100%",
-    borderRadius: 10,
+    borderRadius: 14,
     background:
-      "linear-gradient(90deg, #111827 0%, #1f2937 12%, #111827 12%, #111827 88%, #1f2937 88%, #111827 100%)",
+      "linear-gradient(90deg, #111827 0%, #334155 11%, #111827 12%, #111827 88%, #334155 89%, #111827 100%)",
     border: "1px solid rgba(255,255,255,0.14)",
     overflow: "hidden",
   },
@@ -1257,9 +1510,9 @@ const styles = {
     top: 0,
     width: "100%",
     background:
-      "radial-gradient(circle at 50% 20%, rgba(255,255,255,0.28), transparent 64%)",
+      "radial-gradient(circle at 50% 16%, rgba(255,255,255,0.3), transparent 62%)",
     filter: "blur(6px)",
-    opacity: 0.55,
+    opacity: 0.56,
   },
 
   topResin: {
@@ -1270,19 +1523,39 @@ const styles = {
     transform: "translateX(-50%)",
     borderRadius: 999,
     opacity: 0.96,
+    boxShadow: "0 0 18px rgba(245,158,11,0.3)",
+  },
+
+  topEdgeGuardLeft: {
+    position: "absolute",
+    left: "12%",
+    top: 0,
+    bottom: 0,
+    width: 3,
+    background: "rgba(34,197,94,0.44)",
+  },
+
+  topEdgeGuardRight: {
+    position: "absolute",
+    right: "12%",
+    top: 0,
+    bottom: 0,
+    width: 3,
+    background: "rgba(34,197,94,0.44)",
   },
 
   topCracks: {
     position: "absolute",
-    left: "18%",
-    right: "18%",
-    bottom: 8,
+    left: "22%",
+    right: "22%",
+    bottom: 10,
     height: 18,
     display: "flex",
     justifyContent: "space-around",
   },
 
   bunkerCam: {
+    position: "relative",
     height: "100%",
     display: "grid",
     gridTemplateColumns: "1fr 90px 1fr",
@@ -1295,7 +1568,7 @@ const styles = {
   camBeltEnd: {
     gridColumn: "1 / 2",
     gridRow: "1 / 4",
-    borderRadius: 8,
+    borderRadius: 10,
     background: "rgba(31,41,55,0.92)",
     display: "flex",
     alignItems: "center",
@@ -1308,9 +1581,10 @@ const styles = {
     gridRow: "1 / 3",
     position: "relative",
     overflow: "hidden",
-    borderRadius: "8px 8px 4px 4px",
-    background: "#374151",
+    borderRadius: "10px 10px 5px 5px",
+    background: "#475569",
     border: "1px solid rgba(255,255,255,0.16)",
+    clipPath: "polygon(0 0, 100% 0, 86% 100%, 14% 100%)",
   },
 
   camHopperFill: {
@@ -1336,8 +1610,8 @@ const styles = {
     gridRow: "2 / 4",
     position: "relative",
     overflow: "hidden",
-    borderRadius: 8,
-    background: "#4b5563",
+    borderRadius: 10,
+    background: "#475569",
     border: "1px solid rgba(255,255,255,0.16)",
   },
 
@@ -1356,7 +1630,7 @@ const styles = {
     width: "min(420px, calc(100% - 28px))",
     transform: "translate(-50%, -50%)",
     zIndex: 150,
-    borderRadius: 22,
+    borderRadius: 24,
     padding: 22,
     background: "rgba(15,23,42,0.97)",
     border: "1px solid rgba(248,113,113,0.42)",
@@ -1367,10 +1641,10 @@ const styles = {
   restartButton: {
     width: "100%",
     border: 0,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: "13px 16px",
     background: "linear-gradient(135deg, #7c3aed, #f59e0b)",
-    color: "#fff",
+    color: "#ffffff",
     fontWeight: 900,
     cursor: "pointer",
   },
