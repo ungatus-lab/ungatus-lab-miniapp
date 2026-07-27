@@ -63,6 +63,18 @@ function createWorld() {
   };
 }
 
+function snapPointToLandingGrid(point, radius = 30) {
+  const snappedX =
+    Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
+  const snappedY =
+    Math.floor(point.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
+
+  return {
+    x: clamp(snappedX, radius, WORLD_WIDTH - radius),
+    y: clamp(snappedY, radius, WORLD_HEIGHT - radius),
+  };
+}
+
 export default function PixelFlowSurvival({ open, onClose }) {
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -78,6 +90,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const pointerRef = useRef({
     pointers: new Map(),
     dragging: false,
+    draggingLanding: false,
+    landingPointerId: null,
     lastX: 0,
     lastY: 0,
     downX: 0,
@@ -93,6 +107,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [screen, setScreen] = useState("menu");
   const [profile, setProfile] = useState(initialProfile);
   const [landingPreview, setLandingPreview] = useState(null);
+  const [viewport, setViewport] = useState({ width: 390, height: 720 });
   const [hud, setHud] = useState({
     level: 1,
     score: 0,
@@ -138,6 +153,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
 
+      setViewport({ width, height });
       clampCameraToWorld();
       forceLandingPreviewRender();
     }
@@ -175,9 +191,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function resetArena() {
     worldRef.current = createWorld();
 
-    playerRef.current = {
+    const spawn = snapPointToLandingGrid({
       x: WORLD_WIDTH / 2,
       y: WORLD_HEIGHT / 2,
+    });
+
+    playerRef.current = {
+      x: spawn.x,
+      y: spawn.y,
       r: 30,
       level: 1,
       score: 0,
@@ -186,14 +207,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
     };
 
     cameraRef.current = {
-      x: WORLD_WIDTH / 2,
-      y: WORLD_HEIGHT / 2,
+      x: spawn.x,
+      y: spawn.y,
       zoom: 0.72,
     };
 
     pointerRef.current = {
       pointers: new Map(),
       dragging: false,
+      draggingLanding: false,
+      landingPointerId: null,
       lastX: 0,
       lastY: 0,
       downX: 0,
@@ -274,13 +297,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
       return;
     }
 
-    setLandingPreview(null);
     teleportModeRef.current = true;
 
     setHud((current) => ({
       ...current,
       teleportMode: true,
-      status: "Teleport armed. Tap the map to choose landing point.",
+      status: landingPreview
+        ? "Tap another point or drag the landing hologram."
+        : "Teleport armed. Tap the map to choose landing point.",
     }));
   }
 
@@ -426,18 +450,39 @@ export default function PixelFlowSurvival({ open, onClose }) {
     };
   }
 
+  function getLandingBlock(point) {
+    const blockX = Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
+    const blockY = Math.floor(point.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
+
+    return {
+      x: blockX,
+      y: blockY,
+      centerX: blockX + MAJOR_GRID_STEP / 2,
+      centerY: blockY + MAJOR_GRID_STEP / 2,
+    };
+  }
+
+  function pointInsideLandingBlock(worldPoint, landingPoint) {
+    if (!landingPoint) return false;
+
+    const block = getLandingBlock(landingPoint);
+
+    return (
+      worldPoint.x >= block.x &&
+      worldPoint.x <= block.x + MAJOR_GRID_STEP &&
+      worldPoint.y >= block.y &&
+      worldPoint.y <= block.y + MAJOR_GRID_STEP
+    );
+  }
+
   function snapToLandingGrid(point) {
     const player = playerRef.current;
     const radius = player?.r || 30;
-
-    const snappedX =
-      Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
-    const snappedY =
-      Math.floor(point.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
+    const block = getLandingBlock(point);
 
     return {
-      x: clamp(snappedX, radius, WORLD_WIDTH - radius),
-      y: clamp(snappedY, radius, WORLD_HEIGHT - radius),
+      x: clamp(block.centerX, radius, WORLD_WIDTH - radius),
+      y: clamp(block.centerY, radius, WORLD_HEIGHT - radius),
     };
   }
 
@@ -454,7 +499,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setHud((current) => ({
       ...current,
       teleportMode: false,
-      status: "Landing point selected. Press LAND.",
+      status: "Landing selected. Press LAND, tap elsewhere, or drag hologram.",
     }));
   }
 
@@ -505,10 +550,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     pointerRef.current.dragging = false;
+    pointerRef.current.draggingLanding = false;
+    pointerRef.current.landingPointerId = null;
     pointerRef.current.lastX = event.clientX;
     pointerRef.current.lastY = event.clientY;
     pointerRef.current.downX = event.clientX;
     pointerRef.current.downY = event.clientY;
+
+    if (landingPreview && pointers.size === 1) {
+      const worldPoint = screenToWorld(event.clientX, event.clientY);
+
+      if (pointInsideLandingBlock(worldPoint, landingPreview)) {
+        pointerRef.current.draggingLanding = true;
+        pointerRef.current.landingPointerId = event.pointerId;
+        pointerRef.current.dragging = true;
+      }
+    }
 
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
@@ -523,6 +580,18 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (!pointers.has(event.pointerId)) return;
 
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (
+      pointerState.draggingLanding &&
+      pointerState.landingPointerId === event.pointerId &&
+      landingPreview
+    ) {
+      const worldPoint = screenToWorld(event.clientX, event.clientY);
+      const snappedPoint = snapToLandingGrid(worldPoint);
+      setLandingPreview(snappedPoint);
+      pointerState.dragging = true;
+      return;
+    }
 
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
@@ -561,10 +630,24 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const pointerState = pointerRef.current;
     const wasTap = !pointerState.dragging;
 
+    const wasDraggingLanding =
+      pointerState.draggingLanding && pointerState.landingPointerId === event.pointerId;
+
     pointerState.pointers.delete(event.pointerId);
     pointerState.lastPinchDistance = 0;
 
-    if (wasTap && teleportModeRef.current && cooldownRef.current <= 0) {
+    if (wasDraggingLanding) {
+      pointerState.draggingLanding = false;
+      pointerState.landingPointerId = null;
+      return;
+    }
+
+    if (
+      wasTap &&
+      cooldownRef.current <= 0 &&
+      !teleportEffectRef.current?.active &&
+      (teleportModeRef.current || landingPreview)
+    ) {
       selectLandingPoint(event.clientX, event.clientY);
     }
   }
@@ -586,9 +669,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function zoomCamera(ratio) {
+    const canvas = canvasRef.current;
     const camera = cameraRef.current;
 
+    if (!canvas) return;
+
+    const centerX = canvas.clientWidth / 2;
+    const centerY = canvas.clientHeight / 2;
+
+    const beforeX = (centerX - canvas.clientWidth / 2) / camera.zoom + camera.x;
+    const beforeY = (centerY - canvas.clientHeight / 2) / camera.zoom + camera.y;
+
     camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
+
+    camera.x = beforeX - (centerX - canvas.clientWidth / 2) / camera.zoom;
+    camera.y = beforeY - (centerY - canvas.clientHeight / 2) / camera.zoom;
+
     clampCameraToWorld();
     forceLandingPreviewRender();
   }
@@ -685,8 +781,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
             <div
               style={{
                 ...styles.landingActions,
-                left: clamp(landingScreen.x - 52, 12, window.innerWidth - 124),
-                top: clamp(landingScreen.y - 86, 86, window.innerHeight - 168),
+                left: clamp(landingScreen.x + 26, 12, viewport.width - 104),
+                top: clamp(landingScreen.y + 30, 86, viewport.height - 154),
               }}
             >
               <button style={styles.landButton} onClick={beginTeleportToLanding}>
@@ -819,10 +915,30 @@ function drawMonsters(ctx, monsters) {
 function drawLandingPreview(ctx, landingPreview) {
   if (!landingPreview) return;
 
+  const blockX = Math.floor(landingPreview.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
+  const blockY = Math.floor(landingPreview.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
   const t = Date.now() / 260;
   const pulse = 1 + Math.sin(t) * 0.04;
 
   ctx.save();
+
+  ctx.fillStyle = "rgba(34,211,238,0.08)";
+  ctx.fillRect(blockX, blockY, MAJOR_GRID_STEP, MAJOR_GRID_STEP);
+
+  ctx.strokeStyle = "rgba(34,211,238,0.78)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(blockX, blockY, MAJOR_GRID_STEP, MAJOR_GRID_STEP);
+
+  ctx.strokeStyle = "rgba(251,191,36,0.38)";
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+  ctx.moveTo(blockX + GRID_STEP, blockY);
+  ctx.lineTo(blockX + GRID_STEP, blockY + MAJOR_GRID_STEP);
+  ctx.moveTo(blockX, blockY + GRID_STEP);
+  ctx.lineTo(blockX + MAJOR_GRID_STEP, blockY + GRID_STEP);
+  ctx.stroke();
+
   ctx.globalAlpha = 0.92;
 
   ctx.beginPath();
@@ -1137,8 +1253,8 @@ const styles = {
     zIndex: 6,
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: 6,
+    gap: 5,
+    padding: 5,
     borderRadius: 999,
     background: "rgba(15,23,42,0.9)",
     border: "1px solid rgba(103,232,249,0.34)",
@@ -1146,19 +1262,20 @@ const styles = {
   },
 
   landButton: {
-    minWidth: 68,
-    height: 36,
+    minWidth: 52,
+    height: 30,
     border: 0,
     borderRadius: 999,
     background: "linear-gradient(135deg, #22d3ee, #2563eb)",
     color: "#ffffff",
     fontWeight: 900,
+    fontSize: 11,
     cursor: "pointer",
   },
 
   cancelButton: {
-    width: 34,
-    height: 34,
+    width: 28,
+    height: 28,
     border: "1px solid rgba(255,255,255,0.14)",
     borderRadius: "50%",
     background: "rgba(255,255,255,0.06)",
