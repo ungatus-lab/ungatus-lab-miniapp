@@ -92,6 +92,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
     dragging: false,
     draggingLanding: false,
     landingPointerId: null,
+    pinching: false,
+    suppressPanUntilAllUp: false,
     lastX: 0,
     lastY: 0,
     downX: 0,
@@ -217,6 +219,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
       dragging: false,
       draggingLanding: false,
       landingPointerId: null,
+      pinching: false,
+      suppressPanUntilAllUp: false,
       lastX: 0,
       lastY: 0,
       downX: 0,
@@ -570,6 +574,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
       pointerRef.current.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      pointerRef.current.pinching = true;
+      pointerRef.current.suppressPanUntilAllUp = true;
+      pointerRef.current.dragging = true;
     }
   }
 
@@ -603,11 +610,18 @@ export default function PixelFlowSurvival({ open, onClose }) {
       }
 
       pointerState.lastPinchDistance = distance;
+      pointerState.pinching = true;
+      pointerState.suppressPanUntilAllUp = true;
       pointerState.dragging = true;
       return;
     }
 
     if (pointers.size === 1) {
+      if (pointerState.suppressPanUntilAllUp) {
+        pointerState.dragging = true;
+        return;
+      }
+
       const dx = event.clientX - pointerState.lastX;
       const dy = event.clientY - pointerState.lastY;
       const totalMove = Math.hypot(
@@ -636,9 +650,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
     pointerState.pointers.delete(event.pointerId);
     pointerState.lastPinchDistance = 0;
 
-    if (wasDraggingLanding) {
+    if (pointerState.pointers.size === 0) {
+      pointerState.pinching = false;
+      pointerState.suppressPanUntilAllUp = false;
+      pointerState.dragging = false;
       pointerState.draggingLanding = false;
       pointerState.landingPointerId = null;
+    }
+
+    if (wasDraggingLanding) {
       return;
     }
 
@@ -669,22 +689,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function zoomCamera(ratio) {
-    const canvas = canvasRef.current;
     const camera = cameraRef.current;
 
-    if (!canvas) return;
-
-    const centerX = canvas.clientWidth / 2;
-    const centerY = canvas.clientHeight / 2;
-
-    const beforeX = (centerX - canvas.clientWidth / 2) / camera.zoom + camera.x;
-    const beforeY = (centerY - canvas.clientHeight / 2) / camera.zoom + camera.y;
-
     camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
-
-    camera.x = beforeX - (centerX - canvas.clientWidth / 2) / camera.zoom;
-    camera.y = beforeY - (centerY - canvas.clientHeight / 2) / camera.zoom;
-
     clampCameraToWorld();
     forceLandingPreviewRender();
   }
