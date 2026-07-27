@@ -2,12 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const WORLD_WIDTH = 3200;
-const WORLD_HEIGHT = 2200;
-const MONSTER_COUNT = 38;
-const TELEPORT_COOLDOWN_SECONDS = 15; // для теста; потом можно поставить 60
-const MIN_ZOOM = 0.42;
+const WORLD_WIDTH = 12800;
+const WORLD_HEIGHT = 8800;
+const MONSTER_COUNT = 180;
+
+const TELEPORT_COOLDOWN_SECONDS = 15;
+const TELEPORT_CAST_SECONDS = 1.2;
+const TELEPORT_ARRIVAL_SECONDS = 1.1;
+
+const MIN_ZOOM = 0.12;
 const MAX_ZOOM = 1.45;
+
+const GRID_STEP = 110;
+const MAJOR_GRID_STEP = GRID_STEP * 2;
 
 const initialProfile = {
   operatorTier: 1,
@@ -18,6 +25,7 @@ const initialProfile = {
 
 function createMonster(index) {
   const roll = Math.random();
+
   let type = "small";
   let r = rand(16, 28);
   let hp = Math.round(r * 6);
@@ -39,8 +47,8 @@ function createMonster(index) {
 
   return {
     id: `monster-${index}-${Math.random()}`,
-    x: rand(140, WORLD_WIDTH - 140),
-    y: rand(140, WORLD_HEIGHT - 140),
+    x: rand(180, WORLD_WIDTH - 180),
+    y: rand(180, WORLD_HEIGHT - 180),
     r,
     hp,
     type,
@@ -60,7 +68,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const rafRef = useRef(null);
   const worldRef = useRef(createWorld());
   const playerRef = useRef(null);
-  const cameraRef = useRef({ x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, zoom: 0.82 });
+
+  const cameraRef = useRef({
+    x: WORLD_WIDTH / 2,
+    y: WORLD_HEIGHT / 2,
+    zoom: 0.72,
+  });
+
   const pointerRef = useRef({
     pointers: new Map(),
     dragging: false,
@@ -70,12 +84,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
     downY: 0,
     lastPinchDistance: 0,
   });
+
   const cooldownRef = useRef(0);
   const teleportModeRef = useRef(false);
+  const teleportEffectRef = useRef(null);
   const lastTimeRef = useRef(0);
 
   const [screen, setScreen] = useState("menu");
   const [profile, setProfile] = useState(initialProfile);
+  const [landingPreview, setLandingPreview] = useState(null);
   const [hud, setHud] = useState({
     level: 1,
     score: 0,
@@ -89,6 +106,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     setScreen("menu");
     resetArena();
+
     setHud({
       level: 1,
       score: 0,
@@ -119,6 +137,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
       if (ctx) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
+
+      clampCameraToWorld();
+      forceLandingPreviewRender();
     }
 
     resize();
@@ -149,6 +170,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   if (!open) return null;
 
+  const landingScreen = landingPreview ? worldToScreen(landingPreview.x, landingPreview.y) : null;
+
   function resetArena() {
     worldRef.current = createWorld();
 
@@ -165,7 +188,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cameraRef.current = {
       x: WORLD_WIDTH / 2,
       y: WORLD_HEIGHT / 2,
-      zoom: 0.82,
+      zoom: 0.72,
     };
 
     pointerRef.current = {
@@ -180,6 +203,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     cooldownRef.current = 0;
     teleportModeRef.current = false;
+    teleportEffectRef.current = null;
+    setLandingPreview(null);
   }
 
   function startGame() {
@@ -228,9 +253,19 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     cameraRef.current.x = player.x;
     cameraRef.current.y = player.y;
+    clampCameraToWorld();
+    forceLandingPreviewRender();
   }
 
   function activateTeleport() {
+    if (teleportEffectRef.current?.active) {
+      setHud((current) => ({
+        ...current,
+        status: "Teleport is already in progress.",
+      }));
+      return;
+    }
+
     if (cooldownRef.current > 0) {
       setHud((current) => ({
         ...current,
@@ -239,12 +274,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
       return;
     }
 
+    setLandingPreview(null);
     teleportModeRef.current = true;
 
     setHud((current) => ({
       ...current,
       teleportMode: true,
-      status: "Teleport armed. Tap any point on the map.",
+      status: "Teleport armed. Tap the map to choose landing point.",
     }));
   }
 
@@ -260,6 +296,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (player.shield > 0) {
       player.shield = Math.max(0, player.shield - dt * 60);
     }
+
+    updateTeleportEffect(dt);
 
     setHud((current) => {
       const nextCooldown = Math.ceil(cooldownRef.current);
@@ -285,6 +323,44 @@ export default function PixelFlowSurvival({ open, onClose }) {
     });
   }
 
+  function updateTeleportEffect(dt) {
+    const effect = teleportEffectRef.current;
+    const player = playerRef.current;
+
+    if (!effect || !effect.active || !player) return;
+
+    effect.timer += dt;
+
+    if (effect.phase === "cast" && effect.timer >= TELEPORT_CAST_SECONDS) {
+      player.x = effect.target.x;
+      player.y = effect.target.y;
+      player.score += 1;
+
+      cameraRef.current.x = player.x;
+      cameraRef.current.y = player.y;
+      clampCameraToWorld();
+
+      cooldownRef.current = TELEPORT_COOLDOWN_SECONDS;
+
+      effect.phase = "arrival";
+      effect.timer = 0;
+
+      setHud((current) => ({
+        ...current,
+        score: Math.round(player.score),
+        cooldown: TELEPORT_COOLDOWN_SECONDS,
+        teleportMode: false,
+        status: "Teleport complete. Cooldown started.",
+      }));
+
+      return;
+    }
+
+    if (effect.phase === "arrival" && effect.timer >= TELEPORT_ARRIVAL_SECONDS) {
+      teleportEffectRef.current = null;
+    }
+  }
+
   function drawArena() {
     const canvas = canvasRef.current;
     const player = playerRef.current;
@@ -301,15 +377,17 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     ctx.clearRect(0, 0, width, height);
 
-    drawBackground(ctx, width, height, camera);
+    drawSpaceBackground(ctx, width, height);
 
     ctx.save();
     applyWorldTransform(ctx, width, height, camera);
 
+    drawWorldGrid(ctx);
     drawWorldBorder(ctx);
     drawMonsters(ctx, world.monsters);
+    drawLandingPreview(ctx, landingPreview);
+    drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawPlayer(ctx, player);
-    drawTeleportPreview(ctx, player);
 
     ctx.restore();
   }
@@ -336,29 +414,87 @@ export default function PixelFlowSurvival({ open, onClose }) {
     };
   }
 
-  function teleportTo(clientX, clientY) {
+  function worldToScreen(x, y) {
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+
+    if (!canvas) return null;
+
+    return {
+      x: (x - camera.x) * camera.zoom + canvas.clientWidth / 2,
+      y: (y - camera.y) * camera.zoom + canvas.clientHeight / 2,
+    };
+  }
+
+  function snapToLandingGrid(point) {
     const player = playerRef.current;
-    if (!player) return;
+    const radius = player?.r || 30;
+
+    const snappedX =
+      Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
+    const snappedY =
+      Math.floor(point.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
+
+    return {
+      x: clamp(snappedX, radius, WORLD_WIDTH - radius),
+      y: clamp(snappedY, radius, WORLD_HEIGHT - radius),
+    };
+  }
+
+  function selectLandingPoint(clientX, clientY) {
     if (cooldownRef.current > 0) return;
+    if (teleportEffectRef.current?.active) return;
 
-    const point = screenToWorld(clientX, clientY);
+    const rawPoint = screenToWorld(clientX, clientY);
+    const snappedPoint = snapToLandingGrid(rawPoint);
 
-    player.x = clamp(point.x, player.r, WORLD_WIDTH - player.r);
-    player.y = clamp(point.y, player.r, WORLD_HEIGHT - player.r);
-    player.score += 1;
+    teleportModeRef.current = false;
+    setLandingPreview(snappedPoint);
 
-    cameraRef.current.x = player.x;
-    cameraRef.current.y = player.y;
+    setHud((current) => ({
+      ...current,
+      teleportMode: false,
+      status: "Landing point selected. Press LAND.",
+    }));
+  }
 
-    cooldownRef.current = TELEPORT_COOLDOWN_SECONDS;
+  function beginTeleportToLanding() {
+    const player = playerRef.current;
+    if (!player || !landingPreview) return;
+    if (cooldownRef.current > 0) return;
+    if (teleportEffectRef.current?.active) return;
+
+    teleportEffectRef.current = {
+      active: true,
+      phase: "cast",
+      timer: 0,
+      origin: {
+        x: player.x,
+        y: player.y,
+      },
+      target: {
+        x: landingPreview.x,
+        y: landingPreview.y,
+      },
+    };
+
+    setLandingPreview(null);
+
+    setHud((current) => ({
+      ...current,
+      teleportMode: false,
+      status: "Teleport charging...",
+    }));
+  }
+
+  function cancelLandingPreview() {
+    setLandingPreview(null);
     teleportModeRef.current = false;
 
     setHud((current) => ({
       ...current,
-      score: Math.round(player.score),
-      cooldown: TELEPORT_COOLDOWN_SECONDS,
       teleportMode: false,
-      status: "Teleport complete. Cooldown started.",
+      status: "Landing canceled.",
     }));
   }
 
@@ -405,7 +541,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (pointers.size === 1) {
       const dx = event.clientX - pointerState.lastX;
       const dy = event.clientY - pointerState.lastY;
-      const totalMove = Math.hypot(event.clientX - pointerState.downX, event.clientY - pointerState.downY);
+      const totalMove = Math.hypot(
+        event.clientX - pointerState.downX,
+        event.clientY - pointerState.downY
+      );
 
       if (totalMove > 6) {
         pointerState.dragging = true;
@@ -426,7 +565,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     pointerState.lastPinchDistance = 0;
 
     if (wasTap && teleportModeRef.current && cooldownRef.current <= 0) {
-      teleportTo(event.clientX, event.clientY);
+      selectLandingPoint(event.clientX, event.clientY);
     }
   }
 
@@ -440,13 +579,48 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function panCamera(dx, dy) {
     const camera = cameraRef.current;
 
-    camera.x = clamp(camera.x - dx / camera.zoom, 0, WORLD_WIDTH);
-    camera.y = clamp(camera.y - dy / camera.zoom, 0, WORLD_HEIGHT);
+    camera.x -= dx / camera.zoom;
+    camera.y -= dy / camera.zoom;
+    clampCameraToWorld();
+    forceLandingPreviewRender();
   }
 
   function zoomCamera(ratio) {
     const camera = cameraRef.current;
+
     camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
+    clampCameraToWorld();
+    forceLandingPreviewRender();
+  }
+
+  function forceLandingPreviewRender() {
+    setLandingPreview((current) => (current ? { ...current } : current));
+  }
+
+  function clampCameraToWorld() {
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+
+    if (!canvas) {
+      camera.x = clamp(camera.x, 0, WORLD_WIDTH);
+      camera.y = clamp(camera.y, 0, WORLD_HEIGHT);
+      return;
+    }
+
+    const halfW = canvas.clientWidth / (2 * camera.zoom);
+    const halfH = canvas.clientHeight / (2 * camera.zoom);
+
+    if (halfW * 2 >= WORLD_WIDTH) {
+      camera.x = WORLD_WIDTH / 2;
+    } else {
+      camera.x = clamp(camera.x, halfW, WORLD_WIDTH - halfW);
+    }
+
+    if (halfH * 2 >= WORLD_HEIGHT) {
+      camera.y = WORLD_HEIGHT / 2;
+    } else {
+      camera.y = clamp(camera.y, halfH, WORLD_HEIGHT - halfH);
+    }
   }
 
   return (
@@ -507,6 +681,23 @@ export default function PixelFlowSurvival({ open, onClose }) {
             </div>
           </header>
 
+          {landingPreview && landingScreen && (
+            <div
+              style={{
+                ...styles.landingActions,
+                left: clamp(landingScreen.x - 52, 12, window.innerWidth - 124),
+                top: clamp(landingScreen.y - 86, 86, window.innerHeight - 168),
+              }}
+            >
+              <button style={styles.landButton} onClick={beginTeleportToLanding}>
+                LAND
+              </button>
+              <button style={styles.cancelButton} onClick={cancelLandingPreview}>
+                ×
+              </button>
+            </div>
+          )}
+
           <footer style={styles.arenaControls}>
             <button
               style={{
@@ -540,7 +731,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   );
 }
 
-function drawBackground(ctx, width, height, camera) {
+function drawSpaceBackground(ctx, width, height) {
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
   gradient.addColorStop(0, "#050816");
   gradient.addColorStop(0.55, "#07111f");
@@ -548,38 +739,47 @@ function drawBackground(ctx, width, height, camera) {
 
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
+}
 
-  ctx.strokeStyle = "rgba(103,232,249,0.07)";
+function drawWorldGrid(ctx) {
   ctx.lineWidth = 1;
 
-  const grid = 80 * camera.zoom;
-  const offsetX = -(camera.x * camera.zoom) % grid;
-  const offsetY = -(camera.y * camera.zoom) % grid;
+  for (let x = 0; x <= WORLD_WIDTH; x += GRID_STEP) {
+    const major = x % MAJOR_GRID_STEP === 0;
 
-  for (let x = offsetX; x < width; x += grid) {
     ctx.beginPath();
-    ctx.moveTo(Math.floor(x), 0);
-    ctx.lineTo(Math.floor(x), height);
+    ctx.strokeStyle = major
+      ? "rgba(103,232,249,0.16)"
+      : "rgba(103,232,249,0.065)";
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, WORLD_HEIGHT);
     ctx.stroke();
   }
 
-  for (let y = offsetY; y < height; y += grid) {
+  for (let y = 0; y <= WORLD_HEIGHT; y += GRID_STEP) {
+    const major = y % MAJOR_GRID_STEP === 0;
+
     ctx.beginPath();
-    ctx.moveTo(0, Math.floor(y));
-    ctx.lineTo(width, Math.floor(y));
+    ctx.strokeStyle = major
+      ? "rgba(103,232,249,0.16)"
+      : "rgba(103,232,249,0.065)";
+    ctx.moveTo(0, y);
+    ctx.lineTo(WORLD_WIDTH, y);
     ctx.stroke();
   }
 }
 
 function drawWorldBorder(ctx) {
-  ctx.strokeStyle = "rgba(255,255,255,0.16)";
-  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 8;
   ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 }
 
 function drawMonsters(ctx, monsters) {
+  const now = Date.now();
+
   for (const monster of monsters) {
-    const pulse = 1 + Math.sin(Date.now() / 480 + monster.pulse) * 0.035;
+    const pulse = 1 + Math.sin(now / 480 + monster.pulse) * 0.035;
 
     ctx.beginPath();
     ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -613,6 +813,95 @@ function drawMonsters(ctx, monsters) {
 
     ctx.font = "800 10px Inter, system-ui, sans-serif";
     ctx.fillText(`${monster.hp}`, monster.x, monster.y + 10);
+  }
+}
+
+function drawLandingPreview(ctx, landingPreview) {
+  if (!landingPreview) return;
+
+  const t = Date.now() / 260;
+  const pulse = 1 + Math.sin(t) * 0.04;
+
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(34,211,238,0.11)";
+  ctx.arc(landingPreview.x, landingPreview.y, 54 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(34,211,238,0.78)";
+  ctx.lineWidth = 3;
+  ctx.arc(landingPreview.x, landingPreview.y, 48 * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(251,191,36,0.62)";
+  ctx.lineWidth = 2;
+  ctx.arc(landingPreview.x, landingPreview.y, 30, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(103,232,249,0.22)";
+  ctx.arc(landingPreview.x, landingPreview.y, 30, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  ctx.font = "900 9px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("CORE", landingPreview.x, landingPreview.y);
+
+  ctx.restore();
+}
+
+function drawTeleportEffectRings(ctx, effect) {
+  if (!effect || !effect.active) return;
+
+  const origin = effect.origin;
+  const target = effect.target;
+
+  if (effect.phase === "cast") {
+    const progress = Math.min(1, effect.timer / TELEPORT_CAST_SECONDS);
+    const originRadius = 34 + progress * 92;
+    const targetRadius = 30 + Math.sin(Date.now() / 90) * 5;
+
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(251,191,36,${0.7 - progress * 0.45})`;
+    ctx.lineWidth = 4;
+    ctx.arc(origin.x, origin.y, originRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(251,191,36,0.72)";
+    ctx.lineWidth = 3;
+    ctx.arc(target.x, target.y, targetRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(251,191,36,0.25)";
+    ctx.lineWidth = 2;
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.stroke();
+  }
+
+  if (effect.phase === "arrival") {
+    const progress = Math.min(1, effect.timer / TELEPORT_ARRIVAL_SECONDS);
+    const radius = 38 + progress * 120;
+
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(34,211,238,${0.75 - progress * 0.65})`;
+    ctx.lineWidth = 5;
+    ctx.arc(target.x, target.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(251,191,36,${0.45 - progress * 0.35})`;
+    ctx.lineWidth = 2;
+    ctx.arc(target.x, target.y, radius * 0.55, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
@@ -652,10 +941,12 @@ function drawPlayer(ctx, player) {
   ctx.stroke();
 
   if (player.shield > 0) {
+    const pulse = 1 + Math.sin(Date.now() / 240) * 0.035;
+
     ctx.beginPath();
-    ctx.strokeStyle = "rgba(134,239,172,0.76)";
+    ctx.strokeStyle = "rgba(134,239,172,0.72)";
     ctx.lineWidth = 3;
-    ctx.arc(player.x, player.y, player.r + 13, 0, Math.PI * 2);
+    ctx.arc(player.x, player.y, (player.r + 22) * pulse, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -664,16 +955,6 @@ function drawPlayer(ctx, player) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("CORE", player.x, player.y);
-}
-
-function drawTeleportPreview(ctx, player) {
-  if (!player) return;
-
-  ctx.beginPath();
-  ctx.strokeStyle = "rgba(251,191,36,0.22)";
-  ctx.lineWidth = 2;
-  ctx.arc(player.x, player.y, 180, 0, Math.PI * 2);
-  ctx.stroke();
 }
 
 function ProfileStat({ label, value }) {
@@ -849,6 +1130,41 @@ const styles = {
     color: "rgba(255,255,255,0.72)",
     fontSize: 12,
     fontWeight: 800,
+  },
+
+  landingActions: {
+    position: "absolute",
+    zIndex: 6,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: 6,
+    borderRadius: 999,
+    background: "rgba(15,23,42,0.9)",
+    border: "1px solid rgba(103,232,249,0.34)",
+    boxShadow: "0 18px 50px rgba(0,0,0,0.42)",
+  },
+
+  landButton: {
+    minWidth: 68,
+    height: 36,
+    border: 0,
+    borderRadius: 999,
+    background: "linear-gradient(135deg, #22d3ee, #2563eb)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  cancelButton: {
+    width: 34,
+    height: 34,
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.06)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
   },
 
   arenaControls: {
