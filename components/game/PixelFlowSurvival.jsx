@@ -104,11 +104,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const cooldownRef = useRef(0);
   const teleportModeRef = useRef(false);
   const teleportEffectRef = useRef(null);
+  const landingPreviewRef = useRef(null);
   const lastTimeRef = useRef(0);
 
   const [screen, setScreen] = useState("menu");
   const [profile, setProfile] = useState(initialProfile);
-  const [landingPreview, setLandingPreview] = useState(null);
+  const [landingPreview, setLandingPreviewState] = useState(null);
   const [viewport, setViewport] = useState({ width: 390, height: 720 });
   const [hud, setHud] = useState({
     level: 1,
@@ -190,6 +191,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const landingScreen = landingPreview ? worldToScreen(landingPreview.x, landingPreview.y) : null;
 
+  function updateLandingPreview(nextPreview) {
+    landingPreviewRef.current = nextPreview;
+    setLandingPreviewState(nextPreview);
+  }
+
   function resetArena() {
     worldRef.current = createWorld();
 
@@ -231,7 +237,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cooldownRef.current = 0;
     teleportModeRef.current = false;
     teleportEffectRef.current = null;
-    setLandingPreview(null);
+    updateLandingPreview(null);
   }
 
   function startGame() {
@@ -306,7 +312,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setHud((current) => ({
       ...current,
       teleportMode: true,
-      status: landingPreview
+      status: landingPreviewRef.current
         ? "Tap another point or drag the landing hologram."
         : "Teleport armed. Tap the map to choose landing point.",
     }));
@@ -413,7 +419,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawWorldGrid(ctx);
     drawWorldBorder(ctx);
     drawMonsters(ctx, world.monsters);
-    drawLandingPreview(ctx, landingPreview);
+    drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawPlayer(ctx, player);
 
@@ -498,7 +504,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const snappedPoint = snapToLandingGrid(rawPoint);
 
     teleportModeRef.current = false;
-    setLandingPreview(snappedPoint);
+    updateLandingPreview(snappedPoint);
 
     setHud((current) => ({
       ...current,
@@ -509,7 +515,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function beginTeleportToLanding() {
     const player = playerRef.current;
-    if (!player || !landingPreview) return;
+    const currentLanding = landingPreviewRef.current;
+
+    if (!player || !currentLanding) return;
     if (cooldownRef.current > 0) return;
     if (teleportEffectRef.current?.active) return;
 
@@ -522,12 +530,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
         y: player.y,
       },
       target: {
-        x: landingPreview.x,
-        y: landingPreview.y,
+        x: currentLanding.x,
+        y: currentLanding.y,
       },
     };
 
-    setLandingPreview(null);
+    updateLandingPreview(null);
 
     setHud((current) => ({
       ...current,
@@ -537,7 +545,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function cancelLandingPreview() {
-    setLandingPreview(null);
+    updateLandingPreview(null);
     teleportModeRef.current = false;
 
     setHud((current) => ({
@@ -561,10 +569,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
     pointerRef.current.downX = event.clientX;
     pointerRef.current.downY = event.clientY;
 
-    if (landingPreview && pointers.size === 1) {
+    const currentLanding = landingPreviewRef.current;
+
+    if (currentLanding && pointers.size === 1) {
       const worldPoint = screenToWorld(event.clientX, event.clientY);
 
-      if (pointInsideLandingBlock(worldPoint, landingPreview)) {
+      if (pointInsideLandingBlock(worldPoint, currentLanding)) {
         pointerRef.current.draggingLanding = true;
         pointerRef.current.landingPointerId = event.pointerId;
         pointerRef.current.dragging = true;
@@ -591,11 +601,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (
       pointerState.draggingLanding &&
       pointerState.landingPointerId === event.pointerId &&
-      landingPreview
+      landingPreviewRef.current
     ) {
       const worldPoint = screenToWorld(event.clientX, event.clientY);
       const snappedPoint = snapToLandingGrid(worldPoint);
-      setLandingPreview(snappedPoint);
+      updateLandingPreview(snappedPoint);
       pointerState.dragging = true;
       return;
     }
@@ -666,7 +676,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       wasTap &&
       cooldownRef.current <= 0 &&
       !teleportEffectRef.current?.active &&
-      (teleportModeRef.current || landingPreview)
+      (teleportModeRef.current || landingPreviewRef.current)
     ) {
       selectLandingPoint(event.clientX, event.clientY);
     }
@@ -697,7 +707,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function forceLandingPreviewRender() {
-    setLandingPreview((current) => (current ? { ...current } : current));
+    const currentLanding = landingPreviewRef.current;
+    setLandingPreviewState(currentLanding ? { ...currentLanding } : null);
   }
 
   function clampCameraToWorld() {
@@ -929,15 +940,15 @@ function drawLandingPreview(ctx, landingPreview) {
 
   ctx.save();
 
-  ctx.fillStyle = "rgba(34,211,238,0.08)";
+  ctx.fillStyle = "rgba(34,211,238,0.18)";
   ctx.fillRect(blockX, blockY, MAJOR_GRID_STEP, MAJOR_GRID_STEP);
 
-  ctx.strokeStyle = "rgba(34,211,238,0.78)";
-  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(34,211,238,0.95)";
+  ctx.lineWidth = 5;
   ctx.strokeRect(blockX, blockY, MAJOR_GRID_STEP, MAJOR_GRID_STEP);
 
-  ctx.strokeStyle = "rgba(251,191,36,0.38)";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(251,191,36,0.62)";
+  ctx.lineWidth = 3;
 
   ctx.beginPath();
   ctx.moveTo(blockX + GRID_STEP, blockY);
@@ -946,31 +957,31 @@ function drawLandingPreview(ctx, landingPreview) {
   ctx.lineTo(blockX + MAJOR_GRID_STEP, blockY + GRID_STEP);
   ctx.stroke();
 
-  ctx.globalAlpha = 0.92;
+  ctx.globalAlpha = 0.95;
 
   ctx.beginPath();
-  ctx.fillStyle = "rgba(34,211,238,0.11)";
-  ctx.arc(landingPreview.x, landingPreview.y, 54 * pulse, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(34,211,238,0.16)";
+  ctx.arc(landingPreview.x, landingPreview.y, 58 * pulse, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.beginPath();
-  ctx.strokeStyle = "rgba(34,211,238,0.78)";
+  ctx.strokeStyle = "rgba(34,211,238,0.9)";
+  ctx.lineWidth = 4;
+  ctx.arc(landingPreview.x, landingPreview.y, 50 * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(251,191,36,0.82)";
   ctx.lineWidth = 3;
-  ctx.arc(landingPreview.x, landingPreview.y, 48 * pulse, 0, Math.PI * 2);
+  ctx.arc(landingPreview.x, landingPreview.y, 31, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.strokeStyle = "rgba(251,191,36,0.62)";
-  ctx.lineWidth = 2;
-  ctx.arc(landingPreview.x, landingPreview.y, 30, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.fillStyle = "rgba(103,232,249,0.22)";
+  ctx.fillStyle = "rgba(103,232,249,0.32)";
   ctx.arc(landingPreview.x, landingPreview.y, 30, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
   ctx.font = "900 9px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
