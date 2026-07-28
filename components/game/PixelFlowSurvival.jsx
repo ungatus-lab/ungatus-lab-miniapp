@@ -16,6 +16,8 @@ const MAX_ZOOM = 1.45;
 const GRID_STEP = 110;
 const MAJOR_GRID_STEP = GRID_STEP * 2;
 
+const CAMERA_OUTSIDE_PADDING = 950;
+
 const initialProfile = {
   operatorTier: 1,
   emulators: 1,
@@ -416,6 +418,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     ctx.save();
     applyWorldTransform(ctx, width, height, camera);
 
+    drawOutsideWorldShadow(ctx);
     drawWorldGrid(ctx);
     drawWorldBorder(ctx);
     drawMonsters(ctx, world.monsters);
@@ -715,26 +718,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
 
+    const minX = -CAMERA_OUTSIDE_PADDING;
+    const maxX = WORLD_WIDTH + CAMERA_OUTSIDE_PADDING;
+    const minY = -CAMERA_OUTSIDE_PADDING;
+    const maxY = WORLD_HEIGHT + CAMERA_OUTSIDE_PADDING;
+
     if (!canvas) {
-      camera.x = clamp(camera.x, 0, WORLD_WIDTH);
-      camera.y = clamp(camera.y, 0, WORLD_HEIGHT);
+      camera.x = clamp(camera.x, minX, maxX);
+      camera.y = clamp(camera.y, minY, maxY);
       return;
     }
 
     const halfW = canvas.clientWidth / (2 * camera.zoom);
     const halfH = canvas.clientHeight / (2 * camera.zoom);
 
-    if (halfW * 2 >= WORLD_WIDTH) {
-      camera.x = WORLD_WIDTH / 2;
-    } else {
-      camera.x = clamp(camera.x, halfW, WORLD_WIDTH - halfW);
-    }
-
-    if (halfH * 2 >= WORLD_HEIGHT) {
-      camera.y = WORLD_HEIGHT / 2;
-    } else {
-      camera.y = clamp(camera.y, halfH, WORLD_HEIGHT - halfH);
-    }
+    camera.x = clamp(camera.x, minX + halfW, maxX - halfW);
+    camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
   return (
@@ -855,6 +854,18 @@ function drawSpaceBackground(ctx, width, height) {
   ctx.fillRect(0, 0, width, height);
 }
 
+function drawOutsideWorldShadow(ctx) {
+  ctx.save();
+
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillRect(-CAMERA_OUTSIDE_PADDING, -CAMERA_OUTSIDE_PADDING, WORLD_WIDTH + CAMERA_OUTSIDE_PADDING * 2, CAMERA_OUTSIDE_PADDING);
+  ctx.fillRect(-CAMERA_OUTSIDE_PADDING, WORLD_HEIGHT, WORLD_WIDTH + CAMERA_OUTSIDE_PADDING * 2, CAMERA_OUTSIDE_PADDING);
+  ctx.fillRect(-CAMERA_OUTSIDE_PADDING, 0, CAMERA_OUTSIDE_PADDING, WORLD_HEIGHT);
+  ctx.fillRect(WORLD_WIDTH, 0, CAMERA_OUTSIDE_PADDING, WORLD_HEIGHT);
+
+  ctx.restore();
+}
+
 function drawWorldGrid(ctx) {
   ctx.lineWidth = 1;
 
@@ -884,9 +895,21 @@ function drawWorldGrid(ctx) {
 }
 
 function drawWorldBorder(ctx) {
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.save();
+
+  ctx.strokeStyle = "rgba(0,0,0,0.55)";
+  ctx.lineWidth = 34;
+  ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.lineWidth = 8;
   ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+  ctx.strokeStyle = "rgba(103,232,249,0.18)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+  ctx.restore();
 }
 
 function drawMonsters(ctx, monsters) {
