@@ -24,12 +24,62 @@ const CITY_OUTSIDE_PADDING = 280;
 const CITY_MIN_ZOOM = 0.45;
 const CITY_MAX_ZOOM = 1.55;
 
+const ATTACK_MARCH_SPEED = 0.42;
+const RETURN_MARCH_SPEED = 0.52;
+
+const BUILDINGS = {
+  CrystalPoint: {
+    type: "CrystalPoint",
+    label: "CRYSTAL POINT",
+    shortLabel: "CRYSTAL",
+    w: 2,
+    h: 2,
+    cost: 0,
+    description: "+1 crystal/sec",
+    color: "#22d3ee",
+  },
+  House: {
+    type: "House",
+    label: "HOUSE",
+    shortLabel: "HOUSE",
+    w: 1,
+    h: 1,
+    cost: 25,
+    description: "+25 guard capacity",
+    color: "#86efac",
+  },
+  Barracks: {
+    type: "Barracks",
+    label: "BARRACKS",
+    shortLabel: "BARRACKS",
+    w: 2,
+    h: 2,
+    cost: 30,
+    description: "Produces Core Guards",
+    color: "#f59e0b",
+  },
+};
+
 const initialProfile = {
   operatorTier: 1,
   emulators: 1,
   bestScore: 0,
   bestLevel: 1,
 };
+
+function createCityStats() {
+  return {
+    crystals: 80,
+    crystalRate: 0,
+    workers: 0,
+    workerCap: 5,
+    guards: 0,
+    guardCap: 10,
+    guardTrainTimer: 0,
+    xp: 0,
+    level: 1,
+  };
+}
 
 function createMonster(index) {
   const roll = Math.random();
@@ -59,6 +109,7 @@ function createMonster(index) {
     y: rand(180, WORLD_HEIGHT - 180),
     r,
     hp,
+    maxHp: hp,
     type,
     color,
     pulse: rand(0, Math.PI * 2),
@@ -123,6 +174,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const worldRef = useRef(createWorld());
   const playerRef = useRef(null);
   const cityRef = useRef(createCityState());
+  const cityStatsRef = useRef(createCityStats());
+  const cityStatsUiTimerRef = useRef(0);
+
+  const marchesRef = useRef([]);
+  const selectedMonsterRef = useRef(null);
 
   const cameraRef = useRef({
     x: WORLD_WIDTH / 2,
@@ -171,6 +227,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const buildModeRef = useRef(false);
   const buildPreviewRef = useRef(null);
+  const selectedBuildingTypeRef = useRef(null);
 
   const lastTimeRef = useRef(0);
 
@@ -179,7 +236,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [landingPreview, setLandingPreviewState] = useState(null);
   const [buildPreview, setBuildPreviewState] = useState(null);
   const [buildMode, setBuildModeState] = useState(false);
+  const [buildMenuOpen, setBuildMenuOpen] = useState(false);
+  const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
+  const [selectedMonster, setSelectedMonsterState] = useState(null);
+  const [cityStats, setCityStats] = useState(createCityStats());
   const [viewport, setViewport] = useState({ width: 390, height: 720 });
 
   const [hud, setHud] = useState({
@@ -249,6 +310,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
       const dt = Math.min(40, time - lastTimeRef.current);
       lastTimeRef.current = time;
 
+      updateCity(dt / 1000);
+
       if (screen === "arena") {
         updateArena(dt / 1000);
         drawArena();
@@ -288,6 +351,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
       )
     : null;
 
+  const selectedMonsterScreen = selectedMonster
+    ? worldToScreen(selectedMonster.x, selectedMonster.y)
+    : null;
+
   function updateLandingPreview(nextPreview) {
     landingPreviewRef.current = nextPreview;
     setLandingPreviewState(nextPreview);
@@ -298,14 +365,28 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildPreviewState(nextPreview);
   }
 
+  function updateSelectedMonster(nextMonster) {
+    selectedMonsterRef.current = nextMonster;
+    setSelectedMonsterState(nextMonster);
+  }
+
   function setBuildMode(nextValue) {
     buildModeRef.current = nextValue;
     setBuildModeState(nextValue);
   }
 
+  function setSelectedBuildingType(nextType) {
+    selectedBuildingTypeRef.current = nextType;
+    setSelectedBuildingTypeState(nextType);
+  }
+
   function resetArena() {
     worldRef.current = createWorld();
     cityRef.current = createCityState();
+    cityStatsRef.current = createCityStats();
+    cityStatsUiTimerRef.current = 0;
+    marchesRef.current = [];
+    updateSelectedMonster(null);
 
     const spawn = snapPointToLandingGrid({
       x: WORLD_WIDTH / 2,
@@ -369,7 +450,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateLandingPreview(null);
     updateBuildPreview(null);
     setBuildMode(false);
+    setBuildMenuOpen(false);
+    setSelectedBuildingType(null);
     setEnterCoreVisible(false);
+    setCityStats({ ...cityStatsRef.current });
   }
 
   function startGame() {
@@ -380,10 +464,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
       score: 0,
       cooldown: 0,
       teleportMode: false,
-      status: "Core spawned. Tap your CORE to enter the city.",
+      status: "Start inside your city. Build a Crystal Point first.",
     });
 
-    setScreen("arena");
+    setScreen("city");
   }
 
   function endRun() {
@@ -408,7 +492,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       score: 0,
       cooldown: 0,
       teleportMode: false,
-      status: "Respawned. Tap your CORE or use TELEPORT.",
+      status: "Respawned. Return to city or use TELEPORT.",
     });
   }
 
@@ -440,6 +524,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     setEnterCoreVisible(false);
+    updateSelectedMonster(null);
     teleportModeRef.current = true;
 
     setHud((current) => ({
@@ -465,6 +550,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     updateTeleportEffect(dt);
+    updateMarches(dt);
 
     setHud((current) => {
       const nextCooldown = Math.ceil(cooldownRef.current);
@@ -488,6 +574,45 @@ export default function PixelFlowSurvival({ open, onClose }) {
         teleportMode: teleportModeRef.current,
       };
     });
+  }
+
+  function updateCity(dt) {
+    const stats = cityStatsRef.current;
+    const buildings = cityRef.current.buildings;
+
+    const crystalPoints = buildings.filter((building) => building.type === "CrystalPoint").length;
+    const barracksCount = buildings.filter((building) => building.type === "Barracks").length;
+
+    stats.crystalRate = crystalPoints;
+    stats.crystals += stats.crystalRate * dt;
+
+    if (barracksCount > 0) {
+      stats.guardTrainTimer += dt * barracksCount;
+
+      while (
+        stats.guardTrainTimer >= 1 &&
+        getTotalGuards() < stats.guardCap &&
+        stats.crystals >= 1
+      ) {
+        stats.guardTrainTimer -= 1;
+        stats.crystals -= 1;
+        stats.guards += 1;
+      }
+    }
+
+    cityStatsUiTimerRef.current += dt;
+
+    if (cityStatsUiTimerRef.current >= 0.2) {
+      cityStatsUiTimerRef.current = 0;
+      setCityStats({ ...stats });
+    }
+  }
+
+  function getTotalGuards() {
+    const stats = cityStatsRef.current;
+    const marchGuards = marchesRef.current.reduce((sum, march) => sum + march.count, 0);
+
+    return stats.guards + marchGuards;
   }
 
   function updateTeleportEffect(dt) {
@@ -528,6 +653,84 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
   }
 
+  function updateMarches(dt) {
+    const player = playerRef.current;
+    const world = worldRef.current;
+    const stats = cityStatsRef.current;
+
+    if (!player) return;
+
+    const nextMarches = [];
+
+    for (const march of marchesRef.current) {
+      const speed = march.type === "return" ? RETURN_MARCH_SPEED : ATTACK_MARCH_SPEED;
+      const nextProgress = Math.min(1, march.progress + dt * speed);
+      const nextMarch = {
+        ...march,
+        progress: nextProgress,
+      };
+
+      if (nextProgress < 1) {
+        nextMarches.push(nextMarch);
+        continue;
+      }
+
+      if (march.type === "attack") {
+        const monster = world.monsters.find((item) => item.id === march.targetMonsterId);
+
+        if (!monster) {
+          continue;
+        }
+
+        const damage = Math.min(march.count, monster.hp);
+        monster.hp = Math.max(0, monster.hp - damage);
+
+        const returnCount = Math.max(0, march.count - damage);
+
+        if (monster.hp <= 0) {
+          const rewardCrystals = monster.type === "giant" ? 90 : monster.type === "beast" ? 45 : 18;
+          const rewardXp = monster.type === "giant" ? 60 : monster.type === "beast" ? 28 : 10;
+
+          stats.crystals += rewardCrystals;
+          stats.xp += rewardXp;
+
+          if (player) {
+            player.score += rewardXp;
+          }
+
+          world.monsters = world.monsters.filter((item) => item.id !== monster.id);
+
+          if (selectedMonsterRef.current?.id === monster.id) {
+            updateSelectedMonster(null);
+          }
+        } else if (selectedMonsterRef.current?.id === monster.id) {
+          updateSelectedMonster({ ...monster });
+        }
+
+        if (returnCount > 0) {
+          nextMarches.push({
+            id: `return-${Date.now()}-${Math.random()}`,
+            type: "return",
+            count: returnCount,
+            fromX: march.toX,
+            fromY: march.toY,
+            toX: player.x,
+            toY: player.y,
+            progress: 0,
+          });
+        }
+
+        continue;
+      }
+
+      if (march.type === "return") {
+        stats.guards += march.count;
+      }
+    }
+
+    marchesRef.current = nextMarches;
+  }
+
   function drawArena() {
     const canvas = canvasRef.current;
     const player = playerRef.current;
@@ -552,9 +755,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawOutsideWorldShadow(ctx);
     drawWorldGrid(ctx);
     drawWorldBorder(ctx);
-    drawMonsters(ctx, world.monsters);
+    drawMonsters(ctx, world.monsters, selectedMonsterRef.current?.id);
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
+    drawMarches(ctx, marchesRef.current);
+    drawOrbitGuards(ctx, player, cityStatsRef.current.guards);
     drawPlayer(ctx, player);
 
     ctx.restore();
@@ -730,6 +935,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     };
 
     setEnterCoreVisible(false);
+    updateSelectedMonster(null);
     updateLandingPreview(null);
 
     setHud((current) => ({
@@ -752,17 +958,25 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function enterCity() {
     updateLandingPreview(null);
+    updateSelectedMonster(null);
     teleportModeRef.current = false;
     setEnterCoreVisible(false);
     setBuildMode(false);
     updateBuildPreview(null);
+    setBuildMenuOpen(false);
     setScreen("city");
   }
 
   function backToMap() {
     setBuildMode(false);
     updateBuildPreview(null);
+    setBuildMenuOpen(false);
     setScreen("arena");
+
+    setHud((current) => ({
+      ...current,
+      status: "World map opened. Tap a monster to attack.",
+    }));
   }
 
   function centerCityCamera() {
@@ -772,30 +986,43 @@ export default function PixelFlowSurvival({ open, onClose }) {
     forceBuildPreviewRender();
   }
 
-  function toggleBuildMode() {
-    const next = !buildModeRef.current;
-    setBuildMode(next);
+  function openBuildMenu() {
+    setBuildMenuOpen((current) => !current);
+    setBuildMode(false);
+    updateBuildPreview(null);
+    setSelectedBuildingType(null);
+  }
 
-    if (!next) {
-      updateBuildPreview(null);
-    }
+  function chooseBuilding(type) {
+    setSelectedBuildingType(type);
+    setBuildMenuOpen(false);
+    setBuildMode(true);
+    updateBuildPreview(null);
   }
 
   function resetCityBuildings() {
     cityRef.current = createCityState();
+    cityStatsRef.current = createCityStats();
+    marchesRef.current = [];
     setBuildMode(false);
     updateBuildPreview(null);
+    setBuildMenuOpen(false);
+    setSelectedBuildingType(null);
+    setCityStats({ ...cityStatsRef.current });
   }
 
   function makeBuildPreviewFromPoint(point) {
-    const snapped = snapCityPointToGrid(point, 2, 2);
+    const type = selectedBuildingTypeRef.current || "Barracks";
+    const definition = BUILDINGS[type] || BUILDINGS.Barracks;
+    const snapped = snapCityPointToGrid(point, definition.w, definition.h);
 
     const preview = {
-      type: "Barracks",
+      type: definition.type,
       x: snapped.x,
       y: snapped.y,
-      w: 2,
-      h: 2,
+      w: definition.w,
+      h: definition.h,
+      cost: definition.cost,
       valid: true,
     };
 
@@ -807,10 +1034,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function canPlaceBuilding(preview) {
     if (!preview) return false;
 
+    const stats = cityStatsRef.current;
     const left = preview.x;
     const top = preview.y;
     const right = preview.x + preview.w * CITY_GRID_STEP;
     const bottom = preview.y + preview.h * CITY_GRID_STEP;
+
+    if (stats.crystals < preview.cost) {
+      return false;
+    }
 
     if (left < 0 || top < 0 || right > CITY_WIDTH || bottom > CITY_HEIGHT) {
       return false;
@@ -846,29 +1078,42 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (!preview || !preview.valid) return;
 
+    const definition = BUILDINGS[preview.type] || BUILDINGS.Barracks;
+    const stats = cityStatsRef.current;
+
+    stats.crystals = Math.max(0, stats.crystals - definition.cost);
+
     cityRef.current = {
       ...cityRef.current,
       buildings: [
         ...cityRef.current.buildings,
         {
-          id: `barracks-${Date.now()}`,
+          id: `${preview.type}-${Date.now()}`,
           type: preview.type,
           x: preview.x,
           y: preview.y,
           w: preview.w,
           h: preview.h,
-          color: "#f59e0b",
+          color: definition.color,
         },
       ],
     };
 
+    if (preview.type === "House") {
+      stats.guardCap += 25;
+      stats.workerCap += 5;
+    }
+
     setBuildMode(false);
     updateBuildPreview(null);
+    setSelectedBuildingType(null);
+    setCityStats({ ...stats });
   }
 
   function cancelBuildPreview() {
     updateBuildPreview(null);
     setBuildMode(false);
+    setSelectedBuildingType(null);
   }
 
   function pointInsideBuildPreview(cityPoint, preview) {
@@ -880,6 +1125,45 @@ export default function PixelFlowSurvival({ open, onClose }) {
       cityPoint.y >= preview.y &&
       cityPoint.y <= preview.y + preview.h * CITY_GRID_STEP
     );
+  }
+
+  function beginAttackSelectedMonster() {
+    const monster = selectedMonsterRef.current;
+    const player = playerRef.current;
+    const stats = cityStatsRef.current;
+
+    if (!monster || !player) return;
+
+    const sendCount = Math.floor(stats.guards);
+
+    if (sendCount <= 0) {
+      setHud((current) => ({
+        ...current,
+        status: "No Core Guards at home. Build Barracks and wait.",
+      }));
+      return;
+    }
+
+    stats.guards = 0;
+
+    marchesRef.current.push({
+      id: `attack-${Date.now()}-${Math.random()}`,
+      type: "attack",
+      count: sendCount,
+      fromX: player.x,
+      fromY: player.y,
+      toX: monster.x,
+      toY: monster.y,
+      progress: 0,
+      targetMonsterId: monster.id,
+    });
+
+    setCityStats({ ...stats });
+
+    setHud((current) => ({
+      ...current,
+      status: `Attack launched: ${sendCount} Core Guards.`,
+    }));
   }
 
   function onArenaPointerDown(event) {
@@ -969,6 +1253,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       if (totalMove > 6) {
         pointerState.dragging = true;
         setEnterCoreVisible(false);
+        updateSelectedMonster(null);
       }
 
       panCamera(dx, dy);
@@ -1019,15 +1304,45 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
         if (dist <= player.r + 42) {
           setEnterCoreVisible(true);
+          updateSelectedMonster(null);
           setHud((current) => ({
             ...current,
             status: "Core selected. Press ENTER.",
           }));
-        } else {
-          setEnterCoreVisible(false);
+          return;
         }
       }
+
+      const monster = findMonsterAt(worldPoint);
+
+      if (monster) {
+        updateSelectedMonster({ ...monster });
+        setEnterCoreVisible(false);
+        setHud((current) => ({
+          ...current,
+          status: `Monster selected. Power ${monster.hp}. Attack sends 1/1.`,
+        }));
+      } else {
+        updateSelectedMonster(null);
+        setEnterCoreVisible(false);
+      }
     }
+  }
+
+  function findMonsterAt(worldPoint) {
+    let best = null;
+    let bestDistance = Infinity;
+
+    for (const monster of worldRef.current.monsters) {
+      const distance = Math.hypot(worldPoint.x - monster.x, worldPoint.y - monster.y);
+
+      if (distance <= monster.r + 32 && distance < bestDistance) {
+        best = monster;
+        bestDistance = distance;
+      }
+    }
+
+    return best;
   }
 
   function onCityPointerDown(event) {
@@ -1286,6 +1601,28 @@ export default function PixelFlowSurvival({ open, onClose }) {
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
+  function getCityStatusText() {
+    const buildings = cityRef.current.buildings;
+
+    if (!buildings.some((building) => building.type === "CrystalPoint")) {
+      return "Step 1: BUILD -> Crystal Point. It gives +1 crystal/sec.";
+    }
+
+    if (!buildings.some((building) => building.type === "House")) {
+      return "Step 2: BUILD -> House. It increases Guard capacity.";
+    }
+
+    if (!buildings.some((building) => building.type === "Barracks")) {
+      return "Step 3: BUILD -> Barracks. It produces Core Guards.";
+    }
+
+    if (Math.floor(cityStats.guards) <= 0) {
+      return "Barracks online. Wait while Core Guards are produced.";
+    }
+
+    return "Core Guards ready. Open WORLD MAP and tap a monster.";
+  }
+
   return (
     <div style={styles.overlay}>
       {screen === "menu" && (
@@ -1294,8 +1631,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
             <p style={styles.kicker}>Core Field Prototype</p>
             <h1 style={styles.title}>Macro Swarm</h1>
             <p style={styles.menuText}>
-              Minimal server-field test. Tap your core to enter the inner city,
-              build a first structure, then return to the map.
+              Start inside your city, build resource production, create Core Guards,
+              then send the swarm to attack monsters on the world map.
             </p>
 
             <div style={styles.profileGrid}>
@@ -1360,6 +1697,23 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 </div>
               )}
 
+              {selectedMonster && selectedMonsterScreen && (
+                <div
+                  style={{
+                    ...styles.monsterActions,
+                    left: clamp(selectedMonsterScreen.x + 28, 12, viewport.width - 118),
+                    top: clamp(selectedMonsterScreen.y + 32, 86, viewport.height - 154),
+                  }}
+                >
+                  <button style={styles.attackButton} onClick={beginAttackSelectedMonster}>
+                    ATTACK 1/1
+                  </button>
+                  <button style={styles.cancelButton} onClick={() => updateSelectedMonster(null)}>
+                    ×
+                  </button>
+                </div>
+              )}
+
               {landingPreview && landingScreen && (
                 <div
                   style={{
@@ -1392,8 +1746,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   CENTER
                 </button>
 
-                <button style={styles.controlButton} onClick={respawn}>
-                  RESPAWN
+                <button style={styles.controlButton} onClick={enterCity}>
+                  CITY
                 </button>
 
                 <button style={styles.controlButton} onClick={endRun}>
@@ -1412,15 +1766,60 @@ export default function PixelFlowSurvival({ open, onClose }) {
               <header style={styles.cityHud}>
                 <div style={styles.cityTitleBox}>
                   <span>INNER CITY</span>
-                  <strong>CORE BASE</strong>
+                  <strong>LV {cityStats.level} CORE BASE</strong>
                 </div>
 
                 <div style={styles.cityStatusBox}>
-                  {buildMode
-                    ? "Build mode: tap a 2x2 area for Barracks."
-                    : "Tap BUILD to place the first Barracks."}
+                  <span>
+                    💎 {Math.floor(cityStats.crystals)} | +{cityStats.crystalRate}/s &nbsp; | &nbsp;
+                    GUARDS {Math.floor(cityStats.guards)}/{cityStats.guardCap} &nbsp; | &nbsp;
+                    XP {Math.floor(cityStats.xp)}
+                  </span>
                 </div>
               </header>
+
+              <div style={styles.cityHint}>
+                {selectedBuildingType
+                  ? `Selected: ${BUILDINGS[selectedBuildingType]?.label || selectedBuildingType}. Tap grid to place.`
+                  : getCityStatusText()}
+              </div>
+
+              {buildMenuOpen && (
+                <div style={styles.buildMenu}>
+                  <div style={styles.buildMenuHeader}>
+                    <strong>BUILD MENU</strong>
+                    <button style={styles.buildMenuClose} onClick={() => setBuildMenuOpen(false)}>
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={styles.buildCardGrid}>
+                    <button style={styles.buildCard} onClick={() => chooseBuilding("CrystalPoint")}>
+                      <span style={styles.buildCardIconCrystal}>◆</span>
+                      <strong>Crystal Point</strong>
+                      <small>Cost 0 · +1/s</small>
+                    </button>
+
+                    <button style={styles.buildCard} onClick={() => chooseBuilding("House")}>
+                      <span style={styles.buildCardIconHouse}>■</span>
+                      <strong>House</strong>
+                      <small>Cost 25 · +25 cap</small>
+                    </button>
+
+                    <button style={styles.buildCard} onClick={() => chooseBuilding("Barracks")}>
+                      <span style={styles.buildCardIconBarracks}>▲</span>
+                      <strong>Barracks</strong>
+                      <small>Cost 30 · Guards</small>
+                    </button>
+
+                    <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled>
+                      <span>◎</span>
+                      <strong>Command</strong>
+                      <small>Locked</small>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {buildPreview && buildScreen && (
                 <div
@@ -1448,15 +1847,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               <footer style={styles.cityControls}>
                 <button style={styles.controlButton} onClick={backToMap}>
-                  BACK MAP
+                  WORLD MAP
                 </button>
 
                 <button
                   style={{
                     ...styles.controlButton,
-                    ...(buildMode ? styles.controlButtonActive : {}),
+                    ...(buildMode || buildMenuOpen ? styles.controlButtonActive : {}),
                   }}
-                  onClick={toggleBuildMode}
+                  onClick={openBuildMenu}
                 >
                   BUILD
                 </button>
@@ -1569,11 +1968,20 @@ function drawWorldBorder(ctx) {
   ctx.restore();
 }
 
-function drawMonsters(ctx, monsters) {
+function drawMonsters(ctx, monsters, selectedMonsterId) {
   const now = Date.now();
 
   for (const monster of monsters) {
+    const selected = selectedMonsterId === monster.id;
     const pulse = 1 + Math.sin(now / 480 + monster.pulse) * 0.035;
+
+    if (selected) {
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(34,211,238,0.78)";
+      ctx.lineWidth = 5;
+      ctx.arc(monster.x, monster.y, monster.r + 16, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     ctx.beginPath();
     ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -1606,7 +2014,7 @@ function drawMonsters(ctx, monsters) {
     ctx.fillText(label, monster.x, monster.y - 5);
 
     ctx.font = "800 10px Inter, system-ui, sans-serif";
-    ctx.fillText(`${monster.hp}`, monster.x, monster.y + 10);
+    ctx.fillText(`${Math.ceil(monster.hp)}`, monster.x, monster.y + 10);
   }
 }
 
@@ -1716,6 +2124,111 @@ function drawTeleportEffectRings(ctx, effect) {
     ctx.lineWidth = 2;
     ctx.arc(target.x, target.y, radius * 0.55, 0, Math.PI * 2);
     ctx.stroke();
+  }
+}
+
+function drawOrbitGuards(ctx, player, guardCount) {
+  const count = Math.max(0, Math.floor(guardCount));
+  if (!player || count <= 0) return;
+
+  const now = Date.now() / 1000;
+  const layerSize = 42;
+
+  ctx.save();
+
+  for (let i = 0; i < count; i += 1) {
+    const layer = Math.floor(i / layerSize);
+    const indexInLayer = i % layerSize;
+    const itemsInLayer = Math.min(layerSize, count - layer * layerSize);
+
+    const radius = player.r + 34 + layer * 16;
+    const speed = 1.25 - layer * 0.12;
+    const angle =
+      now * speed +
+      (indexInLayer / Math.max(1, itemsInLayer)) * Math.PI * 2 +
+      layer * 0.8;
+
+    const x = player.x + Math.cos(angle) * radius;
+    const y = player.y + Math.sin(angle) * radius;
+
+    const tailX = player.x + Math.cos(angle - 0.08) * radius;
+    const tailY = player.y + Math.sin(angle - 0.08) * radius;
+
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(103,232,249,0.24)";
+    ctx.lineWidth = 2;
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(191,246,255,0.92)";
+    ctx.shadowColor = "#67e8f9";
+    ctx.shadowBlur = 10;
+    ctx.arc(x, y, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.font = "900 13px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${count}`, player.x, player.y + player.r + 54);
+
+  ctx.restore();
+}
+
+function drawMarches(ctx, marches) {
+  const now = Date.now() / 1000;
+
+  for (const march of marches) {
+    const progress = march.progress;
+    const count = Math.max(1, Math.floor(march.count));
+    const dx = march.toX - march.fromX;
+    const dy = march.toY - march.fromY;
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / distance;
+    const ny = dx / distance;
+
+    ctx.save();
+
+    ctx.beginPath();
+    ctx.strokeStyle =
+      march.type === "return" ? "rgba(34,197,94,0.24)" : "rgba(103,232,249,0.24)";
+    ctx.lineWidth = 3;
+    ctx.moveTo(march.fromX, march.fromY);
+    ctx.lineTo(march.toX, march.toY);
+    ctx.stroke();
+
+    for (let i = 0; i < count; i += 1) {
+      const wave = Math.sin(now * 7 + i * 0.37) * 8;
+      const streamOffset = (i / Math.max(1, count - 1)) * 0.18;
+      const p = clamp(progress - streamOffset, 0, 1);
+
+      const x = march.fromX + dx * p + nx * wave;
+      const y = march.fromY + dy * p + ny * wave;
+
+      ctx.beginPath();
+      ctx.fillStyle =
+        march.type === "return" ? "rgba(134,239,172,0.92)" : "rgba(191,246,255,0.92)";
+      ctx.shadowColor = march.type === "return" ? "#22c55e" : "#67e8f9";
+      ctx.shadowBlur = 11;
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    const headX = march.fromX + dx * progress;
+    const headY = march.fromY + dy * progress;
+
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = "900 12px Inter, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${count}`, headX, headY - 18);
+
+    ctx.restore();
   }
 }
 
@@ -1842,35 +2355,134 @@ function drawCityBuildings(ctx, buildings) {
     roundedRect(ctx, building.x + 8, building.y + 10, width, height, 22);
     ctx.fill();
 
-    const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
-    gradient.addColorStop(0, building.type === "Citadel" ? "#67e8f9" : "#fbbf24");
-    gradient.addColorStop(1, building.type === "Citadel" ? "#2563eb" : "#b45309");
-
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = building.type === "Citadel" ? "#38bdf8" : "#f59e0b";
-    ctx.shadowBlur = 20;
-    roundedRect(ctx, building.x, building.y, width, height, 22);
-    ctx.fill();
-
-    ctx.shadowBlur = 0;
-
-    ctx.strokeStyle = "rgba(255,255,255,0.38)";
-    ctx.lineWidth = 3;
-    roundedRect(ctx, building.x + 10, building.y + 10, width - 20, height - 20, 16);
-    ctx.stroke();
-
-    if (building.type === "Citadel") {
-      drawCitadelCrown(ctx, building.x, building.y, width, height);
+    if (building.type === "CrystalPoint") {
+      drawCrystalPointBuilding(ctx, building, width, height, cx, cy);
+    } else if (building.type === "House") {
+      drawHouseBuilding(ctx, building, width, height, cx, cy);
+    } else if (building.type === "Barracks") {
+      drawBarracksBuilding(ctx, building, width, height, cx, cy);
+    } else {
+      drawCitadelBuilding(ctx, building, width, height, cx, cy);
     }
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 16px Inter, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(building.type.toUpperCase(), cx, cy);
 
     ctx.restore();
   }
+}
+
+function drawCitadelBuilding(ctx, building, width, height, cx, cy) {
+  const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
+  gradient.addColorStop(0, "#67e8f9");
+  gradient.addColorStop(1, "#2563eb");
+
+  ctx.fillStyle = gradient;
+  ctx.shadowColor = "#38bdf8";
+  ctx.shadowBlur = 20;
+  roundedRect(ctx, building.x, building.y, width, height, 22);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = "rgba(255,255,255,0.38)";
+  ctx.lineWidth = 3;
+  roundedRect(ctx, building.x + 10, building.y + 10, width - 20, height - 20, 16);
+  ctx.stroke();
+
+  drawCitadelCrown(ctx, building.x, building.y, width);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 16px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("CITADEL", cx, cy);
+}
+
+function drawCrystalPointBuilding(ctx, building, width, height, cx, cy) {
+  ctx.fillStyle = "rgba(8,47,73,0.92)";
+  roundedRect(ctx, building.x, building.y, width, height, 22);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(34,211,238,0.48)";
+  ctx.lineWidth = 4;
+  roundedRect(ctx, building.x + 8, building.y + 8, width - 16, height - 16, 18);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.fillStyle = "#67e8f9";
+  ctx.shadowColor = "#22d3ee";
+  ctx.shadowBlur = 24;
+  ctx.moveTo(cx, cy - 48);
+  ctx.lineTo(cx + 38, cy);
+  ctx.lineTo(cx, cy + 48);
+  ctx.lineTo(cx - 38, cy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 13px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("CRYSTAL", cx, cy + 68);
+}
+
+function drawHouseBuilding(ctx, building, width, height, cx, cy) {
+  const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
+  gradient.addColorStop(0, "#bbf7d0");
+  gradient.addColorStop(1, "#15803d");
+
+  ctx.fillStyle = gradient;
+  ctx.shadowColor = "#22c55e";
+  ctx.shadowBlur = 12;
+  roundedRect(ctx, building.x, building.y, width, height, 18);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "rgba(15,23,42,0.52)";
+  roundedRect(ctx, building.x + 23, building.y + 34, width - 46, height - 50, 12);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.font = "900 10px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("HOME", cx, cy);
+}
+
+function drawBarracksBuilding(ctx, building, width, height, cx, cy) {
+  const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
+  gradient.addColorStop(0, "#fbbf24");
+  gradient.addColorStop(1, "#b45309");
+
+  ctx.fillStyle = gradient;
+  ctx.shadowColor = "#f59e0b";
+  ctx.shadowBlur = 16;
+  roundedRect(ctx, building.x + 10, building.y + 18, width - 20, height - 26, 20);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "rgba(15,23,42,0.56)";
+  roundedRect(ctx, building.x + 62, building.y + 94, width - 124, height - 112, 12);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.28)";
+  roundedRect(ctx, building.x + 28, building.y + 4, 28, 42, 8);
+  ctx.fill();
+  roundedRect(ctx, building.x + width - 56, building.y + 4, 28, 42, 8);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.34)";
+  ctx.lineWidth = 3;
+  roundedRect(ctx, building.x + 24, building.y + 30, width - 48, height - 52, 16);
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 13px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("BARRACKS", cx, cy - 4);
 }
 
 function drawBuildPreview(ctx, preview) {
@@ -1881,6 +2493,7 @@ function drawBuildPreview(ctx, preview) {
   const valid = preview.valid;
   const t = Date.now() / 250;
   const pulse = 1 + Math.sin(t) * 0.04;
+  const label = BUILDINGS[preview.type]?.shortLabel || preview.type;
 
   ctx.save();
 
@@ -1893,12 +2506,20 @@ function drawBuildPreview(ctx, preview) {
 
   ctx.strokeStyle = "rgba(255,255,255,0.2)";
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(preview.x + CITY_GRID_STEP, preview.y);
-  ctx.lineTo(preview.x + CITY_GRID_STEP, preview.y + height);
-  ctx.moveTo(preview.x, preview.y + CITY_GRID_STEP);
-  ctx.lineTo(preview.x + width, preview.y + CITY_GRID_STEP);
-  ctx.stroke();
+
+  for (let x = preview.x + CITY_GRID_STEP; x < preview.x + width; x += CITY_GRID_STEP) {
+    ctx.beginPath();
+    ctx.moveTo(x, preview.y);
+    ctx.lineTo(x, preview.y + height);
+    ctx.stroke();
+  }
+
+  for (let y = preview.y + CITY_GRID_STEP; y < preview.y + height; y += CITY_GRID_STEP) {
+    ctx.beginPath();
+    ctx.moveTo(preview.x, y);
+    ctx.lineTo(preview.x + width, y);
+    ctx.stroke();
+  }
 
   const cx = preview.x + width / 2;
   const cy = preview.y + height / 2;
@@ -1915,10 +2536,10 @@ function drawBuildPreview(ctx, preview) {
   ctx.stroke();
 
   ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "900 14px Inter, system-ui, sans-serif";
+  ctx.font = "900 13px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(preview.valid ? "BARRACKS" : "BLOCKED", cx, cy);
+  ctx.fillText(valid ? label : "BLOCKED", cx, cy);
 
   ctx.restore();
 }
@@ -2141,7 +2762,7 @@ const styles = {
     right: 10,
     top: 10,
     display: "grid",
-    gridTemplateColumns: "130px 1fr",
+    gridTemplateColumns: "116px 1fr",
     gap: 8,
     zIndex: 3,
     pointerEvents: "none",
@@ -2169,11 +2790,30 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.12)",
     display: "flex",
     alignItems: "center",
-    padding: "0 14px",
+    padding: "0 12px",
     boxSizing: "border-box",
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 11,
+    fontWeight: 800,
+  },
+
+  cityHint: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: 72,
+    minHeight: 38,
+    borderRadius: 14,
+    background: "rgba(15,23,42,0.74)",
+    border: "1px solid rgba(103,232,249,0.16)",
     color: "rgba(255,255,255,0.72)",
     fontSize: 12,
     fontWeight: 800,
+    display: "flex",
+    alignItems: "center",
+    padding: "0 12px",
+    zIndex: 3,
+    pointerEvents: "none",
   },
 
   enterCoreActions: {
@@ -2192,6 +2832,31 @@ const styles = {
     border: 0,
     borderRadius: 999,
     background: "linear-gradient(135deg, #22d3ee, #2563eb)",
+    color: "#ffffff",
+    fontWeight: 900,
+    fontSize: 11,
+    cursor: "pointer",
+  },
+
+  monsterActions: {
+    position: "absolute",
+    zIndex: 6,
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    padding: 5,
+    borderRadius: 999,
+    background: "rgba(15,23,42,0.92)",
+    border: "1px solid rgba(239,68,68,0.34)",
+    boxShadow: "0 18px 50px rgba(0,0,0,0.42)",
+  },
+
+  attackButton: {
+    minWidth: 82,
+    height: 30,
+    border: 0,
+    borderRadius: 999,
+    background: "linear-gradient(135deg, #ef4444, #f59e0b)",
     color: "#ffffff",
     fontWeight: 900,
     fontSize: 11,
@@ -2222,6 +2887,83 @@ const styles = {
     background: "rgba(15,23,42,0.92)",
     border: "1px solid rgba(34,197,94,0.36)",
     boxShadow: "0 18px 50px rgba(0,0,0,0.42)",
+  },
+
+  buildMenu: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 78,
+    zIndex: 7,
+    borderRadius: 22,
+    padding: 12,
+    background: "rgba(15,23,42,0.94)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
+  },
+
+  buildMenuHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 13,
+    fontWeight: 900,
+  },
+
+  buildMenuClose: {
+    width: 30,
+    height: 30,
+    borderRadius: "50%",
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  buildCardGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 8,
+  },
+
+  buildCard: {
+    minHeight: 82,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    fontSize: 10,
+    fontWeight: 900,
+    cursor: "pointer",
+    padding: 6,
+  },
+
+  buildCardLocked: {
+    opacity: 0.42,
+    cursor: "not-allowed",
+  },
+
+  buildCardIconCrystal: {
+    color: "#67e8f9",
+    fontSize: 20,
+  },
+
+  buildCardIconHouse: {
+    color: "#86efac",
+    fontSize: 18,
+  },
+
+  buildCardIconBarracks: {
+    color: "#fbbf24",
+    fontSize: 18,
   },
 
   landButton: {
@@ -2296,6 +3038,7 @@ const styles = {
     fontWeight: 900,
     cursor: "pointer",
     backdropFilter: "blur(10px)",
+    fontSize: 11,
   },
 
   controlButtonActive: {
