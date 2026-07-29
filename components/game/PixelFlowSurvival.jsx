@@ -71,13 +71,71 @@ function createCityStats() {
   return {
     crystals: 80,
     crystalRate: 0,
+
     workers: 0,
     workerCap: 5,
+
     guards: 0,
     guardCap: 10,
     guardTrainTimer: 0,
+    guardPower: 1,
+
+    shooters: 0,
+    shooterCap: 0,
+    shooterTrainTimer: 0,
+    shooterPower: 1,
+
     xp: 0,
     level: 1,
+    nextLevelXp: 100,
+    maxAttackSplit: 1,
+  };
+}
+
+function getXpRequiredForLevel(level) {
+  if (level <= 1) return 0;
+  if (level === 2) return 100;
+
+  return Math.floor(100 * Math.pow(level - 1, 1.65));
+}
+
+function getNextLevelXp(level) {
+  return getXpRequiredForLevel(level + 1);
+}
+
+function getGuardOrbitTheme(level) {
+  if (level >= 30) {
+    return {
+      main: "rgba(168,85,247,0.94)",
+      tail: "rgba(168,85,247,0.28)",
+      glow: "#a855f7",
+      core: "rgba(255,255,255,0.96)",
+    };
+  }
+
+  if (level >= 20) {
+    return {
+      main: "rgba(251,191,36,0.94)",
+      tail: "rgba(251,191,36,0.26)",
+      glow: "#fbbf24",
+      core: "rgba(255,255,255,0.96)",
+    };
+  }
+
+  if (level >= 10) {
+    return {
+      main: "rgba(125,211,252,0.94)",
+      tail: "rgba(125,211,252,0.28)",
+      glow: "#7dd3fc",
+      core: "rgba(255,255,255,0.96)",
+    };
+  }
+
+  return {
+    main: "rgba(191,246,255,0.92)",
+    tail: "rgba(103,232,249,0.24)",
+    glow: "#67e8f9",
+    core: "rgba(255,255,255,0.92)",
   };
 }
 
@@ -85,21 +143,35 @@ function createMonster(index) {
   const roll = Math.random();
 
   let type = "small";
-  let r = rand(16, 28);
-  let hp = Math.round(r * 6);
+  let r = rand(16, 25);
+  let hp = Math.round(rand(20, 50));
   let color = "#67e8f9";
 
-  if (roll > 0.62 && roll <= 0.88) {
-    type = "beast";
-    r = rand(34, 54);
-    hp = Math.round(r * 10);
-    color = "#f59e0b";
+  if (roll > 0.46 && roll <= 0.72) {
+    type = "wild";
+    r = rand(26, 36);
+    hp = Math.round(rand(50, 150));
+    color = "#86efac";
   }
 
-  if (roll > 0.88) {
+  if (roll > 0.72 && roll <= 0.88) {
+    type = "beast";
+    r = rand(38, 54);
+    hp = Math.round(rand(150, 300));
+    color = "#facc15";
+  }
+
+  if (roll > 0.88 && roll <= 0.96) {
+    type = "brute";
+    r = rand(56, 76);
+    hp = Math.round(rand(300, 700));
+    color = "#f97316";
+  }
+
+  if (roll > 0.96) {
     type = "giant";
-    r = rand(68, 105);
-    hp = Math.round(r * 18);
+    r = rand(82, 120);
+    hp = Math.round(rand(700, 1800));
     color = "#ef4444";
   }
 
@@ -602,6 +674,20 @@ export default function PixelFlowSurvival({ open, onClose }) {
       }
     }
 
+    if (stats.level >= 20 && stats.shooterCap > 0) {
+      stats.shooterTrainTimer += dt * 0.35;
+
+      while (
+        stats.shooterTrainTimer >= 1 &&
+        stats.shooters < stats.shooterCap &&
+        stats.crystals >= 2
+      ) {
+        stats.shooterTrainTimer -= 1;
+        stats.crystals -= 2;
+        stats.shooters += 1;
+      }
+    }
+
     cityStatsUiTimerRef.current += dt;
 
     if (cityStatsUiTimerRef.current >= 0.2) {
@@ -614,6 +700,53 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const stats = cityStatsRef.current;
     const marchGuards = marchesRef.current.reduce((sum, march) => sum + march.count, 0);
     return stats.guards + marchGuards;
+  }
+
+  function applyCityLevelProgression() {
+    const stats = cityStatsRef.current;
+    let changed = false;
+
+    while (stats.level < 100 && stats.xp >= getNextLevelXp(stats.level)) {
+      stats.level += 1;
+      changed = true;
+
+      stats.nextLevelXp = getNextLevelXp(stats.level);
+      stats.guardCap += 5;
+
+      if (stats.level >= 10) {
+        stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
+      }
+
+      if (stats.level === 5) {
+        stats.guardCap += 10;
+      }
+
+      if (stats.level === 10) {
+        stats.guardPower = 2;
+        stats.guardCap += 25;
+      }
+
+      if (stats.level === 20) {
+        stats.shooterCap = 30;
+        stats.guardCap += 50;
+      }
+
+      if (stats.level === 30) {
+        stats.guardPower = 3;
+        stats.guardCap += 75;
+      }
+    }
+
+    if (changed && playerRef.current) {
+      playerRef.current.level = stats.level;
+      setHud((current) => ({
+        ...current,
+        level: stats.level,
+        status: `Level ${stats.level}`,
+      }));
+    }
+
+    setCityStats({ ...stats });
   }
 
   function updateTeleportEffect(dt) {
@@ -677,17 +810,39 @@ export default function PixelFlowSurvival({ open, onClose }) {
         const monster = world.monsters.find((item) => item.id === march.targetMonsterId);
         if (!monster) continue;
 
-        const damage = Math.min(march.count, monster.hp);
+        const damage = Math.min(march.count * stats.guardPower, monster.hp);
         monster.hp = Math.max(0, monster.hp - damage);
 
-        const returnCount = Math.max(0, march.count - damage);
+        const usedGuards = Math.ceil(damage / Math.max(1, stats.guardPower));
+        const returnCount = Math.max(0, march.count - usedGuards);
 
         if (monster.hp <= 0) {
-          const rewardCrystals = monster.type === "giant" ? 90 : monster.type === "beast" ? 45 : 18;
-          const rewardXp = monster.type === "giant" ? 60 : monster.type === "beast" ? 28 : 10;
+          const rewardCrystals =
+            monster.type === "giant"
+              ? 120
+              : monster.type === "brute"
+                ? 70
+                : monster.type === "beast"
+                  ? 42
+                  : monster.type === "wild"
+                    ? 24
+                    : 14;
+
+          const rewardXp =
+            monster.type === "giant"
+              ? 130
+              : monster.type === "brute"
+                ? 70
+                : monster.type === "beast"
+                  ? 35
+                  : monster.type === "wild"
+                    ? 18
+                    : 10;
 
           stats.crystals += rewardCrystals;
           stats.xp += rewardXp;
+
+          applyCityLevelProgression();
 
           if (player) {
             player.score += rewardXp;
@@ -754,7 +909,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
-    drawOrbitGuards(ctx, player, cityStatsRef.current.guards);
+    drawOrbitSwarm(ctx, player, cityStatsRef.current);
     drawPlayer(ctx, player);
 
     ctx.restore();
@@ -1717,14 +1872,20 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   <strong>{cityStats.workers}/{cityStats.workerCap}</strong>
                 </div>
 
-                <div style={styles.topResourceChip} title="Guards">
+                <div style={styles.topResourceChip} title="Army">
                   <span>⚔</span>
-                  <strong>{Math.floor(cityStats.guards)}/{cityStats.guardCap}</strong>
+                  <strong>
+                    {Math.floor(cityStats.guards + cityStats.shooters)}/
+                    {cityStats.guardCap + cityStats.shooterCap}
+                  </strong>
                 </div>
 
-                <div style={styles.topResourceChip} title="XP">
+                <div style={styles.topResourceChip} title="Level">
                   <span>★</span>
-                  <strong>{Math.floor(cityStats.xp)}</strong>
+                  <strong>{cityStats.level}</strong>
+                  <small>
+                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
+                  </small>
                 </div>
               </header>
 
@@ -1962,13 +2123,20 @@ function drawMonsters(ctx, monsters, selectedMonsterId) {
     ctx.stroke();
 
     ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.font = monster.type === "giant"
-      ? "900 13px Inter, system-ui, sans-serif"
-      : "800 11px Inter, system-ui, sans-serif";
+    ctx.font =
+      monster.type === "giant"
+        ? "900 13px Inter, system-ui, sans-serif"
+        : "800 11px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    const label = monster.type === "giant" ? "GIANT" : monster.type.toUpperCase();
+    const label =
+      monster.type === "giant"
+        ? "GIANT"
+        : monster.type === "brute"
+          ? "BRUTE"
+          : monster.type.toUpperCase();
+
     ctx.fillText(label, monster.x, monster.y - 5);
 
     ctx.font = "800 10px Inter, system-ui, sans-serif";
@@ -2079,54 +2247,132 @@ function drawTeleportEffectRings(ctx, effect) {
   }
 }
 
-function drawOrbitGuards(ctx, player, guardCount) {
-  const count = Math.max(0, Math.floor(guardCount));
-  if (!player || count <= 0) return;
+function drawOrbitSwarm(ctx, player, stats) {
+  if (!player || !stats) return;
+
+  drawOrbitLayer(ctx, {
+    player,
+    count: stats.guards,
+    level: stats.level,
+    radiusOffset: 34,
+    layerSize: 48,
+    size: 3.4,
+    speed: 1.25,
+    phase: 0,
+    type: "guards",
+  });
+
+  if (stats.shooters > 0) {
+    drawOrbitLayer(ctx, {
+      player,
+      count: stats.shooters,
+      level: stats.level,
+      radiusOffset: 40,
+      layerSize: 42,
+      size: 3.1,
+      speed: 0.92,
+      phase: Math.PI / 3,
+      type: "shooters",
+    });
+  }
+
+  const total = Math.floor(stats.guards + stats.shooters);
+
+  if (total > 0) {
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "900 13px Inter, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${total}`, player.x, player.y + player.r + 56);
+    ctx.restore();
+  }
+}
+
+function drawOrbitLayer(ctx, options) {
+  const {
+    player,
+    count,
+    level,
+    radiusOffset,
+    layerSize,
+    size,
+    speed,
+    phase,
+    type,
+  } = options;
+
+  const amount = Math.max(0, Math.floor(count));
+  if (amount <= 0) return;
 
   const now = Date.now() / 1000;
-  const layerSize = 42;
+  const guardTheme = getGuardOrbitTheme(level);
+
+  const theme =
+    type === "shooters"
+      ? {
+          main: "rgba(134,239,172,0.92)",
+          tail: "rgba(34,197,94,0.24)",
+          glow: "#22c55e",
+          core: "rgba(236,253,245,0.96)",
+        }
+      : guardTheme;
 
   ctx.save();
 
-  for (let i = 0; i < count; i += 1) {
+  for (let i = 0; i < amount; i += 1) {
     const layer = Math.floor(i / layerSize);
     const indexInLayer = i % layerSize;
-    const itemsInLayer = Math.min(layerSize, count - layer * layerSize);
+    const itemsInLayer = Math.min(layerSize, amount - layer * layerSize);
 
-    const radius = player.r + 34 + layer * 16;
-    const speed = 1.25 - layer * 0.12;
+    const radius = player.r + radiusOffset + layer * 12;
+    const localSpeed = Math.max(0.35, speed - layer * 0.08);
+
     const angle =
-      now * speed +
+      now * localSpeed +
       (indexInLayer / Math.max(1, itemsInLayer)) * Math.PI * 2 +
-      layer * 0.8;
+      layer * 0.72 +
+      phase;
 
-    const x = player.x + Math.cos(angle) * radius;
-    const y = player.y + Math.sin(angle) * radius;
+    const wave = Math.sin(now * 2.3 + i * 0.41 + phase) * 2.2;
 
-    const tailX = player.x + Math.cos(angle - 0.08) * radius;
-    const tailY = player.y + Math.sin(angle - 0.08) * radius;
+    const x = player.x + Math.cos(angle) * (radius + wave);
+    const y = player.y + Math.sin(angle) * (radius + wave);
+
+    const tailX = player.x + Math.cos(angle - 0.09) * radius;
+    const tailY = player.y + Math.sin(angle - 0.09) * radius;
 
     ctx.beginPath();
-    ctx.strokeStyle = "rgba(103,232,249,0.24)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = theme.tail;
+    ctx.lineWidth = type === "shooters" ? 1.8 : 2;
     ctx.moveTo(tailX, tailY);
     ctx.lineTo(x, y);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.fillStyle = "rgba(191,246,255,0.92)";
-    ctx.shadowColor = "#67e8f9";
-    ctx.shadowBlur = 10;
-    ctx.arc(x, y, 3.4, 0, Math.PI * 2);
+    ctx.fillStyle = theme.main;
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = type === "shooters" ? 12 : 10;
+    ctx.arc(x, y, size, 0, Math.PI * 2);
     ctx.fill();
+
+    if (level >= 10 && type === "guards") {
+      ctx.beginPath();
+      ctx.fillStyle = theme.core;
+      ctx.arc(x, y, size * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (type === "shooters") {
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(220,252,231,0.55)";
+      ctx.lineWidth = 1;
+      ctx.arc(x, y, size + 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     ctx.shadowBlur = 0;
   }
-
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "900 13px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(`${count}`, player.x, player.y + player.r + 54);
 
   ctx.restore();
 }
@@ -2185,6 +2431,8 @@ function drawMarches(ctx, marches) {
 }
 
 function drawPlayer(ctx, player) {
+  const cityLevel = player.level || 1;
+
   ctx.beginPath();
   ctx.fillStyle = "rgba(0,0,0,0.32)";
   ctx.arc(player.x + 7, player.y + 8, player.r * 1.04, 0, Math.PI * 2);
@@ -2218,6 +2466,47 @@ function drawPlayer(ctx, player) {
   ctx.lineWidth = 3;
   ctx.arc(player.x, player.y, player.r * 0.78, 0, Math.PI * 2);
   ctx.stroke();
+
+  if (cityLevel >= 5) {
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(34,211,238,0.32)";
+    ctx.lineWidth = 4;
+    ctx.arc(player.x, player.y, player.r + 14, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (cityLevel >= 10) {
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(251,191,36,0.42)";
+    ctx.lineWidth = 3;
+    ctx.arc(player.x, player.y, player.r + 24, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const towerSize = 10;
+    const towerRadius = player.r + 6;
+
+    for (let i = 0; i < 4; i += 1) {
+      const angle = (Math.PI / 2) * i + Math.PI / 4;
+      const tx = player.x + Math.cos(angle) * towerRadius;
+      const ty = player.y + Math.sin(angle) * towerRadius;
+
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(angle);
+      ctx.fillStyle = "rgba(255,255,255,0.34)";
+      roundedRect(ctx, -towerSize / 2, -towerSize / 2, towerSize, towerSize, 3);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  if (cityLevel >= 20) {
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(34,197,94,0.34)";
+    ctx.lineWidth = 3;
+    ctx.arc(player.x, player.y, player.r + 34, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   if (player.shield > 0) {
     const pulse = 1 + Math.sin(Date.now() / 240) * 0.035;
@@ -2701,7 +2990,7 @@ const styles = {
     height: 42,
     zIndex: 3,
     display: "grid",
-    gridTemplateColumns: "1.25fr 1fr 1.25fr 0.9fr",
+    gridTemplateColumns: "1.25fr 1fr 1.25fr 1.35fr",
     gap: 6,
     pointerEvents: "none",
   },
@@ -2717,10 +3006,10 @@ const styles = {
     justifyContent: "center",
     gap: 4,
     color: "rgba(255,255,255,0.86)",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 900,
     boxSizing: "border-box",
-    padding: "0 6px",
+    padding: "0 5px",
   },
 
   tutorialBuildArrow: {
