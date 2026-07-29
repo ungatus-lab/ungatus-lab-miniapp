@@ -27,35 +27,31 @@ const CITY_MAX_ZOOM = 1.55;
 const ATTACK_MARCH_SPEED = 0.42;
 const RETURN_MARCH_SPEED = 0.52;
 
+const MAX_BUILDING_LEVEL = 5;
+
 const BUILDINGS = {
   CrystalPoint: {
     type: "CrystalPoint",
-    label: "CRYSTAL POINT",
-    shortLabel: "CRYSTAL",
     w: 2,
     h: 2,
     cost: 0,
-    description: "+1 crystal/sec",
+    workerCost: 5,
     color: "#22d3ee",
   },
   House: {
     type: "House",
-    label: "HOUSE",
-    shortLabel: "HOUSE",
     w: 1,
     h: 1,
     cost: 25,
-    description: "+25 guard capacity",
+    workerCost: 0,
     color: "#86efac",
   },
   Barracks: {
     type: "Barracks",
-    label: "BARRACKS",
-    shortLabel: "BARRACKS",
     w: 2,
     h: 2,
     cost: 30,
-    description: "Produces Core Guards",
+    workerCost: 0,
     color: "#f59e0b",
   },
 };
@@ -72,30 +68,34 @@ function createCityStats() {
     crystals: 80,
     crystalRate: 0,
 
-    workers: 0,
+    workers: 5,
     workerCap: 5,
 
-    guards: 0,
-    guardCap: 10,
-    guardTrainTimer: 0,
-    guardPower: 1,
+    guardsByLevel: {
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+      5: 0,
+    },
 
-    shooters: 0,
-    shooterCap: 0,
-    shooterTrainTimer: 0,
-    shooterPower: 1,
+    guardCap: 10,
 
     xp: 0,
     level: 1,
     nextLevelXp: 100,
+
     maxAttackSplit: 1,
   };
+}
+
+function getTotalGuardsFromStats(stats) {
+  return Object.values(stats.guardsByLevel).reduce((sum, value) => sum + value, 0);
 }
 
 function getXpRequiredForLevel(level) {
   if (level <= 1) return 0;
   if (level === 2) return 100;
-
   return Math.floor(100 * Math.pow(level - 1, 1.65));
 }
 
@@ -103,39 +103,61 @@ function getNextLevelXp(level) {
   return getXpRequiredForLevel(level + 1);
 }
 
-function getGuardOrbitTheme(level) {
-  if (level >= 30) {
+function getMonsterTier(type) {
+  if (type === "wild") return 2;
+  if (type === "beast") return 3;
+  if (type === "brute") return 4;
+  if (type === "giant") return 5;
+  return 1;
+}
+
+function getGuardVisual(level) {
+  if (level >= 5) {
     return {
-      main: "rgba(168,85,247,0.94)",
-      tail: "rgba(168,85,247,0.28)",
+      fill: "rgba(168,85,247,0.96)",
+      tail: "rgba(168,85,247,0.24)",
       glow: "#a855f7",
-      core: "rgba(255,255,255,0.96)",
+      core: "rgba(255,255,255,0.95)",
+      size: 3.8,
     };
   }
 
-  if (level >= 20) {
+  if (level === 4) {
     return {
-      main: "rgba(251,191,36,0.94)",
-      tail: "rgba(251,191,36,0.26)",
+      fill: "rgba(251,191,36,0.95)",
+      tail: "rgba(251,191,36,0.24)",
       glow: "#fbbf24",
-      core: "rgba(255,255,255,0.96)",
+      core: "rgba(255,255,255,0.95)",
+      size: 3.7,
     };
   }
 
-  if (level >= 10) {
+  if (level === 3) {
     return {
-      main: "rgba(125,211,252,0.94)",
-      tail: "rgba(125,211,252,0.28)",
+      fill: "rgba(125,211,252,0.96)",
+      tail: "rgba(125,211,252,0.24)",
       glow: "#7dd3fc",
-      core: "rgba(255,255,255,0.96)",
+      core: "rgba(255,255,255,0.9)",
+      size: 3.6,
+    };
+  }
+
+  if (level === 2) {
+    return {
+      fill: "rgba(165,243,252,0.96)",
+      tail: "rgba(103,232,249,0.28)",
+      glow: "#67e8f9",
+      core: "rgba(255,255,255,0.82)",
+      size: 3.5,
     };
   }
 
   return {
-    main: "rgba(191,246,255,0.92)",
+    fill: "rgba(191,246,255,0.92)",
     tail: "rgba(103,232,249,0.24)",
     glow: "#67e8f9",
-    core: "rgba(255,255,255,0.92)",
+    core: null,
+    size: 3.4,
   };
 }
 
@@ -175,6 +197,8 @@ function createMonster(index) {
     color = "#ef4444";
   }
 
+  const armor = getMonsterTier(type);
+
   return {
     id: `monster-${index}-${Math.random()}`,
     x: rand(180, WORLD_WIDTH - 180),
@@ -182,6 +206,7 @@ function createMonster(index) {
     r,
     hp,
     maxHp: hp,
+    armor,
     type,
     color,
     pulse: rand(0, Math.PI * 2),
@@ -205,6 +230,7 @@ function createCityState() {
       {
         id: "citadel",
         type: "Citadel",
+        level: 1,
         x: citadelX,
         y: citadelY,
         w: 2,
@@ -300,6 +326,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const buildModeRef = useRef(false);
   const buildPreviewRef = useRef(null);
   const selectedBuildingTypeRef = useRef(null);
+  const selectedBuildingRef = useRef(null);
 
   const lastTimeRef = useRef(0);
 
@@ -310,6 +337,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [buildMode, setBuildModeState] = useState(false);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
+  const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
   const [cityStats, setCityStats] = useState(createCityStats());
@@ -356,6 +384,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       canvas.style.height = `${height}px`;
 
       const ctx = canvas.getContext("2d");
+
       if (ctx) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
@@ -442,6 +471,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setSelectedMonsterState(nextMonster);
   }
 
+  function updateSelectedBuilding(nextBuilding) {
+    selectedBuildingRef.current = nextBuilding;
+    setSelectedBuildingState(nextBuilding ? { ...nextBuilding } : null);
+  }
+
   function setBuildMode(nextValue) {
     buildModeRef.current = nextValue;
     setBuildModeState(nextValue);
@@ -477,6 +511,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     updateSelectedMonster(null);
+    updateSelectedBuilding(null);
 
     const spawn = snapPointToLandingGrid({
       x: WORLD_WIDTH / 2,
@@ -654,37 +689,27 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const stats = cityStatsRef.current;
     const buildings = cityRef.current.buildings;
 
-    const crystalPoints = buildings.filter((building) => building.type === "CrystalPoint").length;
-    const barracksCount = buildings.filter((building) => building.type === "Barracks").length;
+    stats.crystalRate = buildings
+      .filter((building) => building.type === "CrystalPoint")
+      .reduce((sum, building) => sum + building.level, 0);
 
-    stats.crystalRate = crystalPoints;
     stats.crystals += stats.crystalRate * dt;
 
-    if (barracksCount > 0) {
-      stats.guardTrainTimer += dt * barracksCount;
+    for (const building of buildings) {
+      if (building.type !== "Barracks") continue;
+
+      const rate = 1 + (building.level - 1) * 0.18;
+      building.trainTimer = (building.trainTimer || 0) + dt * rate;
 
       while (
-        stats.guardTrainTimer >= 1 &&
-        getTotalGuards() < stats.guardCap &&
+        building.trainTimer >= 1 &&
+        getTotalGuardsFromStats(stats) + getMarchGuardCount() < stats.guardCap &&
         stats.crystals >= 1
       ) {
-        stats.guardTrainTimer -= 1;
+        building.trainTimer -= 1;
         stats.crystals -= 1;
-        stats.guards += 1;
-      }
-    }
-
-    if (stats.level >= 20 && stats.shooterCap > 0) {
-      stats.shooterTrainTimer += dt * 0.35;
-
-      while (
-        stats.shooterTrainTimer >= 1 &&
-        stats.shooters < stats.shooterCap &&
-        stats.crystals >= 2
-      ) {
-        stats.shooterTrainTimer -= 1;
-        stats.crystals -= 2;
-        stats.shooters += 1;
+        stats.guardsByLevel[building.level] =
+          (stats.guardsByLevel[building.level] || 0) + 1;
       }
     }
 
@@ -696,10 +721,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
   }
 
-  function getTotalGuards() {
-    const stats = cityStatsRef.current;
-    const marchGuards = marchesRef.current.reduce((sum, march) => sum + march.count, 0);
-    return stats.guards + marchGuards;
+  function getMarchGuardCount() {
+    return marchesRef.current.reduce((sum, march) => {
+      if (!march.guardsByLevel) return sum + (march.count || 0);
+      return sum + getTotalGuardsFromStats({ guardsByLevel: march.guardsByLevel });
+    }, 0);
   }
 
   function applyCityLevelProgression() {
@@ -708,10 +734,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     while (stats.level < 100 && stats.xp >= getNextLevelXp(stats.level)) {
       stats.level += 1;
-      changed = true;
-
       stats.nextLevelXp = getNextLevelXp(stats.level);
       stats.guardCap += 5;
+      changed = true;
 
       if (stats.level >= 10) {
         stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
@@ -722,23 +747,17 @@ export default function PixelFlowSurvival({ open, onClose }) {
       }
 
       if (stats.level === 10) {
-        stats.guardPower = 2;
         stats.guardCap += 25;
       }
 
       if (stats.level === 20) {
-        stats.shooterCap = 30;
         stats.guardCap += 50;
-      }
-
-      if (stats.level === 30) {
-        stats.guardPower = 3;
-        stats.guardCap += 75;
       }
     }
 
     if (changed && playerRef.current) {
       playerRef.current.level = stats.level;
+
       setHud((current) => ({
         ...current,
         level: stats.level,
@@ -787,6 +806,43 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
   }
 
+  function calculateDamageAndReturn(guardsByLevel, monster) {
+    const nextReturn = {};
+    let remainingHp = monster.hp;
+
+    const levels = Object.keys(guardsByLevel)
+      .map((level) => Number(level))
+      .sort((a, b) => b - a);
+
+    for (const level of levels) {
+      const count = Math.floor(guardsByLevel[level] || 0);
+      if (count <= 0) continue;
+
+      const fullDamage = level >= monster.armor;
+      const damagePerUnit = fullDamage ? level : 0.25;
+
+      const needed = Math.ceil(remainingHp / damagePerUnit);
+      const used = Math.min(count, needed);
+      const damage = used * damagePerUnit;
+
+      remainingHp = Math.max(0, remainingHp - damage);
+
+      const returned = count - used;
+
+      if (returned > 0) {
+        nextReturn[level] = (nextReturn[level] || 0) + returned;
+      }
+
+      if (remainingHp <= 0) break;
+    }
+
+    return {
+      damage: monster.hp - remainingHp,
+      returnGuardsByLevel: nextReturn,
+      monsterRemainingHp: remainingHp,
+    };
+  }
+
   function updateMarches(dt) {
     const player = playerRef.current;
     const world = worldRef.current;
@@ -810,11 +866,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
         const monster = world.monsters.find((item) => item.id === march.targetMonsterId);
         if (!monster) continue;
 
-        const damage = Math.min(march.count * stats.guardPower, monster.hp);
-        monster.hp = Math.max(0, monster.hp - damage);
+        const result = calculateDamageAndReturn(march.guardsByLevel, monster);
 
-        const usedGuards = Math.ceil(damage / Math.max(1, stats.guardPower));
-        const returnCount = Math.max(0, march.count - usedGuards);
+        monster.hp = Math.max(0, result.monsterRemainingHp);
 
         if (monster.hp <= 0) {
           const rewardCrystals =
@@ -857,11 +911,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
           updateSelectedMonster({ ...monster });
         }
 
+        const returnCount = getTotalGuardsFromStats({
+          guardsByLevel: result.returnGuardsByLevel,
+        });
+
         if (returnCount > 0) {
           nextMarches.push({
             id: `return-${Date.now()}-${Math.random()}`,
             type: "return",
             count: returnCount,
+            guardsByLevel: result.returnGuardsByLevel,
             fromX: march.toX,
             fromY: march.toY,
             toX: player.x,
@@ -874,7 +933,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
       }
 
       if (march.type === "return") {
-        stats.guards += march.count;
+        for (const [level, count] of Object.entries(march.guardsByLevel || {})) {
+          const numericLevel = Number(level);
+          stats.guardsByLevel[numericLevel] =
+            (stats.guardsByLevel[numericLevel] || 0) + count;
+        }
       }
     }
 
@@ -909,7 +972,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
-    drawOrbitSwarm(ctx, player, cityStatsRef.current);
+    drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel);
     drawPlayer(ctx, player);
 
     ctx.restore();
@@ -935,7 +998,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawCityOutsideShadow(ctx);
     drawCityGrid(ctx);
     drawCityBorder(ctx);
-    drawCityBuildings(ctx, cityRef.current.buildings);
+    drawCityBuildings(ctx, cityRef.current.buildings, selectedBuilding?.id);
     drawBuildPreview(ctx, buildPreviewRef.current);
 
     ctx.restore();
@@ -1103,6 +1166,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
+    updateSelectedBuilding(null);
     setScreen("arena");
   }
 
@@ -1118,6 +1182,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMode(false);
     updateBuildPreview(null);
     setSelectedBuildingType(null);
+    updateSelectedBuilding(null);
   }
 
   function chooseBuilding(type) {
@@ -1125,6 +1190,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMenuOpen(false);
     setBuildMode(true);
     updateBuildPreview(null);
+    updateSelectedBuilding(null);
   }
 
   function resetCityBuildings() {
@@ -1135,6 +1201,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateBuildPreview(null);
     setBuildMenuOpen(false);
     setSelectedBuildingType(null);
+    updateSelectedBuilding(null);
     setCityStats({ ...cityStatsRef.current });
   }
 
@@ -1150,6 +1217,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       w: definition.w,
       h: definition.h,
       cost: definition.cost,
+      workerCost: definition.workerCost || 0,
       valid: true,
     };
 
@@ -1167,9 +1235,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const right = preview.x + preview.w * CITY_GRID_STEP;
     const bottom = preview.y + preview.h * CITY_GRID_STEP;
 
-    if (stats.crystals < preview.cost) {
-      return false;
-    }
+    if (stats.crystals < preview.cost) return false;
+    if (stats.workers < (preview.workerCost || 0)) return false;
 
     if (left < 0 || top < 0 || right > CITY_WIDTH || bottom > CITY_HEIGHT) {
       return false;
@@ -1184,9 +1251,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       const separated =
         right <= bLeft || left >= bRight || bottom <= bTop || top >= bBottom;
 
-      if (!separated) {
-        return false;
-      }
+      if (!separated) return false;
     }
 
     return true;
@@ -1209,6 +1274,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const stats = cityStatsRef.current;
 
     stats.crystals = Math.max(0, stats.crystals - definition.cost);
+    stats.workers = Math.max(0, stats.workers - (definition.workerCost || 0));
 
     cityRef.current = {
       ...cityRef.current,
@@ -1217,6 +1283,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
         {
           id: `${preview.type}-${Date.now()}`,
           type: preview.type,
+          level: 1,
+          trainTimer: 0,
           x: preview.x,
           y: preview.y,
           w: preview.w,
@@ -1227,8 +1295,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     };
 
     if (preview.type === "House") {
-      stats.guardCap += 25;
       stats.workerCap += 5;
+      stats.workers += 5;
+      stats.guardCap += 25;
     }
 
     setBuildMode(false);
@@ -1254,6 +1323,79 @@ export default function PixelFlowSurvival({ open, onClose }) {
     );
   }
 
+  function findCityBuildingAt(cityPoint) {
+    for (let i = cityRef.current.buildings.length - 1; i >= 0; i -= 1) {
+      const building = cityRef.current.buildings[i];
+
+      if (
+        cityPoint.x >= building.x &&
+        cityPoint.x <= building.x + building.w * CITY_GRID_STEP &&
+        cityPoint.y >= building.y &&
+        cityPoint.y <= building.y + building.h * CITY_GRID_STEP
+      ) {
+        return building;
+      }
+    }
+
+    return null;
+  }
+
+  function getUpgradeCost(building) {
+    if (!building || building.type === "Citadel") return 0;
+
+    const nextLevel = building.level + 1;
+    const base =
+      building.type === "CrystalPoint"
+        ? 90
+        : building.type === "House"
+          ? 80
+          : building.type === "Barracks"
+            ? 120
+            : 100;
+
+    return Math.floor(base * Math.pow(nextLevel, 1.45));
+  }
+
+  function canUpgradeBuilding(building) {
+    if (!building) return false;
+    if (building.type === "Citadel") return false;
+    if (building.level >= MAX_BUILDING_LEVEL) return false;
+    if (cityStatsRef.current.level < building.level + 1) return false;
+
+    return cityStatsRef.current.crystals >= getUpgradeCost(building);
+  }
+
+  function upgradeSelectedBuilding() {
+    const selected = selectedBuildingRef.current;
+    if (!selected) return;
+
+    const building = cityRef.current.buildings.find((item) => item.id === selected.id);
+    if (!building) return;
+    if (!canUpgradeBuilding(building)) return;
+
+    const stats = cityStatsRef.current;
+    const cost = getUpgradeCost(building);
+
+    stats.crystals -= cost;
+
+    const oldLevel = building.level;
+    building.level += 1;
+
+    if (building.type === "House") {
+      const oldWorkerBonus = oldLevel * 5;
+      const newWorkerBonus = building.level * 5;
+      const oldGuardBonus = oldLevel * 25;
+      const newGuardBonus = building.level * 25;
+
+      stats.workerCap += newWorkerBonus - oldWorkerBonus;
+      stats.workers += newWorkerBonus - oldWorkerBonus;
+      stats.guardCap += newGuardBonus - oldGuardBonus;
+    }
+
+    updateSelectedBuilding(building);
+    setCityStats({ ...stats });
+  }
+
   function beginAttackSelectedMonster() {
     const monster = selectedMonsterRef.current;
     const player = playerRef.current;
@@ -1261,16 +1403,25 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (!monster || !player) return;
 
-    const sendCount = Math.floor(stats.guards);
+    const sendCount = getTotalGuardsFromStats(stats);
 
     if (sendCount <= 0) return;
 
-    stats.guards = 0;
+    const sentGuardsByLevel = { ...stats.guardsByLevel };
+
+    stats.guardsByLevel = {
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+      5: 0,
+    };
 
     marchesRef.current.push({
       id: `attack-${Date.now()}-${Math.random()}`,
       type: "attack",
       count: sendCount,
+      guardsByLevel: sentGuardsByLevel,
       fromX: player.x,
       fromY: player.y,
       toX: monster.x,
@@ -1567,6 +1718,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (wasTap && (buildModeRef.current || buildPreviewRef.current)) {
       selectBuildPoint(event.clientX, event.clientY);
+      return;
+    }
+
+    if (wasTap && !buildModeRef.current && !buildPreviewRef.current) {
+      const cityPoint = cityScreenToWorld(event.clientX, event.clientY);
+      const building = findCityBuildingAt(cityPoint);
+      updateSelectedBuilding(building);
     }
   }
 
@@ -1704,6 +1862,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     camera.x = clamp(camera.x, minX + halfW, maxX - halfW);
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
+
+  const totalGuards = getTotalGuardsFromStats(cityStats);
+  const armyCap = cityStats.guardCap;
 
   return (
     <div style={styles.overlay}>
@@ -1867,17 +2028,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   <small>+{cityStats.crystalRate}/s</small>
                 </div>
 
-                <div style={styles.topResourceChip} title="Population">
+                <div style={styles.topResourceChip} title="Workers">
                   <span>👥</span>
                   <strong>{cityStats.workers}/{cityStats.workerCap}</strong>
                 </div>
 
                 <div style={styles.topResourceChip} title="Army">
                   <span>⚔</span>
-                  <strong>
-                    {Math.floor(cityStats.guards + cityStats.shooters)}/
-                    {cityStats.guardCap + cityStats.shooterCap}
-                  </strong>
+                  <strong>{totalGuards}/{armyCap}</strong>
                 </div>
 
                 <div style={styles.topResourceChip} title="Level">
@@ -1913,12 +2071,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       title="Crystal Point"
                     >
                       <span style={styles.buildCardIconCrystal}>◆</span>
-                      <small>0</small>
+                      <small>👥5</small>
                     </button>
 
                     <button style={styles.buildCard} onClick={() => chooseBuilding("House")} title="House">
                       <span style={styles.buildCardIconHouse}>■</span>
-                      <small>25</small>
+                      <small>💎25</small>
                     </button>
 
                     <button
@@ -1927,7 +2085,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       title="Barracks"
                     >
                       <span style={styles.buildCardIconBarracks}>▲</span>
-                      <small>30</small>
+                      <small>💎30</small>
                     </button>
 
                     <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled title="Locked">
@@ -1960,6 +2118,51 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   <button style={styles.cancelButton} onClick={cancelBuildPreview}>
                     ×
                   </button>
+                </div>
+              )}
+
+              {selectedBuilding && (
+                <div style={styles.buildingPanel}>
+                  <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)}>
+                    ×
+                  </button>
+
+                  <div style={styles.panelIcon}>
+                    {selectedBuilding.type === "CrystalPoint"
+                      ? "◆"
+                      : selectedBuilding.type === "House"
+                        ? "■"
+                        : selectedBuilding.type === "Barracks"
+                          ? "▲"
+                          : "⌂"}
+                  </div>
+
+                  <div style={styles.panelInfo}>
+                    <strong>Lv {selectedBuilding.level}</strong>
+                    <small>
+                      {selectedBuilding.type === "CrystalPoint"
+                        ? `+${selectedBuilding.level}/s`
+                        : selectedBuilding.type === "House"
+                          ? `+${selectedBuilding.level * 5}👥 +${selectedBuilding.level * 25}⚔`
+                          : selectedBuilding.type === "Barracks"
+                            ? `Guard Lv${selectedBuilding.level}`
+                            : `City Lv${cityStats.level}`}
+                    </small>
+                  </div>
+
+                  {selectedBuilding.type !== "Citadel" && (
+                    <button
+                      style={{
+                        ...styles.upgradeButton,
+                        ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled),
+                      }}
+                      disabled={!canUpgradeBuilding(selectedBuilding)}
+                      onClick={upgradeSelectedBuilding}
+                      title="Upgrade"
+                    >
+                      ⇧ {getUpgradeCost(selectedBuilding)}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -2130,14 +2333,7 @@ function drawMonsters(ctx, monsters, selectedMonsterId) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    const label =
-      monster.type === "giant"
-        ? "GIANT"
-        : monster.type === "brute"
-          ? "BRUTE"
-          : monster.type.toUpperCase();
-
-    ctx.fillText(label, monster.x, monster.y - 5);
+    ctx.fillText(`A${monster.armor}`, monster.x, monster.y - 6);
 
     ctx.font = "800 10px Inter, system-ui, sans-serif";
     ctx.fillText(`${Math.ceil(monster.hp)}`, monster.x, monster.y + 10);
@@ -2247,132 +2443,75 @@ function drawTeleportEffectRings(ctx, effect) {
   }
 }
 
-function drawOrbitSwarm(ctx, player, stats) {
-  if (!player || !stats) return;
+function drawOrbitGuards(ctx, player, guardsByLevel) {
+  if (!player || !guardsByLevel) return;
 
-  drawOrbitLayer(ctx, {
-    player,
-    count: stats.guards,
-    level: stats.level,
-    radiusOffset: 34,
-    layerSize: 48,
-    size: 3.4,
-    speed: 1.25,
-    phase: 0,
-    type: "guards",
-  });
+  const expanded = [];
 
-  if (stats.shooters > 0) {
-    drawOrbitLayer(ctx, {
-      player,
-      count: stats.shooters,
-      level: stats.level,
-      radiusOffset: 40,
-      layerSize: 42,
-      size: 3.1,
-      speed: 0.92,
-      phase: Math.PI / 3,
-      type: "shooters",
-    });
+  for (const [level, count] of Object.entries(guardsByLevel)) {
+    for (let i = 0; i < Math.floor(count); i += 1) {
+      expanded.push(Number(level));
+    }
   }
 
-  const total = Math.floor(stats.guards + stats.shooters);
-
-  if (total > 0) {
-    ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "900 13px Inter, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`${total}`, player.x, player.y + player.r + 56);
-    ctx.restore();
-  }
-}
-
-function drawOrbitLayer(ctx, options) {
-  const {
-    player,
-    count,
-    level,
-    radiusOffset,
-    layerSize,
-    size,
-    speed,
-    phase,
-    type,
-  } = options;
-
-  const amount = Math.max(0, Math.floor(count));
-  if (amount <= 0) return;
+  const count = expanded.length;
+  if (count <= 0) return;
 
   const now = Date.now() / 1000;
-  const guardTheme = getGuardOrbitTheme(level);
-
-  const theme =
-    type === "shooters"
-      ? {
-          main: "rgba(134,239,172,0.92)",
-          tail: "rgba(34,197,94,0.24)",
-          glow: "#22c55e",
-          core: "rgba(236,253,245,0.96)",
-        }
-      : guardTheme;
+  const layerSize = 42;
 
   ctx.save();
 
-  for (let i = 0; i < amount; i += 1) {
+  for (let i = 0; i < count; i += 1) {
+    const troopLevel = expanded[i];
+    const visual = getGuardVisual(troopLevel);
+
     const layer = Math.floor(i / layerSize);
     const indexInLayer = i % layerSize;
-    const itemsInLayer = Math.min(layerSize, amount - layer * layerSize);
+    const itemsInLayer = Math.min(layerSize, count - layer * layerSize);
 
-    const radius = player.r + radiusOffset + layer * 12;
-    const localSpeed = Math.max(0.35, speed - layer * 0.08);
-
+    const radius = player.r + 34 + layer * 16;
+    const speed = 1.25 - layer * 0.12;
     const angle =
-      now * localSpeed +
+      now * speed +
       (indexInLayer / Math.max(1, itemsInLayer)) * Math.PI * 2 +
-      layer * 0.72 +
-      phase;
+      layer * 0.8;
 
-    const wave = Math.sin(now * 2.3 + i * 0.41 + phase) * 2.2;
+    const x = player.x + Math.cos(angle) * radius;
+    const y = player.y + Math.sin(angle) * radius;
 
-    const x = player.x + Math.cos(angle) * (radius + wave);
-    const y = player.y + Math.sin(angle) * (radius + wave);
-
-    const tailX = player.x + Math.cos(angle - 0.09) * radius;
-    const tailY = player.y + Math.sin(angle - 0.09) * radius;
+    const tailX = player.x + Math.cos(angle - 0.08) * radius;
+    const tailY = player.y + Math.sin(angle - 0.08) * radius;
 
     ctx.beginPath();
-    ctx.strokeStyle = theme.tail;
-    ctx.lineWidth = type === "shooters" ? 1.8 : 2;
+    ctx.strokeStyle = visual.tail;
+    ctx.lineWidth = 2;
     ctx.moveTo(tailX, tailY);
     ctx.lineTo(x, y);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.fillStyle = theme.main;
-    ctx.shadowColor = theme.glow;
-    ctx.shadowBlur = type === "shooters" ? 12 : 10;
-    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fillStyle = visual.fill;
+    ctx.shadowColor = visual.glow;
+    ctx.shadowBlur = 10;
+    ctx.arc(x, y, visual.size, 0, Math.PI * 2);
     ctx.fill();
 
-    if (level >= 10 && type === "guards") {
+    if (visual.core) {
       ctx.beginPath();
-      ctx.fillStyle = theme.core;
-      ctx.arc(x, y, size * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = visual.core;
+      ctx.arc(x, y, visual.size * 0.42, 0, Math.PI * 2);
       ctx.fill();
-    }
-
-    if (type === "shooters") {
-      ctx.beginPath();
-      ctx.strokeStyle = "rgba(220,252,231,0.55)";
-      ctx.lineWidth = 1;
-      ctx.arc(x, y, size + 2.5, 0, Math.PI * 2);
-      ctx.stroke();
     }
 
     ctx.shadowBlur = 0;
   }
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.font = "900 13px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${count}`, player.x, player.y + player.r + 54);
 
   ctx.restore();
 }
@@ -2481,31 +2620,6 @@ function drawPlayer(ctx, player) {
     ctx.lineWidth = 3;
     ctx.arc(player.x, player.y, player.r + 24, 0, Math.PI * 2);
     ctx.stroke();
-
-    const towerSize = 10;
-    const towerRadius = player.r + 6;
-
-    for (let i = 0; i < 4; i += 1) {
-      const angle = (Math.PI / 2) * i + Math.PI / 4;
-      const tx = player.x + Math.cos(angle) * towerRadius;
-      const ty = player.y + Math.sin(angle) * towerRadius;
-
-      ctx.save();
-      ctx.translate(tx, ty);
-      ctx.rotate(angle);
-      ctx.fillStyle = "rgba(255,255,255,0.34)";
-      roundedRect(ctx, -towerSize / 2, -towerSize / 2, towerSize, towerSize, 3);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  if (cityLevel >= 20) {
-    ctx.beginPath();
-    ctx.strokeStyle = "rgba(34,197,94,0.34)";
-    ctx.lineWidth = 3;
-    ctx.arc(player.x, player.y, player.r + 34, 0, Math.PI * 2);
-    ctx.stroke();
   }
 
   if (player.shield > 0) {
@@ -2593,7 +2707,7 @@ function drawCityBorder(ctx) {
   ctx.restore();
 }
 
-function drawCityBuildings(ctx, buildings) {
+function drawCityBuildings(ctx, buildings, selectedBuildingId) {
   for (const building of buildings) {
     const width = building.w * CITY_GRID_STEP;
     const height = building.h * CITY_GRID_STEP;
@@ -2601,6 +2715,14 @@ function drawCityBuildings(ctx, buildings) {
     const cy = building.y + height / 2;
 
     ctx.save();
+
+    if (selectedBuildingId === building.id) {
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(251,191,36,0.78)";
+      ctx.lineWidth = 7;
+      roundedRect(ctx, building.x - 8, building.y - 8, width + 16, height + 16, 26);
+      ctx.stroke();
+    }
 
     ctx.fillStyle = "rgba(0,0,0,0.28)";
     roundedRect(ctx, building.x + 8, building.y + 10, width, height, 22);
@@ -2615,6 +2737,12 @@ function drawCityBuildings(ctx, buildings) {
     } else {
       drawCitadelBuilding(ctx, building, width, height, cx, cy);
     }
+
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "900 11px Inter, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`L${building.level}`, building.x + width - 22, building.y + 22);
 
     ctx.restore();
   }
@@ -3214,6 +3342,72 @@ const styles = {
   cancelButton: {
     width: 28,
     height: 28,
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.06)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  buildingPanel: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    bottom: 76,
+    minHeight: 62,
+    borderRadius: 22,
+    padding: 10,
+    zIndex: 8,
+    background: "rgba(15,23,42,0.95)",
+    border: "1px solid rgba(251,191,36,0.22)",
+    boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
+    display: "grid",
+    gridTemplateColumns: "48px 1fr 96px 32px",
+    gap: 8,
+    alignItems: "center",
+  },
+
+  panelIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    display: "grid",
+    placeItems: "center",
+    background: "rgba(255,255,255,0.07)",
+    color: "#fbbf24",
+    fontSize: 22,
+    fontWeight: 900,
+  },
+
+  panelInfo: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 3,
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: 900,
+  },
+
+  upgradeButton: {
+    minHeight: 38,
+    border: 0,
+    borderRadius: 14,
+    background: "linear-gradient(135deg, #f59e0b, #22c55e)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  upgradeButtonDisabled: {
+    opacity: 0.42,
+    cursor: "not-allowed",
+    background: "rgba(255,255,255,0.08)",
+  },
+
+  panelClose: {
+    width: 30,
+    height: 30,
     border: "1px solid rgba(255,255,255,0.14)",
     borderRadius: "50%",
     background: "rgba(255,255,255,0.06)",
