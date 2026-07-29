@@ -380,6 +380,24 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setSelectedBuildingTypeState(nextType);
   }
 
+  function hasCityBuilding(type) {
+    return cityRef.current.buildings.some((building) => building.type === type);
+  }
+
+  function shouldShowBuildTutorialArrow() {
+    return (
+      screen === "city" &&
+      !buildMenuOpen &&
+      !buildMode &&
+      !buildPreview &&
+      !hasCityBuilding("CrystalPoint")
+    );
+  }
+
+  function shouldShowCrystalMenuHint() {
+    return screen === "city" && buildMenuOpen && !hasCityBuilding("CrystalPoint");
+  }
+
   function resetArena() {
     worldRef.current = createWorld();
     cityRef.current = createCityState();
@@ -464,7 +482,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       score: 0,
       cooldown: 0,
       teleportMode: false,
-      status: "Start inside your city. Build a Crystal Point first.",
+      status: "Ready",
     });
 
     setScreen("city");
@@ -492,7 +510,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       score: 0,
       cooldown: 0,
       teleportMode: false,
-      status: "Respawned. Return to city or use TELEPORT.",
+      status: "Ready",
     });
   }
 
@@ -507,21 +525,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function activateTeleport() {
-    if (teleportEffectRef.current?.active) {
-      setHud((current) => ({
-        ...current,
-        status: "Teleport is already in progress.",
-      }));
-      return;
-    }
-
-    if (cooldownRef.current > 0) {
-      setHud((current) => ({
-        ...current,
-        status: `Teleport cooldown: ${Math.ceil(cooldownRef.current)}s`,
-      }));
-      return;
-    }
+    if (teleportEffectRef.current?.active) return;
+    if (cooldownRef.current > 0) return;
 
     setEnterCoreVisible(false);
     updateSelectedMonster(null);
@@ -530,15 +535,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setHud((current) => ({
       ...current,
       teleportMode: true,
-      status: landingPreviewRef.current
-        ? "Tap another point or drag the landing hologram."
-        : "Teleport armed. Tap the map to choose landing point.",
+      status: "Teleport armed.",
     }));
   }
 
   function updateArena(dt) {
     const player = playerRef.current;
-
     if (!player || !player.alive) return;
 
     if (cooldownRef.current > 0) {
@@ -611,7 +613,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function getTotalGuards() {
     const stats = cityStatsRef.current;
     const marchGuards = marchesRef.current.reduce((sum, march) => sum + march.count, 0);
-
     return stats.guards + marchGuards;
   }
 
@@ -642,7 +643,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
         score: Math.round(player.score),
         cooldown: TELEPORT_COOLDOWN_SECONDS,
         teleportMode: false,
-        status: "Teleport complete. Tap CORE to enter city.",
+        status: "Teleport complete.",
       }));
 
       return;
@@ -665,10 +666,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     for (const march of marchesRef.current) {
       const speed = march.type === "return" ? RETURN_MARCH_SPEED : ATTACK_MARCH_SPEED;
       const nextProgress = Math.min(1, march.progress + dt * speed);
-      const nextMarch = {
-        ...march,
-        progress: nextProgress,
-      };
+      const nextMarch = { ...march, progress: nextProgress };
 
       if (nextProgress < 1) {
         nextMarches.push(nextMarch);
@@ -677,10 +675,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
       if (march.type === "attack") {
         const monster = world.monsters.find((item) => item.id === march.targetMonsterId);
-
-        if (!monster) {
-          continue;
-        }
+        if (!monster) continue;
 
         const damage = Math.min(march.count, monster.hp);
         monster.hp = Math.max(0, monster.hp - damage);
@@ -904,12 +899,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     teleportModeRef.current = false;
     updateLandingPreview(snappedPoint);
-
-    setHud((current) => ({
-      ...current,
-      teleportMode: false,
-      status: "Landing selected. Press LAND, tap elsewhere, or drag hologram.",
-    }));
   }
 
   function beginTeleportToLanding() {
@@ -937,23 +926,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setEnterCoreVisible(false);
     updateSelectedMonster(null);
     updateLandingPreview(null);
-
-    setHud((current) => ({
-      ...current,
-      teleportMode: false,
-      status: "Teleport charging...",
-    }));
   }
 
   function cancelLandingPreview() {
     updateLandingPreview(null);
     teleportModeRef.current = false;
-
-    setHud((current) => ({
-      ...current,
-      teleportMode: false,
-      status: "Landing canceled.",
-    }));
   }
 
   function enterCity() {
@@ -972,11 +949,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateBuildPreview(null);
     setBuildMenuOpen(false);
     setScreen("arena");
-
-    setHud((current) => ({
-      ...current,
-      status: "World map opened. Tap a monster to attack.",
-    }));
   }
 
   function centerCityCamera() {
@@ -1136,13 +1108,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     const sendCount = Math.floor(stats.guards);
 
-    if (sendCount <= 0) {
-      setHud((current) => ({
-        ...current,
-        status: "No Core Guards at home. Build Barracks and wait.",
-      }));
-      return;
-    }
+    if (sendCount <= 0) return;
 
     stats.guards = 0;
 
@@ -1159,11 +1125,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
     });
 
     setCityStats({ ...stats });
-
-    setHud((current) => ({
-      ...current,
-      status: `Attack launched: ${sendCount} Core Guards.`,
-    }));
   }
 
   function onArenaPointerDown(event) {
@@ -1281,9 +1242,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       pointerState.landingPointerId = null;
     }
 
-    if (wasDraggingLanding) {
-      return;
-    }
+    if (wasDraggingLanding) return;
 
     if (
       wasTap &&
@@ -1305,10 +1264,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
         if (dist <= player.r + 42) {
           setEnterCoreVisible(true);
           updateSelectedMonster(null);
-          setHud((current) => ({
-            ...current,
-            status: "Core selected. Press ENTER.",
-          }));
           return;
         }
       }
@@ -1318,10 +1273,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
       if (monster) {
         updateSelectedMonster({ ...monster });
         setEnterCoreVisible(false);
-        setHud((current) => ({
-          ...current,
-          status: `Monster selected. Power ${monster.hp}. Attack sends 1/1.`,
-        }));
       } else {
         updateSelectedMonster(null);
         setEnterCoreVisible(false);
@@ -1457,9 +1408,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       pointerState.buildPointerId = null;
     }
 
-    if (wasDraggingPreview) {
-      return;
-    }
+    if (wasDraggingPreview) return;
 
     if (wasTap && (buildModeRef.current || buildPreviewRef.current)) {
       selectBuildPoint(event.clientX, event.clientY);
@@ -1601,30 +1550,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
-  function getCityStatusText() {
-    const buildings = cityRef.current.buildings;
-
-    if (!buildings.some((building) => building.type === "CrystalPoint")) {
-      return "Step 1: BUILD -> Crystal Point. It gives +1 crystal/sec.";
-    }
-
-    if (!buildings.some((building) => building.type === "House")) {
-      return "Step 2: BUILD -> House. It increases Guard capacity.";
-    }
-
-    if (!buildings.some((building) => building.type === "Barracks")) {
-      return "Step 3: BUILD -> Barracks. It produces Core Guards.";
-    }
-
-    if (Math.floor(cityStats.guards) <= 0) {
-      return "Barracks online. Wait while Core Guards are produced.";
-    }
-
-    return "Core Guards ready. Open WORLD MAP and tap a monster.";
-  }
-
   return (
     <div style={styles.overlay}>
+      <style>
+        {`
+          @keyframes tutorialBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+
+          @keyframes tutorialGlow {
+            0%, 100% { box-shadow: 0 0 0 rgba(34,211,238,0.0); }
+            50% { box-shadow: 0 0 28px rgba(34,211,238,0.58); }
+          }
+        `}
+      </style>
+
       {screen === "menu" && (
         <section style={styles.menuScreen}>
           <div style={styles.menuCard}>
@@ -1669,12 +1610,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
             <>
               <header style={styles.arenaHud}>
                 <div style={styles.hudPill}>
-                  <span>LEVEL</span>
+                  <span>LV</span>
                   <strong>{hud.level}</strong>
                 </div>
 
                 <div style={styles.hudPill}>
-                  <span>SCORE</span>
+                  <span>★</span>
                   <strong>{hud.score}</strong>
                 </div>
 
@@ -1692,7 +1633,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   }}
                 >
                   <button style={styles.enterButton} onClick={enterCity}>
-                    ENTER
+                    ⌂
                   </button>
                 </div>
               )}
@@ -1706,7 +1647,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   }}
                 >
                   <button style={styles.attackButton} onClick={beginAttackSelectedMonster}>
-                    ATTACK 1/1
+                    ⚔ 1/1
                   </button>
                   <button style={styles.cancelButton} onClick={() => updateSelectedMonster(null)}>
                     ×
@@ -1723,7 +1664,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   }}
                 >
                   <button style={styles.landButton} onClick={beginTeleportToLanding}>
-                    LAND
+                    ⬇
                   </button>
                   <button style={styles.cancelButton} onClick={cancelLandingPreview}>
                     ×
@@ -1734,28 +1675,29 @@ export default function PixelFlowSurvival({ open, onClose }) {
               <footer style={styles.arenaControls}>
                 <button
                   style={{
-                    ...styles.controlButton,
+                    ...styles.iconControlButton,
                     ...(hud.teleportMode ? styles.controlButtonActive : {}),
                   }}
                   onClick={activateTeleport}
+                  title="Teleport"
                 >
-                  {hud.cooldown > 0 ? `TP ${hud.cooldown}s` : hud.teleportMode ? "TAP MAP" : "TELEPORT"}
+                  <span style={styles.controlIcon}>✦</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={centerCamera}>
-                  CENTER
+                <button style={styles.iconControlButton} onClick={centerCamera} title="Center">
+                  <span style={styles.controlIcon}>◎</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={enterCity}>
-                  CITY
+                <button style={styles.iconControlButton} onClick={enterCity} title="City">
+                  <span style={styles.controlIcon}>⌂</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={endRun}>
-                  END RUN
+                <button style={styles.iconControlButton} onClick={endRun} title="End Run">
+                  <span style={styles.controlIcon}>◼</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={onClose}>
-                  EXIT
+                <button style={styles.iconControlButton} onClick={onClose} title="Exit">
+                  <span style={styles.controlIcon}>×</span>
                 </button>
               </footer>
             </>
@@ -1763,59 +1705,73 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
           {screen === "city" && (
             <>
-              <header style={styles.cityHud}>
-                <div style={styles.cityTitleBox}>
-                  <span>INNER CITY</span>
-                  <strong>LV {cityStats.level} CORE BASE</strong>
+              <header style={styles.cityTopBar}>
+                <div style={styles.topResourceChip} title="Crystals">
+                  <span>💎</span>
+                  <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
 
-                <div style={styles.cityStatusBox}>
-                  <span>
-                    💎 {Math.floor(cityStats.crystals)} | +{cityStats.crystalRate}/s &nbsp; | &nbsp;
-                    GUARDS {Math.floor(cityStats.guards)}/{cityStats.guardCap} &nbsp; | &nbsp;
-                    XP {Math.floor(cityStats.xp)}
-                  </span>
+                <div style={styles.topResourceChip} title="Population">
+                  <span>👥</span>
+                  <strong>{cityStats.workers}/{cityStats.workerCap}</strong>
+                </div>
+
+                <div style={styles.topResourceChip} title="Guards">
+                  <span>⚔</span>
+                  <strong>{Math.floor(cityStats.guards)}/{cityStats.guardCap}</strong>
+                </div>
+
+                <div style={styles.topResourceChip} title="XP">
+                  <span>★</span>
+                  <strong>{Math.floor(cityStats.xp)}</strong>
                 </div>
               </header>
 
-              <div style={styles.cityHint}>
-                {selectedBuildingType
-                  ? `Selected: ${BUILDINGS[selectedBuildingType]?.label || selectedBuildingType}. Tap grid to place.`
-                  : getCityStatusText()}
-              </div>
+              {shouldShowBuildTutorialArrow() && (
+                <div style={styles.tutorialBuildArrow}>
+                  <div style={styles.tutorialArrowIcon}>▼</div>
+                </div>
+              )}
 
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
-                  <div style={styles.buildMenuHeader}>
-                    <strong>BUILD MENU</strong>
-                    <button style={styles.buildMenuClose} onClick={() => setBuildMenuOpen(false)}>
-                      ×
-                    </button>
-                  </div>
+                  {shouldShowCrystalMenuHint() && (
+                    <div style={styles.tutorialMenuArrow}>
+                      <div style={styles.tutorialArrowIcon}>▼</div>
+                    </div>
+                  )}
 
                   <div style={styles.buildCardGrid}>
-                    <button style={styles.buildCard} onClick={() => chooseBuilding("CrystalPoint")}>
+                    <button
+                      style={{
+                        ...styles.buildCard,
+                        ...(shouldShowCrystalMenuHint() ? styles.buildCardTutorial : {}),
+                      }}
+                      onClick={() => chooseBuilding("CrystalPoint")}
+                      title="Crystal Point"
+                    >
                       <span style={styles.buildCardIconCrystal}>◆</span>
-                      <strong>Crystal Point</strong>
-                      <small>Cost 0 · +1/s</small>
+                      <small>0</small>
                     </button>
 
-                    <button style={styles.buildCard} onClick={() => chooseBuilding("House")}>
+                    <button style={styles.buildCard} onClick={() => chooseBuilding("House")} title="House">
                       <span style={styles.buildCardIconHouse}>■</span>
-                      <strong>House</strong>
-                      <small>Cost 25 · +25 cap</small>
+                      <small>25</small>
                     </button>
 
-                    <button style={styles.buildCard} onClick={() => chooseBuilding("Barracks")}>
+                    <button
+                      style={styles.buildCard}
+                      onClick={() => chooseBuilding("Barracks")}
+                      title="Barracks"
+                    >
                       <span style={styles.buildCardIconBarracks}>▲</span>
-                      <strong>Barracks</strong>
-                      <small>Cost 30 · Guards</small>
+                      <small>30</small>
                     </button>
 
-                    <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled>
+                    <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled title="Locked">
                       <span>◎</span>
-                      <strong>Command</strong>
-                      <small>Locked</small>
+                      <small>—</small>
                     </button>
                   </div>
                 </div>
@@ -1836,8 +1792,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     }}
                     onClick={placeBuilding}
                     disabled={!buildPreview.valid}
+                    title="Place"
                   >
-                    PLACE
+                    ✓
                   </button>
                   <button style={styles.cancelButton} onClick={cancelBuildPreview}>
                     ×
@@ -1846,30 +1803,31 @@ export default function PixelFlowSurvival({ open, onClose }) {
               )}
 
               <footer style={styles.cityControls}>
-                <button style={styles.controlButton} onClick={backToMap}>
-                  WORLD MAP
+                <button style={styles.iconControlButton} onClick={backToMap} title="World Map">
+                  <span style={styles.controlIcon}>🗺</span>
                 </button>
 
                 <button
                   style={{
-                    ...styles.controlButton,
+                    ...styles.iconControlButton,
                     ...(buildMode || buildMenuOpen ? styles.controlButtonActive : {}),
                   }}
                   onClick={openBuildMenu}
+                  title="Build"
                 >
-                  BUILD
+                  <span style={styles.controlIcon}>🔨</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={centerCityCamera}>
-                  CENTER
+                <button style={styles.iconControlButton} onClick={centerCityCamera} title="Center">
+                  <span style={styles.controlIcon}>◎</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={resetCityBuildings}>
-                  RESET
+                <button style={styles.iconControlButton} onClick={resetCityBuildings} title="Reset">
+                  <span style={styles.controlIcon}>↺</span>
                 </button>
 
-                <button style={styles.controlButton} onClick={onClose}>
-                  EXIT
+                <button style={styles.iconControlButton} onClick={onClose} title="Exit">
+                  <span style={styles.controlIcon}>×</span>
                 </button>
               </footer>
             </>
@@ -2068,12 +2026,6 @@ function drawLandingPreview(ctx, landingPreview) {
   ctx.fillStyle = "rgba(103,232,249,0.32)";
   ctx.arc(landingPreview.x, landingPreview.y, 30, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "900 9px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("CORE", landingPreview.x, landingPreview.y);
 
   ctx.restore();
 }
@@ -2288,8 +2240,18 @@ function drawCityOutsideShadow(ctx) {
   ctx.save();
 
   ctx.fillStyle = "rgba(0,0,0,0.24)";
-  ctx.fillRect(-CITY_OUTSIDE_PADDING, -CITY_OUTSIDE_PADDING, CITY_WIDTH + CITY_OUTSIDE_PADDING * 2, CITY_OUTSIDE_PADDING);
-  ctx.fillRect(-CITY_OUTSIDE_PADDING, CITY_HEIGHT, CITY_WIDTH + CITY_OUTSIDE_PADDING * 2, CITY_OUTSIDE_PADDING);
+  ctx.fillRect(
+    -CITY_OUTSIDE_PADDING,
+    -CITY_OUTSIDE_PADDING,
+    CITY_WIDTH + CITY_OUTSIDE_PADDING * 2,
+    CITY_OUTSIDE_PADDING
+  );
+  ctx.fillRect(
+    -CITY_OUTSIDE_PADDING,
+    CITY_HEIGHT,
+    CITY_WIDTH + CITY_OUTSIDE_PADDING * 2,
+    CITY_OUTSIDE_PADDING
+  );
   ctx.fillRect(-CITY_OUTSIDE_PADDING, 0, CITY_OUTSIDE_PADDING, CITY_HEIGHT);
   ctx.fillRect(CITY_WIDTH, 0, CITY_OUTSIDE_PADDING, CITY_HEIGHT);
 
@@ -2418,12 +2380,6 @@ function drawCrystalPointBuilding(ctx, building, width, height, cx, cy) {
   ctx.fill();
 
   ctx.shadowBlur = 0;
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "900 13px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("CRYSTAL", cx, cy + 68);
 }
 
 function drawHouseBuilding(ctx, building, width, height, cx, cy) {
@@ -2442,12 +2398,6 @@ function drawHouseBuilding(ctx, building, width, height, cx, cy) {
   ctx.fillStyle = "rgba(15,23,42,0.52)";
   roundedRect(ctx, building.x + 23, building.y + 34, width - 46, height - 50, 12);
   ctx.fill();
-
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.font = "900 10px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("HOME", cx, cy);
 }
 
 function drawBarracksBuilding(ctx, building, width, height, cx, cy) {
@@ -2477,12 +2427,6 @@ function drawBarracksBuilding(ctx, building, width, height, cx, cy) {
   ctx.lineWidth = 3;
   roundedRect(ctx, building.x + 24, building.y + 30, width - 48, height - 52, 16);
   ctx.stroke();
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "900 13px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("BARRACKS", cx, cy - 4);
 }
 
 function drawBuildPreview(ctx, preview) {
@@ -2493,7 +2437,6 @@ function drawBuildPreview(ctx, preview) {
   const valid = preview.valid;
   const t = Date.now() / 250;
   const pulse = 1 + Math.sin(t) * 0.04;
-  const label = BUILDINGS[preview.type]?.shortLabel || preview.type;
 
   ctx.save();
 
@@ -2534,12 +2477,6 @@ function drawBuildPreview(ctx, preview) {
   ctx.lineWidth = 4;
   ctx.arc(cx, cy, 58 * pulse, 0, Math.PI * 2);
   ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "900 13px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(valid ? label : "BLOCKED", cx, cy);
 
   ctx.restore();
 }
@@ -2721,73 +2658,32 @@ const styles = {
     right: 10,
     top: 10,
     display: "grid",
-    gridTemplateColumns: "82px 82px 1fr",
+    gridTemplateColumns: "62px 62px 1fr",
     gap: 8,
     zIndex: 3,
     pointerEvents: "none",
   },
 
   hudPill: {
-    height: 50,
-    borderRadius: 16,
-    background: "rgba(15,23,42,0.82)",
-    border: "1px solid rgba(255,255,255,0.12)",
+    height: 44,
+    borderRadius: 14,
+    background: "rgba(15,23,42,0.72)",
+    border: "1px solid rgba(255,255,255,0.10)",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    gap: 2,
-    fontSize: 10,
+    gap: 1,
+    fontSize: 9,
     color: "rgba(255,255,255,0.62)",
     fontWeight: 900,
   },
 
   hudWide: {
-    height: 50,
-    borderRadius: 16,
-    background: "rgba(15,23,42,0.82)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 14px",
-    boxSizing: "border-box",
-    color: "rgba(255,255,255,0.72)",
-    fontSize: 12,
-    fontWeight: 800,
-  },
-
-  cityHud: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    top: 10,
-    display: "grid",
-    gridTemplateColumns: "116px 1fr",
-    gap: 8,
-    zIndex: 3,
-    pointerEvents: "none",
-  },
-
-  cityTitleBox: {
-    height: 54,
-    borderRadius: 16,
-    background: "rgba(15,23,42,0.84)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    padding: "0 12px",
-    boxSizing: "border-box",
-    color: "rgba(255,255,255,0.72)",
-    fontSize: 10,
-    fontWeight: 900,
-  },
-
-  cityStatusBox: {
-    height: 54,
-    borderRadius: 16,
-    background: "rgba(15,23,42,0.84)",
-    border: "1px solid rgba(255,255,255,0.12)",
+    height: 44,
+    borderRadius: 14,
+    background: "rgba(15,23,42,0.72)",
+    border: "1px solid rgba(255,255,255,0.10)",
     display: "flex",
     alignItems: "center",
     padding: "0 12px",
@@ -2797,23 +2693,74 @@ const styles = {
     fontWeight: 800,
   },
 
-  cityHint: {
+  cityTopBar: {
     position: "absolute",
-    left: 10,
-    right: 10,
-    top: 72,
-    minHeight: 38,
+    left: 8,
+    right: 8,
+    top: 8,
+    height: 42,
+    zIndex: 3,
+    display: "grid",
+    gridTemplateColumns: "1.25fr 1fr 1.25fr 0.9fr",
+    gap: 6,
+    pointerEvents: "none",
+  },
+
+  topResourceChip: {
+    minWidth: 0,
+    height: 42,
     borderRadius: 14,
-    background: "rgba(15,23,42,0.74)",
-    border: "1px solid rgba(103,232,249,0.16)",
-    color: "rgba(255,255,255,0.72)",
-    fontSize: 12,
-    fontWeight: 800,
+    background: "rgba(15,23,42,0.72)",
+    border: "1px solid rgba(255,255,255,0.10)",
     display: "flex",
     alignItems: "center",
-    padding: "0 12px",
-    zIndex: 3,
+    justifyContent: "center",
+    gap: 4,
+    color: "rgba(255,255,255,0.86)",
+    fontSize: 11,
+    fontWeight: 900,
+    boxSizing: "border-box",
+    padding: "0 6px",
+  },
+
+  tutorialBuildArrow: {
+    position: "absolute",
+    left: "32%",
+    bottom: 70,
+    zIndex: 8,
+    width: 56,
+    height: 56,
+    display: "grid",
+    placeItems: "center",
     pointerEvents: "none",
+    animation: "tutorialBounce 1.05s ease-in-out infinite",
+  },
+
+  tutorialMenuArrow: {
+    position: "absolute",
+    left: "10%",
+    top: -38,
+    zIndex: 9,
+    width: 56,
+    height: 56,
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+    animation: "tutorialBounce 1.05s ease-in-out infinite",
+  },
+
+  tutorialArrowIcon: {
+    color: "#fbbf24",
+    fontSize: 34,
+    lineHeight: "34px",
+    textShadow: "0 0 18px rgba(251,191,36,0.75)",
+    fontWeight: 900,
+  },
+
+  buildCardTutorial: {
+    border: "1px solid rgba(34,211,238,0.72)",
+    background: "rgba(34,211,238,0.16)",
+    animation: "tutorialGlow 1.2s ease-in-out infinite",
   },
 
   enterCoreActions: {
@@ -2827,14 +2774,14 @@ const styles = {
   },
 
   enterButton: {
-    minWidth: 68,
+    minWidth: 42,
     height: 34,
     border: 0,
     borderRadius: 999,
     background: "linear-gradient(135deg, #22d3ee, #2563eb)",
     color: "#ffffff",
     fontWeight: 900,
-    fontSize: 11,
+    fontSize: 18,
     cursor: "pointer",
   },
 
@@ -2852,14 +2799,14 @@ const styles = {
   },
 
   attackButton: {
-    minWidth: 82,
+    minWidth: 70,
     height: 30,
     border: 0,
     borderRadius: 999,
     background: "linear-gradient(135deg, #ef4444, #f59e0b)",
     color: "#ffffff",
     fontWeight: 900,
-    fontSize: 11,
+    fontSize: 13,
     cursor: "pointer",
   },
 
@@ -2893,34 +2840,13 @@ const styles = {
     position: "absolute",
     left: 12,
     right: 12,
-    bottom: 78,
+    bottom: 76,
     zIndex: 7,
     borderRadius: 22,
-    padding: 12,
+    padding: 10,
     background: "rgba(15,23,42,0.94)",
     border: "1px solid rgba(255,255,255,0.12)",
     boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
-  },
-
-  buildMenuHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-    color: "rgba(255,255,255,0.88)",
-    fontSize: 13,
-    fontWeight: 900,
-  },
-
-  buildMenuClose: {
-    width: 30,
-    height: 30,
-    borderRadius: "50%",
-    border: "1px solid rgba(255,255,255,0.14)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#ffffff",
-    fontWeight: 900,
-    cursor: "pointer",
   },
 
   buildCardGrid: {
@@ -2930,7 +2856,7 @@ const styles = {
   },
 
   buildCard: {
-    minHeight: 82,
+    minHeight: 72,
     borderRadius: 16,
     border: "1px solid rgba(255,255,255,0.12)",
     background: "rgba(255,255,255,0.06)",
@@ -2953,40 +2879,40 @@ const styles = {
 
   buildCardIconCrystal: {
     color: "#67e8f9",
-    fontSize: 20,
+    fontSize: 24,
   },
 
   buildCardIconHouse: {
     color: "#86efac",
-    fontSize: 18,
+    fontSize: 22,
   },
 
   buildCardIconBarracks: {
     color: "#fbbf24",
-    fontSize: 18,
+    fontSize: 22,
   },
 
   landButton: {
-    minWidth: 52,
+    minWidth: 42,
     height: 30,
     border: 0,
     borderRadius: 999,
     background: "linear-gradient(135deg, #22d3ee, #2563eb)",
     color: "#ffffff",
     fontWeight: 900,
-    fontSize: 11,
+    fontSize: 15,
     cursor: "pointer",
   },
 
   placeButton: {
-    minWidth: 58,
+    minWidth: 42,
     height: 30,
     border: 0,
     borderRadius: 999,
     background: "linear-gradient(135deg, #22c55e, #15803d)",
     color: "#ffffff",
     fontWeight: 900,
-    fontSize: 11,
+    fontSize: 15,
     cursor: "pointer",
   },
 
@@ -3013,7 +2939,7 @@ const styles = {
     right: 10,
     bottom: 10,
     display: "grid",
-    gridTemplateColumns: "1.25fr repeat(4, 1fr)",
+    gridTemplateColumns: "repeat(5, 1fr)",
     gap: 8,
     zIndex: 4,
   },
@@ -3024,13 +2950,13 @@ const styles = {
     right: 10,
     bottom: 10,
     display: "grid",
-    gridTemplateColumns: "1.25fr repeat(4, 1fr)",
+    gridTemplateColumns: "repeat(5, 1fr)",
     gap: 8,
     zIndex: 4,
   },
 
-  controlButton: {
-    minHeight: 54,
+  iconControlButton: {
+    minHeight: 52,
     border: "1px solid rgba(255,255,255,0.12)",
     borderRadius: 18,
     background: "rgba(15,23,42,0.88)",
@@ -3038,7 +2964,14 @@ const styles = {
     fontWeight: 900,
     cursor: "pointer",
     backdropFilter: "blur(10px)",
-    fontSize: 11,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  controlIcon: {
+    fontSize: 21,
+    lineHeight: "22px",
   },
 
   controlButtonActive: {
