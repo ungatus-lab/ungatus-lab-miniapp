@@ -28,6 +28,7 @@ const ATTACK_MARCH_SPEED = 0.42;
 const RETURN_MARCH_SPEED = 0.52;
 
 const MAX_BUILDING_LEVEL = 5;
+const GUARD_CRYSTAL_COST = 1;
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -90,7 +91,7 @@ function createCityStats() {
 }
 
 function getTotalGuardsFromStats(stats) {
-  return Object.values(stats.guardsByLevel).reduce((sum, value) => sum + value, 0);
+  return Object.values(stats.guardsByLevel || {}).reduce((sum, value) => sum + value, 0);
 }
 
 function getXpRequiredForLevel(level) {
@@ -689,27 +690,44 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const stats = cityStatsRef.current;
     const buildings = cityRef.current.buildings;
 
+    if (!Number.isFinite(stats.crystals)) {
+      stats.crystals = 0;
+    }
+
     stats.crystalRate = buildings
       .filter((building) => building.type === "CrystalPoint")
-      .reduce((sum, building) => sum + building.level, 0);
+      .reduce((sum, building) => sum + (building.level || 1), 0);
 
     stats.crystals += stats.crystalRate * dt;
 
     for (const building of buildings) {
       if (building.type !== "Barracks") continue;
 
-      const rate = 1 + (building.level - 1) * 0.18;
-      building.trainTimer = (building.trainTimer || 0) + dt * rate;
+      const buildingLevel = building.level || 1;
+      const homeArmyTotal = getTotalGuardsFromStats(stats);
 
-      while (
-        building.trainTimer >= 1 &&
-        getTotalGuardsFromStats(stats) + getMarchGuardCount() < stats.guardCap &&
-        stats.crystals >= 1
+      if (homeArmyTotal >= stats.guardCap) {
+        building.trainTimer = 0;
+        continue;
+      }
+
+      if (stats.crystals < GUARD_CRYSTAL_COST) {
+        building.trainTimer = 0;
+        continue;
+      }
+
+      const productionTime = Math.pow(1.5, buildingLevel - 1);
+      building.trainTimer = (building.trainTimer || 0) + dt;
+
+      if (
+        building.trainTimer >= productionTime &&
+        getTotalGuardsFromStats(stats) < stats.guardCap &&
+        stats.crystals >= GUARD_CRYSTAL_COST
       ) {
-        building.trainTimer -= 1;
-        stats.crystals -= 1;
-        stats.guardsByLevel[building.level] =
-          (stats.guardsByLevel[building.level] || 0) + 1;
+        building.trainTimer = 0;
+        stats.crystals -= GUARD_CRYSTAL_COST;
+        stats.guardsByLevel[buildingLevel] =
+          (stats.guardsByLevel[buildingLevel] || 0) + 1;
       }
     }
 
@@ -721,11 +739,18 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
   }
 
-  function getMarchGuardCount() {
-    return marchesRef.current.reduce((sum, march) => {
-      if (!march.guardsByLevel) return sum + (march.count || 0);
-      return sum + getTotalGuardsFromStats({ guardsByLevel: march.guardsByLevel });
-    }, 0);
+  function recalculateCityEconomy() {
+    const stats = cityStatsRef.current;
+
+    if (!Number.isFinite(stats.crystals)) {
+      stats.crystals = 0;
+    }
+
+    stats.crystalRate = cityRef.current.buildings
+      .filter((building) => building.type === "CrystalPoint")
+      .reduce((sum, building) => sum + (building.level || 1), 0);
+
+    setCityStats({ ...stats });
   }
 
   function applyCityLevelProgression() {
@@ -867,7 +892,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
         if (!monster) continue;
 
         const result = calculateDamageAndReturn(march.guardsByLevel, monster);
-
         monster.hp = Math.max(0, result.monsterRemainingHp);
 
         if (monster.hp <= 0) {
@@ -942,6 +966,104 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     marchesRef.current = nextMarches;
+  }
+
+  function getLevelUpgradeMultiplier(nextLevel) {
+    return nextLevel * (nextLevel - 1);
+  }
+
+  function getUpgradeCrystalCost(building) {
+    if (!building || building.type === "Citadel") return 0;
+
+    const currentLevel = building.level || 1;
+    const nextLevel = currentLevel + 1;
+
+    if (building.type === "CrystalPoint") return 0;
+
+    const definition = BUILDINGS[building.type];
+    const baseCost = definition?.cost || 0;
+
+    return baseCost * getLevelUpgradeMultiplier(nextLevel);
+  }
+
+  function getUpgradeWorkerCost(building) {
+    if (!building || building.type === "Citadel") return 0;
+
+    const currentLevel = building.level || 1;
+    const nextLevel = currentLevel + 1;
+
+    if (building.type === "CrystalPoint") {
+      return BUILDINGS.CrystalPoint.workerCost * getLevelUpgradeMultiplier(nextLevel);
+    }
+
+    return 0;
+  }
+
+  function getUpgradeCostLabel(building) {
+    if (!building || building.type === "Citadel") return "";
+
+    const crystalCost = getUpgradeCrystalCost(building);
+    const workerCost = getUpgradeWorkerCost(building);
+
+    if (workerCost > 0) return `👥${workerCost}`;
+    return `💎${crystalCost}`;
+  }
+
+  function canUpgradeBuilding(building) {
+    if (!building) return false;
+    if (building.type === "Citadel") return false;
+
+    const currentLevel = building.level || 1;
+    const nextLevel = currentLevel + 1;
+
+    if (currentLevel >= MAX_BUILDING_LEVEL) return false;
+    if (cityStatsRef.current.level < nextLevel) return false;
+
+    const crystalCost = getUpgradeCrystalCost(building);
+    const workerCost = getUpgradeWorkerCost(building);
+
+    if (cityStatsRef.current.crystals < crystalCost) return false;
+    if (cityStatsRef.current.workers < workerCost) return false;
+
+    return true;
+  }
+
+  function upgradeSelectedBuilding() {
+    const selected = selectedBuildingRef.current;
+    if (!selected) return;
+
+    const building = cityRef.current.buildings.find((item) => item.id === selected.id);
+    if (!building) return;
+    if (!canUpgradeBuilding(building)) return;
+
+    const stats = cityStatsRef.current;
+
+    const crystalCost = getUpgradeCrystalCost(building);
+    const workerCost = getUpgradeWorkerCost(building);
+
+    stats.crystals = Math.max(0, stats.crystals - crystalCost);
+    stats.workers = Math.max(0, stats.workers - workerCost);
+
+    const oldLevel = building.level || 1;
+    building.level = oldLevel + 1;
+
+    if (building.type === "House") {
+      const oldWorkerBonus = oldLevel * 5;
+      const newWorkerBonus = building.level * 5;
+      const oldGuardBonus = oldLevel * 25;
+      const newGuardBonus = building.level * 25;
+
+      const workerGain = newWorkerBonus - oldWorkerBonus;
+      const guardGain = newGuardBonus - oldGuardBonus;
+
+      stats.workerCap += workerGain;
+      stats.workers += workerGain;
+      stats.guardCap += guardGain;
+    }
+
+    recalculateCityEconomy();
+    updateSelectedBuilding(building);
+    setCityStats({ ...stats });
   }
 
   function drawArena() {
@@ -1159,6 +1281,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
+    recalculateCityEconomy();
     setScreen("city");
   }
 
@@ -1167,6 +1290,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateBuildPreview(null);
     setBuildMenuOpen(false);
     updateSelectedBuilding(null);
+    recalculateCityEconomy();
     setScreen("arena");
   }
 
@@ -1303,6 +1427,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMode(false);
     updateBuildPreview(null);
     setSelectedBuildingType(null);
+    recalculateCityEconomy();
     setCityStats({ ...stats });
   }
 
@@ -1340,62 +1465,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
     return null;
   }
 
-  function getUpgradeCost(building) {
-    if (!building || building.type === "Citadel") return 0;
-
-    const nextLevel = building.level + 1;
-    const base =
-      building.type === "CrystalPoint"
-        ? 90
-        : building.type === "House"
-          ? 80
-          : building.type === "Barracks"
-            ? 120
-            : 100;
-
-    return Math.floor(base * Math.pow(nextLevel, 1.45));
-  }
-
-  function canUpgradeBuilding(building) {
-    if (!building) return false;
-    if (building.type === "Citadel") return false;
-    if (building.level >= MAX_BUILDING_LEVEL) return false;
-    if (cityStatsRef.current.level < building.level + 1) return false;
-
-    return cityStatsRef.current.crystals >= getUpgradeCost(building);
-  }
-
-  function upgradeSelectedBuilding() {
-    const selected = selectedBuildingRef.current;
-    if (!selected) return;
-
-    const building = cityRef.current.buildings.find((item) => item.id === selected.id);
-    if (!building) return;
-    if (!canUpgradeBuilding(building)) return;
-
-    const stats = cityStatsRef.current;
-    const cost = getUpgradeCost(building);
-
-    stats.crystals -= cost;
-
-    const oldLevel = building.level;
-    building.level += 1;
-
-    if (building.type === "House") {
-      const oldWorkerBonus = oldLevel * 5;
-      const newWorkerBonus = building.level * 5;
-      const oldGuardBonus = oldLevel * 25;
-      const newGuardBonus = building.level * 25;
-
-      stats.workerCap += newWorkerBonus - oldWorkerBonus;
-      stats.workers += newWorkerBonus - oldWorkerBonus;
-      stats.guardCap += newGuardBonus - oldGuardBonus;
-    }
-
-    updateSelectedBuilding(building);
-    setCityStats({ ...stats });
-  }
-
   function beginAttackSelectedMonster() {
     const monster = selectedMonsterRef.current;
     const player = playerRef.current;
@@ -1416,6 +1485,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
       4: 0,
       5: 0,
     };
+
+    for (const building of cityRef.current.buildings) {
+      if (building.type === "Barracks") {
+        building.trainTimer = 0;
+      }
+    }
 
     marchesRef.current.push({
       id: `attack-${Date.now()}-${Math.random()}`,
@@ -2030,12 +2105,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
                 <div style={styles.topResourceChip} title="Workers">
                   <span>👥</span>
-                  <strong>{cityStats.workers}/{cityStats.workerCap}</strong>
+                  <strong>
+                    {cityStats.workers}/{cityStats.workerCap}
+                  </strong>
                 </div>
 
                 <div style={styles.topResourceChip} title="Army">
                   <span>⚔</span>
-                  <strong>{totalGuards}/{armyCap}</strong>
+                  <strong>
+                    {totalGuards}/{armyCap}
+                  </strong>
                 </div>
 
                 <div style={styles.topResourceChip} title="Level">
@@ -2138,14 +2217,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   </div>
 
                   <div style={styles.panelInfo}>
-                    <strong>Lv {selectedBuilding.level}</strong>
+                    <strong>Lv {selectedBuilding.level || 1}</strong>
                     <small>
                       {selectedBuilding.type === "CrystalPoint"
-                        ? `+${selectedBuilding.level}/s`
+                        ? `+${selectedBuilding.level || 1}/s`
                         : selectedBuilding.type === "House"
-                          ? `+${selectedBuilding.level * 5}👥 +${selectedBuilding.level * 25}⚔`
+                          ? `+${(selectedBuilding.level || 1) * 5}👥 +${(selectedBuilding.level || 1) * 25}⚔`
                           : selectedBuilding.type === "Barracks"
-                            ? `Guard Lv${selectedBuilding.level}`
+                            ? `Guard Lv${selectedBuilding.level || 1}`
                             : `City Lv${cityStats.level}`}
                     </small>
                   </div>
@@ -2160,7 +2239,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       onClick={upgradeSelectedBuilding}
                       title="Upgrade"
                     >
-                      ⇧ {getUpgradeCost(selectedBuilding)}
+                      ⇧ {getUpgradeCostLabel(selectedBuilding)}
                     </button>
                   )}
                 </div>
@@ -2742,7 +2821,7 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId) {
     ctx.font = "900 11px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`L${building.level}`, building.x + width - 22, building.y + 22);
+    ctx.fillText(`L${building.level || 1}`, building.x + width - 22, building.y + 22);
 
     ctx.restore();
   }
