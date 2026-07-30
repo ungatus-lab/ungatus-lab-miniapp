@@ -501,8 +501,28 @@ export default function PixelFlowSurvival({ open, onClose }) {
     );
   }
 
+  function shouldShowHouseBuildTutorialArrow() {
+    return (
+      screen === "city" &&
+      !buildMenuOpen &&
+      !buildMode &&
+      !buildPreview &&
+      hasCityBuilding("CrystalPoint") &&
+      !hasCityBuilding("House")
+    );
+  }
+
   function shouldShowCrystalMenuHint() {
     return screen === "city" && buildMenuOpen && !hasCityBuilding("CrystalPoint");
+  }
+
+  function shouldShowHouseMenuHint() {
+    return (
+      screen === "city" &&
+      buildMenuOpen &&
+      hasCityBuilding("CrystalPoint") &&
+      !hasCityBuilding("House")
+    );
   }
 
   function resetArena() {
@@ -2126,7 +2146,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 </div>
               </header>
 
-              {shouldShowBuildTutorialArrow() && (
+              {(shouldShowBuildTutorialArrow() || shouldShowHouseBuildTutorialArrow()) && (
                 <div style={styles.tutorialBuildArrow}>
                   <div style={styles.tutorialArrowIcon}>▼</div>
                 </div>
@@ -2134,8 +2154,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
-                  {shouldShowCrystalMenuHint() && (
-                    <div style={styles.tutorialMenuArrow}>
+                  {(shouldShowCrystalMenuHint() || shouldShowHouseMenuHint()) && (
+                    <div
+                      style={{
+                        ...styles.tutorialMenuArrow,
+                        ...(shouldShowHouseMenuHint() ? styles.tutorialHouseMenuArrow : {}),
+                      }}
+                    >
                       <div style={styles.tutorialArrowIcon}>▼</div>
                     </div>
                   )}
@@ -2153,7 +2178,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       <small>👥5</small>
                     </button>
 
-                    <button style={styles.buildCard} onClick={() => chooseBuilding("House")} title="House">
+                    <button
+                      style={{
+                        ...styles.buildCard,
+                        ...(shouldShowHouseMenuHint() ? styles.buildCardTutorial : {}),
+                      }}
+                      onClick={() => chooseBuilding("House")}
+                      title="House"
+                    >
                       <span style={styles.buildCardIconHouse}>■</span>
                       <small>💎25</small>
                     </button>
@@ -3243,6 +3275,10 @@ const styles = {
     placeItems: "center",
     pointerEvents: "none",
     animation: "tutorialBounce 1.05s ease-in-out infinite",
+  },
+
+  tutorialHouseMenuArrow: {
+    left: "35%",
   },
 
   tutorialArrowIcon: {
