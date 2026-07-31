@@ -530,7 +530,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function shouldShowBuildTutorialArrow() {
     return (
       screen === "city" &&
-      tutorialStep !== "done" &&
+      (tutorialStep === "houses" || tutorialStep === "crystals") &&
       !buildMenuOpen &&
       !buildMode &&
       !buildPreview
