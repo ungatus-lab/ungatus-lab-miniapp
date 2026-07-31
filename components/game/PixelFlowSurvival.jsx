@@ -32,6 +32,7 @@ const GUARD_CRYSTAL_COST = 1;
 
 const TUTORIAL_HOUSE_TARGET = 3;
 const TUTORIAL_CRYSTAL_TARGET = 4;
+const TUTORIAL_BARRACKS_TARGET = 4;
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -281,6 +282,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const marchesRef = useRef([]);
   const selectedMonsterRef = useRef(null);
+  const mapTutorialSeenRef = useRef(false);
 
   const cameraRef = useRef({
     x: WORLD_WIDTH / 2,
@@ -518,9 +520,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function getTutorialStep() {
     const houseCount = getCityBuildingCount("House");
     const crystalCount = getCityBuildingCount("CrystalPoint");
+    const barracksCount = getCityBuildingCount("Barracks");
 
     if (houseCount < TUTORIAL_HOUSE_TARGET) return "houses";
     if (crystalCount < TUTORIAL_CRYSTAL_TARGET) return "crystals";
+    if (!mapTutorialSeenRef.current) return "map";
+    if (barracksCount < TUTORIAL_BARRACKS_TARGET) return "barracks";
 
     return "done";
   }
@@ -528,7 +533,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function shouldShowBuildTutorialArrow() {
     return (
       screen === "city" &&
-      tutorialStep !== "done" &&
+      (tutorialStep === "houses" ||
+        tutorialStep === "crystals" ||
+        tutorialStep === "barracks") &&
       !buildMenuOpen &&
       !buildMode &&
       !buildPreview
@@ -541,6 +548,21 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function shouldShowHouseMenuHint() {
     return screen === "city" && buildMenuOpen && tutorialStep === "houses";
+  }
+
+  function shouldShowBarracksMenuHint() {
+    return screen === "city" && buildMenuOpen && tutorialStep === "barracks";
+  }
+
+  function shouldShowMapTutorialArrow() {
+    return (
+      screen === "city" &&
+      tutorialStep === "map" &&
+      !buildMenuOpen &&
+      !buildMode &&
+      !buildPreview &&
+      !selectedBuilding
+    );
   }
 
   function getCitadelBuilding() {
@@ -597,6 +619,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsRef.current = createCityStats();
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
+    mapTutorialSeenRef.current = false;
     updateSelectedMonster(null);
     updateSelectedBuilding(null);
 
@@ -886,7 +909,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (effect.phase === "cast" && effect.timer >= TELEPORT_CAST_SECONDS) {
       player.x = effect.target.x;
       player.y = effect.target.y;
-      player.score += 1;
 
       cameraRef.current.x = player.x;
       cameraRef.current.y = player.y;
@@ -899,7 +921,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
       setHud((current) => ({
         ...current,
-        score: Math.round(player.score),
         cooldown: TELEPORT_COOLDOWN_SECONDS,
         teleportMode: false,
         status: "Teleport complete.",
@@ -1426,6 +1447,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function backToMap() {
+    if (tutorialStep === "map") {
+      mapTutorialSeenRef.current = true;
+    }
+
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
@@ -1472,6 +1497,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     marchesRef.current = [];
+    mapTutorialSeenRef.current = false;
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
@@ -2379,19 +2405,36 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
           {screen === "arena" && (
             <>
-              <header style={styles.arenaHud}>
-                <div style={styles.hudPill}>
+              <header style={styles.gameTopBar}>
+                <div style={styles.topResourceChip} title="Level">
                   <span>LV</span>
-                  <strong>{hud.level}</strong>
+                  <strong>{cityStats.level}</strong>
                 </div>
 
-                <div style={styles.hudPill}>
+                <div style={styles.topResourceChip} title="Experience">
                   <span>★</span>
-                  <strong>{hud.score}</strong>
+                  <strong>{Math.floor(cityStats.xp)}</strong>
+                  <small>/{getNextLevelXp(cityStats.level)}</small>
                 </div>
 
-                <div style={styles.hudWide}>
-                  <span>{hud.status}</span>
+                <div style={styles.topResourceChip} title="Army">
+                  <span>⚔</span>
+                  <strong>
+                    {totalGuards}/{armyCap}
+                  </strong>
+                </div>
+
+                <div style={styles.topResourceChip} title="Workers">
+                  <span>👥</span>
+                  <strong>
+                    {cityStats.workers}/{cityStats.workerCap}
+                  </strong>
+                </div>
+
+                <div style={styles.topResourceChip} title="Crystals">
+                  <span>💎</span>
+                  <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
 
@@ -2448,11 +2491,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   style={{
                     ...styles.iconControlButton,
                     ...(hud.teleportMode ? styles.controlButtonActive : {}),
+                    ...(hud.cooldown > 0 ? styles.controlButtonDisabled : {}),
                   }}
                   onClick={activateTeleport}
                   title="Teleport"
                 >
-                  <span style={styles.controlIcon}>✦</span>
+                  <span style={styles.controlIcon}>
+                    {hud.cooldown > 0 ? hud.cooldown : "↬"}
+                  </span>
                 </button>
 
                 <button style={styles.iconControlButton} onClick={centerCamera} title="Center">
@@ -2476,17 +2522,23 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
           {screen === "city" && (
             <>
-              <header style={styles.cityTopBar}>
-                <div
-                  style={{
-                    ...styles.topResourceChip,
-                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
-                  }}
-                  title="Crystals"
-                >
-                  <span>💎</span>
-                  <strong>{Math.floor(cityStats.crystals)}</strong>
-                  <small>+{cityStats.crystalRate}/s</small>
+              <header style={styles.gameTopBar}>
+                <div style={styles.topResourceChip} title="Level">
+                  <span>LV</span>
+                  <strong>{cityStats.level}</strong>
+                </div>
+
+                <div style={styles.topResourceChip} title="Experience">
+                  <span>★</span>
+                  <strong>{Math.floor(cityStats.xp)}</strong>
+                  <small>/{getNextLevelXp(cityStats.level)}</small>
+                </div>
+
+                <div style={styles.topResourceChip} title="Army">
+                  <span>⚔</span>
+                  <strong>
+                    {totalGuards}/{armyCap}
+                  </strong>
                 </div>
 
                 <div
@@ -2502,19 +2554,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   </strong>
                 </div>
 
-                <div style={styles.topResourceChip} title="Army">
-                  <span>⚔</span>
-                  <strong>
-                    {totalGuards}/{armyCap}
-                  </strong>
-                </div>
-
-                <div style={styles.topResourceChip} title="Level">
-                  <span>★</span>
-                  <strong>{cityStats.level}</strong>
-                  <small>
-                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
-                  </small>
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Crystals"
+                >
+                  <span>💎</span>
+                  <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
 
@@ -2524,13 +2573,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 </div>
               )}
 
+              {shouldShowMapTutorialArrow() && (
+                <div style={styles.tutorialMapArrow}>
+                  <div style={styles.tutorialArrowIcon}>▼</div>
+                </div>
+              )}
+
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
-                  {(shouldShowCrystalMenuHint() || shouldShowHouseMenuHint()) && (
+                  {(shouldShowCrystalMenuHint() ||
+                    shouldShowHouseMenuHint() ||
+                    shouldShowBarracksMenuHint()) && (
                     <div
                       style={{
                         ...styles.tutorialMenuArrow,
                         ...(shouldShowHouseMenuHint() ? styles.tutorialHouseMenuArrow : {}),
+                        ...(shouldShowBarracksMenuHint() ? styles.tutorialBarracksMenuArrow : {}),
                       }}
                     >
                       <div style={styles.tutorialArrowIcon}>▼</div>
@@ -2563,7 +2621,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     </button>
 
                     <button
-                      style={styles.buildCard}
+                      style={{
+                        ...styles.buildCard,
+                        ...(shouldShowBarracksMenuHint() ? styles.buildCardTutorial : {}),
+                      }}
                       onClick={() => chooseBuilding("Barracks")}
                       title="Barracks"
                     >
@@ -3602,15 +3663,16 @@ const styles = {
     touchAction: "none",
   },
 
-  arenaHud: {
+  gameTopBar: {
     position: "absolute",
-    left: 10,
-    right: 10,
-    top: 10,
-    display: "grid",
-    gridTemplateColumns: "62px 62px 1fr",
-    gap: 8,
+    left: 8,
+    right: 8,
+    top: 8,
+    height: 42,
     zIndex: 3,
+    display: "grid",
+    gridTemplateColumns: "0.75fr 0.95fr 1.12fr 1.08fr 1.25fr",
+    gap: 5,
     pointerEvents: "none",
   },
 
@@ -3643,19 +3705,6 @@ const styles = {
     fontWeight: 800,
   },
 
-  cityTopBar: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    top: 8,
-    height: 42,
-    zIndex: 3,
-    display: "grid",
-    gridTemplateColumns: "1.25fr 1fr 1.25fr 1.35fr",
-    gap: 6,
-    pointerEvents: "none",
-  },
-
   topResourceChip: {
     minWidth: 0,
     height: 42,
@@ -3665,12 +3714,14 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
+    gap: 3,
     color: "rgba(255,255,255,0.86)",
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 900,
     boxSizing: "border-box",
-    padding: "0 5px",
+    padding: "0 4px",
+    overflow: "hidden",
+    whiteSpace: "nowrap",
   },
 
   tutorialChipGlow: {
@@ -3680,6 +3731,19 @@ const styles = {
   tutorialBuildArrow: {
     position: "absolute",
     left: "32%",
+    bottom: 70,
+    zIndex: 8,
+    width: 56,
+    height: 56,
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+    animation: "tutorialBounce 1.05s ease-in-out infinite",
+  },
+
+  tutorialMapArrow: {
+    position: "absolute",
+    left: "9%",
     bottom: 70,
     zIndex: 8,
     width: 56,
@@ -3705,6 +3769,10 @@ const styles = {
 
   tutorialHouseMenuArrow: {
     left: "35%",
+  },
+
+  tutorialBarracksMenuArrow: {
+    left: "60%",
   },
 
   tutorialArrowIcon: {
@@ -4067,5 +4135,9 @@ const styles = {
     border: "1px solid rgba(251,191,36,0.55)",
     background: "rgba(251,191,36,0.22)",
     color: "#fde68a",
+  },
+
+  controlButtonDisabled: {
+    opacity: 0.58,
   },
 };
