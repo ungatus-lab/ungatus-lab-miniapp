@@ -1203,16 +1203,64 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawCityGrid(ctx);
     drawCityBorder(ctx);
     drawCityBuildings(ctx, cityRef.current.buildings, selectedBuilding?.id);
-    drawBuildPreviews(
-      ctx,
+
+    const activePreviews =
       buildBatchPreviewRef.current.length > 0
         ? buildBatchPreviewRef.current
         : buildPreviewRef.current
           ? [buildPreviewRef.current]
-          : []
-    );
+          : [];
+
+    const tutorialDemoPreviews = getTutorialDemoPreviews(activePreviews);
+
+    drawBuildPreviews(ctx, tutorialDemoPreviews);
+    drawBuildPreviews(ctx, activePreviews);
 
     ctx.restore();
+  }
+
+  function getTutorialDemoPreviews(activePreviews) {
+    if (!buildPreviewRef.current) return [];
+    if ((activePreviews || []).length > 1) return [];
+
+    const preview = buildPreviewRef.current;
+    const step = getTutorialStep();
+
+    if (step === "houses" && preview.type === "House") {
+      return makeTutorialDemoBatch(preview, [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+      ]);
+    }
+
+    if (step === "crystals" && preview.type === "CrystalPoint") {
+      return makeTutorialDemoBatch(preview, [
+        [0, 0],
+        [0, 1],
+        [0, 2],
+        [0, 3],
+      ]);
+    }
+
+    return [];
+  }
+
+  function makeTutorialDemoBatch(anchorPreview, offsets) {
+    const definition = BUILDINGS[anchorPreview.type] || BUILDINGS.Barracks;
+    const stepX = definition.w * CITY_GRID_STEP;
+    const stepY = definition.h * CITY_GRID_STEP;
+
+    return makeValidatedBuildBatch(
+      anchorPreview.type,
+      offsets.map(([ox, oy]) => ({
+        x: anchorPreview.x + ox * stepX,
+        y: anchorPreview.y + oy * stepY,
+      }))
+    ).map((preview) => ({
+      ...preview,
+      tutorialDemo: true,
+    }));
   }
 
   function applyWorldTransform(ctx, width, height, camera) {
@@ -1497,13 +1545,31 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const stepX = definition.w * CITY_GRID_STEP;
     const stepY = definition.h * CITY_GRID_STEP;
 
+    const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
+
+    if (type === "CrystalPoint" && getTutorialStep() === "crystals") {
+      const rawDySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
+      const directionY = rawDySteps < 0 ? -1 : 1;
+      const count = Math.min(
+        TUTORIAL_CRYSTAL_TARGET,
+        Math.max(1, Math.abs(rawDySteps) + 1)
+      );
+
+      for (let i = 1; i < count; i += 1) {
+        cells.push({
+          x: anchorPreview.x,
+          y: anchorPreview.y + i * directionY * stepY,
+        });
+      }
+
+      return makeValidatedBuildBatch(type, cells);
+    }
+
     const dxSteps = Math.round((target.x - anchorPreview.x) / Math.max(1, stepX));
     const dySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
 
     const sx = dxSteps === 0 ? 0 : dxSteps > 0 ? 1 : -1;
     const sy = dySteps === 0 ? 0 : dySteps > 0 ? 1 : -1;
-
-    const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
 
     for (let ix = 1; ix <= Math.abs(dxSteps); ix += 1) {
       cells.push({
@@ -1521,6 +1587,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
       });
     }
 
+    return makeValidatedBuildBatch(type, cells);
+  }
+
+  function makeValidatedBuildBatch(type, cells) {
+    const definition = BUILDINGS[type] || BUILDINGS.Barracks;
     const virtualBuildings = [...cityRef.current.buildings];
     const budget = {
       crystals: cityStatsRef.current.crystals,
@@ -1546,6 +1617,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       if (preview.valid) {
         budget.crystals -= preview.cost;
         budget.workers -= preview.workerCost || 0;
+
         virtualBuildings.push({
           id: `virtual-${virtualBuildings.length}`,
           type: preview.type,
@@ -2222,12 +2294,36 @@ export default function PixelFlowSurvival({ open, onClose }) {
             50% { box-shadow: 0 0 24px rgba(251,191,36,0.5); }
           }
 
-          @keyframes tutorialFingerDrag {
-            0%, 15% { transform: translate(0, 0) scale(1); opacity: 0; }
-            25%, 40% { transform: translate(0, 0) scale(0.9); opacity: 0.9; }
-            62% { transform: translate(58px, 0) scale(0.9); opacity: 0.9; }
+          @keyframes tutorialFingerDragHouse {
+            0%, 12% { transform: translate(0, 0) scale(1); opacity: 0; }
+            22%, 38% { transform: translate(0, 0) scale(0.9); opacity: 0.9; }
+            58% { transform: translate(58px, 0) scale(0.9); opacity: 0.9; }
             82% { transform: translate(58px, 58px) scale(0.9); opacity: 0.9; }
             100% { transform: translate(58px, 58px) scale(1); opacity: 0; }
+          }
+
+          @keyframes tutorialFingerDragCrystal {
+            0%, 12% { transform: translate(0, 0) scale(1); opacity: 0; }
+            22%, 38% { transform: translate(0, 0) scale(0.9); opacity: 0.9; }
+            58% { transform: translate(0, 72px) scale(0.9); opacity: 0.9; }
+            78% { transform: translate(0, 144px) scale(0.9); opacity: 0.9; }
+            100% { transform: translate(0, 216px) scale(1); opacity: 0; }
+          }
+
+          @keyframes tutorialGhostButtonHouse {
+            0%, 12% { transform: translate(0, 0); opacity: 0; }
+            22%, 38% { transform: translate(0, 0); opacity: 0.48; }
+            58% { transform: translate(58px, 0); opacity: 0.48; }
+            82% { transform: translate(58px, 58px); opacity: 0.48; }
+            100% { transform: translate(58px, 58px); opacity: 0; }
+          }
+
+          @keyframes tutorialGhostButtonCrystal {
+            0%, 12% { transform: translate(0, 0); opacity: 0; }
+            22%, 38% { transform: translate(0, 0); opacity: 0.48; }
+            58% { transform: translate(0, 72px); opacity: 0.48; }
+            78% { transform: translate(0, 144px); opacity: 0.48; }
+            100% { transform: translate(0, 216px); opacity: 0; }
           }
         `}
       </style>
@@ -2510,7 +2606,29 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   </div>
 
                   {tutorialStep !== "done" && buildBatchPreview.length <= 1 && (
-                    <div style={styles.tutorialFinger}>●</div>
+                    <>
+                      <div
+                        style={{
+                          ...styles.tutorialGhostPlace,
+                          ...(tutorialStep === "crystals"
+                            ? styles.tutorialGhostPlaceCrystal
+                            : styles.tutorialGhostPlaceHouse),
+                        }}
+                      >
+                        ✓
+                      </div>
+
+                      <div
+                        style={{
+                          ...styles.tutorialFinger,
+                          ...(tutorialStep === "crystals"
+                            ? styles.tutorialFingerCrystal
+                            : styles.tutorialFingerHouse),
+                        }}
+                      >
+                        ●
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -3257,6 +3375,11 @@ function drawSingleBuildPreview(ctx, preview) {
 
   ctx.save();
 
+  if (preview.tutorialDemo) {
+    ctx.globalAlpha = 0.42;
+    ctx.setLineDash([12, 8]);
+  }
+
   ctx.fillStyle = valid ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)";
   ctx.fillRect(preview.x, preview.y, width, height);
 
@@ -3294,6 +3417,11 @@ function drawSingleBuildPreview(ctx, preview) {
   ctx.lineWidth = 4;
   ctx.arc(cx, cy, 58 * pulse, 0, Math.PI * 2);
   ctx.stroke();
+
+  if (preview.tutorialDemo) {
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
 
   ctx.restore();
 }
@@ -3685,7 +3813,40 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.32)",
     boxShadow: "0 0 18px rgba(255,255,255,0.28)",
     pointerEvents: "none",
-    animation: "tutorialFingerDrag 2.2s ease-in-out infinite",
+  },
+
+  tutorialFingerHouse: {
+    animation: "tutorialFingerDragHouse 2.2s ease-in-out infinite",
+  },
+
+  tutorialFingerCrystal: {
+    animation: "tutorialFingerDragCrystal 2.35s ease-in-out infinite",
+  },
+
+  tutorialGhostPlace: {
+    position: "absolute",
+    left: 5,
+    top: 5,
+    minWidth: 42,
+    height: 30,
+    border: 0,
+    borderRadius: 999,
+    background: "linear-gradient(135deg, rgba(34,197,94,0.42), rgba(21,128,61,0.42))",
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: 900,
+    fontSize: 15,
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+    opacity: 0,
+  },
+
+  tutorialGhostPlaceHouse: {
+    animation: "tutorialGhostButtonHouse 2.2s ease-in-out infinite",
+  },
+
+  tutorialGhostPlaceCrystal: {
+    animation: "tutorialGhostButtonCrystal 2.35s ease-in-out infinite",
   },
 
   buildMenu: {
