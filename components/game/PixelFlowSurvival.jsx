@@ -291,7 +291,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const cityCameraRef = useRef({
     x: CITY_WIDTH / 2,
     y: CITY_HEIGHT / 2,
-    zoom: 0.85,
+    zoom: CITY_MIN_ZOOM,
   });
 
   const pointerRef = useRef({
@@ -624,7 +624,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityCameraRef.current = {
       x: CITY_WIDTH / 2,
       y: CITY_HEIGHT / 2,
-      zoom: 0.85,
+      zoom: CITY_MIN_ZOOM,
     };
 
     pointerRef.current = {
@@ -1418,6 +1418,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
+    cityCameraRef.current.x = CITY_WIDTH / 2;
+    cityCameraRef.current.y = CITY_HEIGHT / 2;
+    cityCameraRef.current.zoom = CITY_MIN_ZOOM;
     recalculateCityEconomy();
     setScreen("city");
   }
@@ -1434,6 +1437,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function centerCityCamera() {
     cityCameraRef.current.x = CITY_WIDTH / 2;
     cityCameraRef.current.y = CITY_HEIGHT / 2;
+    cityCameraRef.current.zoom = CITY_MIN_ZOOM;
     clampCityCameraToWorld();
     forceBuildPreviewRender();
   }
@@ -1473,6 +1477,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setBuildMenuOpen(false);
     setSelectedBuildingType(null);
     updateSelectedBuilding(null);
+    cityCameraRef.current.x = CITY_WIDTH / 2;
+    cityCameraRef.current.y = CITY_HEIGHT / 2;
+    cityCameraRef.current.zoom = CITY_MIN_ZOOM;
+    clampCityCameraToWorld();
+    forceBuildPreviewRender();
     setCityStats({ ...cityStatsRef.current });
   }
 
