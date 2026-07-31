@@ -30,6 +30,9 @@ const RETURN_MARCH_SPEED = 0.52;
 const MAX_BUILDING_LEVEL = 5;
 const GUARD_CRYSTAL_COST = 1;
 
+const TUTORIAL_HOUSE_TARGET = 3;
+const TUTORIAL_CRYSTAL_TARGET = 4;
+
 const BUILDINGS = {
   CrystalPoint: {
     type: "CrystalPoint",
@@ -326,8 +329,17 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const buildModeRef = useRef(false);
   const buildPreviewRef = useRef(null);
+  const buildBatchPreviewRef = useRef([]);
   const selectedBuildingTypeRef = useRef(null);
   const selectedBuildingRef = useRef(null);
+
+  const massBuildRef = useRef({
+    pointerId: null,
+    active: false,
+    downX: 0,
+    downY: 0,
+    suppressClick: false,
+  });
 
   const lastTimeRef = useRef(0);
 
@@ -335,6 +347,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [profile, setProfile] = useState(initialProfile);
   const [landingPreview, setLandingPreviewState] = useState(null);
   const [buildPreview, setBuildPreviewState] = useState(null);
+  const [buildBatchPreview, setBuildBatchPreviewState] = useState([]);
   const [buildMode, setBuildModeState] = useState(false);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
@@ -457,14 +470,25 @@ export default function PixelFlowSurvival({ open, onClose }) {
     ? worldToScreen(selectedMonster.x, selectedMonster.y)
     : null;
 
+  const totalGuards = getTotalGuardsFromStats(cityStats);
+  const armyCap = cityStats.guardCap;
+  const tutorialStep = getTutorialStep();
+  const batchSummary = getBuildBatchSummary(buildBatchPreview);
+
   function updateLandingPreview(nextPreview) {
     landingPreviewRef.current = nextPreview;
     setLandingPreviewState(nextPreview);
   }
 
+  function updateBuildBatchPreview(nextBatch) {
+    buildBatchPreviewRef.current = nextBatch || [];
+    setBuildBatchPreviewState(nextBatch || []);
+  }
+
   function updateBuildPreview(nextPreview) {
     buildPreviewRef.current = nextPreview;
     setBuildPreviewState(nextPreview);
+    updateBuildBatchPreview(nextPreview ? [nextPreview] : []);
   }
 
   function updateSelectedMonster(nextMonster) {
@@ -487,41 +511,83 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setSelectedBuildingTypeState(nextType);
   }
 
-  function hasCityBuilding(type) {
-    return cityRef.current.buildings.some((building) => building.type === type);
+  function getCityBuildingCount(type) {
+    return cityRef.current.buildings.filter((building) => building.type === type).length;
+  }
+
+  function getTutorialStep() {
+    const houseCount = getCityBuildingCount("House");
+    const crystalCount = getCityBuildingCount("CrystalPoint");
+
+    if (houseCount < TUTORIAL_HOUSE_TARGET) return "houses";
+    if (crystalCount < TUTORIAL_CRYSTAL_TARGET) return "crystals";
+
+    return "done";
   }
 
   function shouldShowBuildTutorialArrow() {
     return (
       screen === "city" &&
+      tutorialStep !== "done" &&
       !buildMenuOpen &&
       !buildMode &&
-      !buildPreview &&
-      !hasCityBuilding("CrystalPoint")
-    );
-  }
-
-  function shouldShowHouseBuildTutorialArrow() {
-    return (
-      screen === "city" &&
-      !buildMenuOpen &&
-      !buildMode &&
-      !buildPreview &&
-      hasCityBuilding("CrystalPoint") &&
-      !hasCityBuilding("House")
+      !buildPreview
     );
   }
 
   function shouldShowCrystalMenuHint() {
-    return screen === "city" && buildMenuOpen && !hasCityBuilding("CrystalPoint");
+    return screen === "city" && buildMenuOpen && tutorialStep === "crystals";
   }
 
   function shouldShowHouseMenuHint() {
-    return (
-      screen === "city" &&
-      buildMenuOpen &&
-      hasCityBuilding("CrystalPoint") &&
-      !hasCityBuilding("House")
+    return screen === "city" && buildMenuOpen && tutorialStep === "houses";
+  }
+
+  function getCitadelBuilding() {
+    return cityRef.current.buildings.find((building) => building.id === "citadel");
+  }
+
+  function getTutorialPlacement(type) {
+    const citadel = getCitadelBuilding();
+    const definition = BUILDINGS[type] || BUILDINGS.House;
+
+    if (!citadel) {
+      return snapCityPointToGrid(
+        { x: CITY_WIDTH / 2, y: CITY_HEIGHT / 2 },
+        definition.w,
+        definition.h
+      );
+    }
+
+    if (type === "House") {
+      return snapCityPointToGrid(
+        {
+          x: citadel.x,
+          y: citadel.y + citadel.h * CITY_GRID_STEP,
+        },
+        definition.w,
+        definition.h
+      );
+    }
+
+    if (type === "CrystalPoint") {
+      return snapCityPointToGrid(
+        {
+          x: citadel.x - definition.w * CITY_GRID_STEP,
+          y: citadel.y - definition.h * CITY_GRID_STEP,
+        },
+        definition.w,
+        definition.h
+      );
+    }
+
+    return snapCityPointToGrid(
+      {
+        x: citadel.x + citadel.w * CITY_GRID_STEP,
+        y: citadel.y,
+      },
+      definition.w,
+      definition.h
     );
   }
 
@@ -593,6 +659,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
     teleportModeRef.current = false;
     teleportEffectRef.current = null;
 
+    massBuildRef.current = {
+      pointerId: null,
+      active: false,
+      downX: 0,
+      downY: 0,
+      suppressClick: false,
+    };
+
     updateLandingPreview(null);
     updateBuildPreview(null);
     setBuildMode(false);
@@ -628,18 +702,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     setScreen("menu");
-  }
-
-  function respawn() {
-    resetArena();
-
-    setHud({
-      level: 1,
-      score: 0,
-      cooldown: 0,
-      teleportMode: false,
-      status: "Ready",
-    });
   }
 
   function centerCamera() {
@@ -1141,7 +1203,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
     drawCityGrid(ctx);
     drawCityBorder(ctx);
     drawCityBuildings(ctx, cityRef.current.buildings, selectedBuilding?.id);
-    drawBuildPreview(ctx, buildPreviewRef.current);
+    drawBuildPreviews(
+      ctx,
+      buildBatchPreviewRef.current.length > 0
+        ? buildBatchPreviewRef.current
+        : buildPreviewRef.current
+          ? [buildPreviewRef.current]
+          : []
+    );
 
     ctx.restore();
   }
@@ -1333,8 +1402,18 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setSelectedBuildingType(type);
     setBuildMenuOpen(false);
     setBuildMode(true);
-    updateBuildPreview(null);
     updateSelectedBuilding(null);
+
+    const shouldAutoPlace =
+      (type === "House" && tutorialStep === "houses") ||
+      (type === "CrystalPoint" && tutorialStep === "crystals");
+
+    if (shouldAutoPlace) {
+      const suggested = getTutorialPlacement(type);
+      updateBuildPreview(makeBuildPreviewFromGrid(suggested, type));
+    } else {
+      updateBuildPreview(null);
+    }
   }
 
   function resetCityBuildings() {
@@ -1354,6 +1433,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const definition = BUILDINGS[type] || BUILDINGS.Barracks;
     const snapped = snapCityPointToGrid(point, definition.w, definition.h);
 
+    return makeBuildPreviewFromGrid(snapped, type);
+  }
+
+  function makeBuildPreviewFromGrid(snapped, type) {
+    const definition = BUILDINGS[type] || BUILDINGS.Barracks;
+
     const preview = {
       type: definition.type,
       x: snapped.x,
@@ -1363,6 +1448,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       cost: definition.cost,
       workerCost: definition.workerCost || 0,
       valid: true,
+      affordable: true,
     };
 
     preview.valid = canPlaceBuilding(preview);
@@ -1370,10 +1456,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     return preview;
   }
 
-  function canPlaceBuilding(preview) {
+  function canPlaceBuilding(preview, buildings = cityRef.current.buildings, stats = cityStatsRef.current) {
     if (!preview) return false;
 
-    const stats = cityStatsRef.current;
     const left = preview.x;
     const top = preview.y;
     const right = preview.x + preview.w * CITY_GRID_STEP;
@@ -1386,7 +1471,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       return false;
     }
 
-    for (const building of cityRef.current.buildings) {
+    for (const building of buildings) {
       const bLeft = building.x;
       const bTop = building.y;
       const bRight = building.x + building.w * CITY_GRID_STEP;
@@ -1401,6 +1486,92 @@ export default function PixelFlowSurvival({ open, onClose }) {
     return true;
   }
 
+  function buildBatchFromDrag(anchorPreview, clientX, clientY) {
+    if (!anchorPreview) return [];
+
+    const type = anchorPreview.type;
+    const definition = BUILDINGS[type] || BUILDINGS.Barracks;
+    const worldPoint = cityScreenToWorld(clientX, clientY);
+    const target = snapCityPointToGrid(worldPoint, definition.w, definition.h);
+
+    const stepX = definition.w * CITY_GRID_STEP;
+    const stepY = definition.h * CITY_GRID_STEP;
+
+    const dxSteps = Math.round((target.x - anchorPreview.x) / Math.max(1, stepX));
+    const dySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
+
+    const sx = dxSteps === 0 ? 0 : dxSteps > 0 ? 1 : -1;
+    const sy = dySteps === 0 ? 0 : dySteps > 0 ? 1 : -1;
+
+    const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
+
+    for (let ix = 1; ix <= Math.abs(dxSteps); ix += 1) {
+      cells.push({
+        x: anchorPreview.x + ix * sx * stepX,
+        y: anchorPreview.y,
+      });
+    }
+
+    const cornerX = anchorPreview.x + dxSteps * stepX;
+
+    for (let iy = 1; iy <= Math.abs(dySteps); iy += 1) {
+      cells.push({
+        x: cornerX,
+        y: anchorPreview.y + iy * sy * stepY,
+      });
+    }
+
+    const virtualBuildings = [...cityRef.current.buildings];
+    const budget = {
+      crystals: cityStatsRef.current.crystals,
+      workers: cityStatsRef.current.workers,
+    };
+
+    return cells.map((cell) => {
+      const snapped = snapCityPointToGrid(cell, definition.w, definition.h);
+      const preview = makeBuildPreviewFromGrid(snapped, type);
+
+      const geometryValid = canPlaceBuilding(
+        { ...preview, cost: 0, workerCost: 0 },
+        virtualBuildings,
+        { crystals: Infinity, workers: Infinity }
+      );
+
+      const affordable =
+        budget.crystals >= preview.cost && budget.workers >= (preview.workerCost || 0);
+
+      preview.valid = geometryValid && affordable;
+      preview.affordable = affordable;
+
+      if (preview.valid) {
+        budget.crystals -= preview.cost;
+        budget.workers -= preview.workerCost || 0;
+        virtualBuildings.push({
+          id: `virtual-${virtualBuildings.length}`,
+          type: preview.type,
+          x: preview.x,
+          y: preview.y,
+          w: preview.w,
+          h: preview.h,
+        });
+      }
+
+      return preview;
+    });
+  }
+
+  function getBuildBatchSummary(batch) {
+    const items = batch || [];
+    const validItems = items.filter((item) => item.valid);
+
+    return {
+      total: items.length,
+      valid: validItems.length,
+      crystalCost: validItems.reduce((sum, item) => sum + (item.cost || 0), 0),
+      workerCost: validItems.reduce((sum, item) => sum + (item.workerCost || 0), 0),
+    };
+  }
+
   function selectBuildPoint(clientX, clientY) {
     if (!buildModeRef.current && !buildPreviewRef.current) return;
 
@@ -1409,46 +1580,119 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateBuildPreview(preview);
   }
 
-  function placeBuilding() {
-    const preview = buildPreviewRef.current;
+  function applyBuildings(previews) {
+    const validPreviews = (previews || []).filter((preview) => preview && preview.valid);
 
-    if (!preview || !preview.valid) return;
+    if (validPreviews.length <= 0) return;
 
-    const definition = BUILDINGS[preview.type] || BUILDINGS.Barracks;
     const stats = cityStatsRef.current;
+    let crystalCost = 0;
+    let workerCost = 0;
 
-    stats.crystals = Math.max(0, stats.crystals - definition.cost);
-    stats.workers = Math.max(0, stats.workers - (definition.workerCost || 0));
+    const newBuildings = [];
+
+    for (const preview of validPreviews) {
+      const definition = BUILDINGS[preview.type] || BUILDINGS.Barracks;
+
+      crystalCost += definition.cost;
+      workerCost += definition.workerCost || 0;
+
+      newBuildings.push({
+        id: `${preview.type}-${Date.now()}-${Math.random()}`,
+        type: preview.type,
+        level: 1,
+        trainTimer: 0,
+        x: preview.x,
+        y: preview.y,
+        w: preview.w,
+        h: preview.h,
+        color: definition.color,
+      });
+    }
+
+    stats.crystals = Math.max(0, stats.crystals - crystalCost);
+    stats.workers = Math.max(0, stats.workers - workerCost);
+
+    for (const building of newBuildings) {
+      if (building.type === "House") {
+        stats.workerCap += 5;
+        stats.workers += 5;
+        stats.guardCap += 25;
+      }
+    }
 
     cityRef.current = {
       ...cityRef.current,
-      buildings: [
-        ...cityRef.current.buildings,
-        {
-          id: `${preview.type}-${Date.now()}`,
-          type: preview.type,
-          level: 1,
-          trainTimer: 0,
-          x: preview.x,
-          y: preview.y,
-          w: preview.w,
-          h: preview.h,
-          color: definition.color,
-        },
-      ],
+      buildings: [...cityRef.current.buildings, ...newBuildings],
     };
-
-    if (preview.type === "House") {
-      stats.workerCap += 5;
-      stats.workers += 5;
-      stats.guardCap += 25;
-    }
 
     setBuildMode(false);
     updateBuildPreview(null);
     setSelectedBuildingType(null);
     recalculateCityEconomy();
     setCityStats({ ...stats });
+  }
+
+  function placeBuilding() {
+    if (massBuildRef.current.suppressClick) {
+      massBuildRef.current.suppressClick = false;
+      return;
+    }
+
+    const preview = buildPreviewRef.current;
+
+    if (!preview || !preview.valid) return;
+
+    applyBuildings([preview]);
+  }
+
+  function beginPlaceButtonPointer(event) {
+    const preview = buildPreviewRef.current;
+
+    if (!preview || !preview.valid) return;
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    massBuildRef.current = {
+      pointerId: event.pointerId,
+      active: false,
+      downX: event.clientX,
+      downY: event.clientY,
+      suppressClick: false,
+    };
+
+    updateBuildBatchPreview([preview]);
+  }
+
+  function movePlaceButtonPointer(event) {
+    const state = massBuildRef.current;
+
+    if (state.pointerId !== event.pointerId) return;
+
+    const distance = Math.hypot(event.clientX - state.downX, event.clientY - state.downY);
+
+    if (distance > 8) {
+      state.active = true;
+    }
+
+    if (!state.active) return;
+
+    const batch = buildBatchFromDrag(buildPreviewRef.current, event.clientX, event.clientY);
+    updateBuildBatchPreview(batch);
+  }
+
+  function endPlaceButtonPointer(event) {
+    const state = massBuildRef.current;
+
+    if (state.pointerId !== event.pointerId) return;
+
+    if (state.active) {
+      state.suppressClick = true;
+      applyBuildings(buildBatchPreviewRef.current);
+    }
+
+    massBuildRef.current.pointerId = null;
+    massBuildRef.current.active = false;
   }
 
   function cancelBuildPreview() {
@@ -1912,6 +2156,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function forceBuildPreviewRender() {
     const currentPreview = buildPreviewRef.current;
     setBuildPreviewState(currentPreview ? { ...currentPreview } : null);
+    setBuildBatchPreviewState(buildBatchPreviewRef.current ? [...buildBatchPreviewRef.current] : []);
   }
 
   function clampCameraToWorld() {
@@ -1958,9 +2203,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
-  const totalGuards = getTotalGuardsFromStats(cityStats);
-  const armyCap = cityStats.guardCap;
-
   return (
     <div style={styles.overlay}>
       <style>
@@ -1973,6 +2215,19 @@ export default function PixelFlowSurvival({ open, onClose }) {
           @keyframes tutorialGlow {
             0%, 100% { box-shadow: 0 0 0 rgba(34,211,238,0.0); }
             50% { box-shadow: 0 0 28px rgba(34,211,238,0.58); }
+          }
+
+          @keyframes chipGlow {
+            0%, 100% { box-shadow: 0 0 0 rgba(251,191,36,0); }
+            50% { box-shadow: 0 0 24px rgba(251,191,36,0.5); }
+          }
+
+          @keyframes tutorialFingerDrag {
+            0%, 15% { transform: translate(0, 0) scale(1); opacity: 0; }
+            25%, 40% { transform: translate(0, 0) scale(0.9); opacity: 0.9; }
+            62% { transform: translate(58px, 0) scale(0.9); opacity: 0.9; }
+            82% { transform: translate(58px, 58px) scale(0.9); opacity: 0.9; }
+            100% { transform: translate(58px, 58px) scale(1); opacity: 0; }
           }
         `}
       </style>
@@ -2117,13 +2372,25 @@ export default function PixelFlowSurvival({ open, onClose }) {
           {screen === "city" && (
             <>
               <header style={styles.cityTopBar}>
-                <div style={styles.topResourceChip} title="Crystals">
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Crystals"
+                >
                   <span>💎</span>
                   <strong>{Math.floor(cityStats.crystals)}</strong>
                   <small>+{cityStats.crystalRate}/s</small>
                 </div>
 
-                <div style={styles.topResourceChip} title="Workers">
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "houses" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Workers"
+                >
                   <span>👥</span>
                   <strong>
                     {cityStats.workers}/{cityStats.workerCap}
@@ -2146,7 +2413,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 </div>
               </header>
 
-              {(shouldShowBuildTutorialArrow() || shouldShowHouseBuildTutorialArrow()) && (
+              {shouldShowBuildTutorialArrow() && (
                 <div style={styles.tutorialBuildArrow}>
                   <div style={styles.tutorialArrowIcon}>▼</div>
                 </div>
@@ -2211,24 +2478,40 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 <div
                   style={{
                     ...styles.buildActions,
-                    left: clamp(buildScreen.x + 28, 12, viewport.width - 120),
-                    top: clamp(buildScreen.y + 36, 90, viewport.height - 156),
+                    left: clamp(buildScreen.x + 28, 12, viewport.width - 140),
+                    top: clamp(buildScreen.y + 36, 90, viewport.height - 166),
                   }}
                 >
                   <button
                     style={{
                       ...styles.placeButton,
-                      ...(buildPreview.valid ? {} : styles.placeButtonDisabled),
+                      ...(batchSummary.valid > 0 ? {} : styles.placeButtonDisabled),
                     }}
                     onClick={placeBuilding}
-                    disabled={!buildPreview.valid}
+                    onPointerDown={beginPlaceButtonPointer}
+                    onPointerMove={movePlaceButtonPointer}
+                    onPointerUp={endPlaceButtonPointer}
+                    onPointerCancel={endPlaceButtonPointer}
+                    disabled={batchSummary.valid <= 0}
                     title="Place"
                   >
                     ✓
                   </button>
+
                   <button style={styles.cancelButton} onClick={cancelBuildPreview}>
                     ×
                   </button>
+
+                  <div style={styles.buildCostBadge}>
+                    {batchSummary.workerCost > 0
+                      ? `👥${batchSummary.workerCost}`
+                      : `💎${batchSummary.crystalCost}`}
+                    {batchSummary.valid > 1 ? ` x${batchSummary.valid}` : ""}
+                  </div>
+
+                  {tutorialStep !== "done" && buildBatchPreview.length <= 1 && (
+                    <div style={styles.tutorialFinger}>●</div>
+                  )}
                 </div>
               )}
 
@@ -2842,9 +3125,9 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId) {
     if (building.type === "CrystalPoint") {
       drawCrystalPointBuilding(ctx, building, width, height, cx, cy);
     } else if (building.type === "House") {
-      drawHouseBuilding(ctx, building, width, height, cx, cy);
+      drawHouseBuilding(ctx, building, width, height);
     } else if (building.type === "Barracks") {
-      drawBarracksBuilding(ctx, building, width, height, cx, cy);
+      drawBarracksBuilding(ctx, building, width, height);
     } else {
       drawCitadelBuilding(ctx, building, width, height, cx, cy);
     }
@@ -2910,7 +3193,7 @@ function drawCrystalPointBuilding(ctx, building, width, height, cx, cy) {
   ctx.shadowBlur = 0;
 }
 
-function drawHouseBuilding(ctx, building, width, height, cx, cy) {
+function drawHouseBuilding(ctx, building, width, height) {
   const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
   gradient.addColorStop(0, "#bbf7d0");
   gradient.addColorStop(1, "#15803d");
@@ -2928,7 +3211,7 @@ function drawHouseBuilding(ctx, building, width, height, cx, cy) {
   ctx.fill();
 }
 
-function drawBarracksBuilding(ctx, building, width, height, cx, cy) {
+function drawBarracksBuilding(ctx, building, width, height) {
   const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
   gradient.addColorStop(0, "#fbbf24");
   gradient.addColorStop(1, "#b45309");
@@ -2957,7 +3240,13 @@ function drawBarracksBuilding(ctx, building, width, height, cx, cy) {
   ctx.stroke();
 }
 
-function drawBuildPreview(ctx, preview) {
+function drawBuildPreviews(ctx, previews) {
+  for (const preview of previews || []) {
+    drawSingleBuildPreview(ctx, preview);
+  }
+}
+
+function drawSingleBuildPreview(ctx, preview) {
   if (!preview) return;
 
   const width = preview.w * CITY_GRID_STEP;
@@ -3057,10 +3346,6 @@ function ProfileStat({ label, value }) {
 
 function rand(min, max) {
   return min + Math.random() * (max - min);
-}
-
-function randomFrom(items) {
-  return items[Math.floor(Math.random() * items.length)];
 }
 
 function clamp(value, min, max) {
@@ -3251,6 +3536,10 @@ const styles = {
     padding: "0 5px",
   },
 
+  tutorialChipGlow: {
+    animation: "chipGlow 1.15s ease-in-out infinite",
+  },
+
   tutorialBuildArrow: {
     position: "absolute",
     left: "32%",
@@ -3368,6 +3657,37 @@ const styles = {
     boxShadow: "0 18px 50px rgba(0,0,0,0.42)",
   },
 
+  buildCostBadge: {
+    minWidth: 42,
+    height: 24,
+    padding: "0 8px",
+    borderRadius: 999,
+    background: "rgba(15,23,42,0.92)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: 900,
+    display: "grid",
+    placeItems: "center",
+  },
+
+  tutorialFinger: {
+    position: "absolute",
+    left: 22,
+    top: -10,
+    width: 26,
+    height: 26,
+    borderRadius: "50%",
+    display: "grid",
+    placeItems: "center",
+    color: "rgba(255,255,255,0.78)",
+    background: "rgba(255,255,255,0.18)",
+    border: "1px solid rgba(255,255,255,0.32)",
+    boxShadow: "0 0 18px rgba(255,255,255,0.28)",
+    pointerEvents: "none",
+    animation: "tutorialFingerDrag 2.2s ease-in-out infinite",
+  },
+
   buildMenu: {
     position: "absolute",
     left: 12,
@@ -3446,6 +3766,7 @@ const styles = {
     fontWeight: 900,
     fontSize: 15,
     cursor: "pointer",
+    touchAction: "none",
   },
 
   placeButtonDisabled: {
