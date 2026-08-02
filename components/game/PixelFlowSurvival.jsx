@@ -282,6 +282,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const marchesRef = useRef([]);
   const selectedMonsterRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
+  const mapTutorialTargetRef = useRef(null);
+  const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3 });
 
   const cameraRef = useRef({
     x: WORLD_WIDTH / 2,
@@ -355,6 +357,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
+  const [mapTutorialPhase, setMapTutorialPhase] = useState("off");
+  const [mapTutorialTarget, setMapTutorialTarget] = useState(null);
   const [cityStats, setCityStats] = useState(createCityStats());
   const [viewport, setViewport] = useState({ width: 390, height: 720 });
 
@@ -469,6 +473,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const selectedMonsterScreen = selectedMonster
     ? worldToScreen(selectedMonster.x, selectedMonster.y)
+    : null;
+  const mapTutorialTargetScreen = mapTutorialTarget
+    ? worldToScreen(mapTutorialTarget.x, mapTutorialTarget.y)
     : null;
 
   const totalGuards = getTotalGuardsFromStats(cityStats);
@@ -619,6 +626,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     mapTutorialSeenRef.current = false;
+    mapTutorialTargetRef.current = null;
+    mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
+    setMapTutorialPhase("off");
+    setMapTutorialTarget(null);
     updateSelectedMonster(null);
     updateSelectedBuilding(null);
 
@@ -765,6 +776,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     updateTeleportEffect(dt);
     updateMarches(dt);
+    updateMapTutorial(dt);
 
     setHud((current) => {
       const nextCooldown = Math.ceil(cooldownRef.current);
@@ -788,6 +800,54 @@ export default function PixelFlowSurvival({ open, onClose }) {
         teleportMode: teleportModeRef.current,
       };
     });
+  }
+
+  function findTutorialMonster() {
+    const player = playerRef.current;
+    if (!player) return null;
+
+    const smallMonsters = worldRef.current.monsters.filter(
+      (monster) => monster.type === "small"
+    );
+    const candidates = smallMonsters.length > 0 ? smallMonsters : worldRef.current.monsters;
+
+    return [...candidates].sort((a, b) => {
+      const distanceA = Math.hypot(a.x - player.x, a.y - player.y);
+      const distanceB = Math.hypot(b.x - player.x, b.y - player.y);
+      if (Math.abs(distanceA - distanceB) > 1) return distanceA - distanceB;
+      return a.hp - b.hp;
+    })[0] || null;
+  }
+
+  function updateMapTutorial(dt) {
+    if (screen !== "arena") return;
+    if (!mapTutorialZoomRef.current.active) return;
+
+    const camera = cameraRef.current;
+    const targetZoom = mapTutorialZoomRef.current.targetZoom;
+    camera.zoom = Math.max(targetZoom, camera.zoom - dt * 0.24);
+    clampCameraToWorld();
+
+    if (camera.zoom > targetZoom + 0.002) return;
+
+    camera.zoom = targetZoom;
+    mapTutorialZoomRef.current.active = false;
+
+    const monster = findTutorialMonster();
+    if (!monster) {
+      mapTutorialSeenRef.current = true;
+      setMapTutorialPhase("off");
+      return;
+    }
+
+    const player = playerRef.current;
+    camera.x = (player.x + monster.x) / 2;
+    camera.y = (player.y + monster.y) / 2;
+    clampCameraToWorld();
+
+    mapTutorialTargetRef.current = monster;
+    setMapTutorialTarget({ ...monster });
+    setMapTutorialPhase("monster");
   }
 
   function updateCity(dt) {
@@ -1449,7 +1509,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function backToMap() {
     if (tutorialStep === "map") {
-      mapTutorialSeenRef.current = true;
+      mapTutorialZoomRef.current = { active: true, targetZoom: 0.3 };
+      mapTutorialTargetRef.current = null;
+      setMapTutorialTarget(null);
+      setMapTutorialPhase("zoomout");
     }
 
     setBuildMode(false);
@@ -2040,6 +2103,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
       if (monster) {
         updateSelectedMonster({ ...monster });
         setEnterCoreVisible(false);
+
+        if (mapTutorialTargetRef.current?.id === monster.id) {
+          mapTutorialSeenRef.current = true;
+          mapTutorialTargetRef.current = null;
+          setMapTutorialTarget(null);
+          setMapTutorialPhase("off");
+        }
       } else {
         updateSelectedMonster(null);
         setEnterCoreVisible(false);
@@ -2393,6 +2463,20 @@ export default function PixelFlowSurvival({ open, onClose }) {
             0%, 100% { box-shadow: 0 0 10px rgba(34,197,94,0.34); }
             50% { box-shadow: 0 0 24px rgba(34,197,94,0.88); }
           }
+
+          @keyframes tutorialPinchOut {
+            0%, 15% { transform: translateX(0); opacity: 0; }
+            28%, 55% { transform: translateX(0); opacity: 1; }
+            85% { transform: translateX(var(--spread)); opacity: 1; }
+            100% { transform: translateX(var(--spread)); opacity: 0; }
+          }
+
+          @keyframes tutorialPinchIn {
+            0%, 15% { transform: translateX(var(--spread)); opacity: 0; }
+            28%, 55% { transform: translateX(var(--spread)); opacity: 1; }
+            85% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(0); opacity: 0; }
+          }
         `}
       </style>
 
@@ -2479,6 +2563,54 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
+
+              {mapTutorialPhase === "zoomout" && (
+                <div style={styles.mapTutorialGesture}>
+                  <div style={styles.mapTutorialGestureLabel}>ZOOM OUT</div>
+                  <span
+                    style={{
+                      ...styles.mapTutorialFingerDot,
+                      ...styles.mapTutorialFingerLeft,
+                      animationName: "tutorialPinchIn",
+                    }}
+                  />
+                  <span
+                    style={{
+                      ...styles.mapTutorialFingerDot,
+                      ...styles.mapTutorialFingerRight,
+                      animationName: "tutorialPinchIn",
+                    }}
+                  />
+                </div>
+              )}
+
+              {mapTutorialPhase === "monster" && mapTutorialTargetScreen && (
+                <div
+                  style={{
+                    ...styles.mapTutorialMonsterGuide,
+                    left: clamp(mapTutorialTargetScreen.x - 70, 12, viewport.width - 152),
+                    top: clamp(mapTutorialTargetScreen.y - 118, 72, viewport.height - 220),
+                  }}
+                >
+                  <div style={styles.mapTutorialMonsterArrow}>▼</div>
+                  <div style={styles.mapTutorialZoomGesture}>
+                    <span
+                      style={{
+                        ...styles.mapTutorialFingerDot,
+                        ...styles.mapTutorialFingerLeft,
+                        animationName: "tutorialPinchOut",
+                      }}
+                    />
+                    <span
+                      style={{
+                        ...styles.mapTutorialFingerDot,
+                        ...styles.mapTutorialFingerRight,
+                        animationName: "tutorialPinchOut",
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {enterCoreVisible && enterScreen && (
                 <div
@@ -3774,6 +3906,82 @@ const styles = {
 
   tutorialChipGlow: {
     animation: "chipGlow 1.15s ease-in-out infinite",
+  },
+
+  mapTutorialGesture: {
+    position: "absolute",
+    left: "50%",
+    top: "42%",
+    width: 150,
+    height: 92,
+    transform: "translate(-50%, -50%)",
+    zIndex: 9,
+    pointerEvents: "none",
+  },
+
+  mapTutorialGestureLabel: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    textAlign: "center",
+    color: "#fde68a",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.12em",
+    textShadow: "0 0 14px rgba(251,191,36,0.8)",
+  },
+
+  mapTutorialFingerDot: {
+    position: "absolute",
+    top: 42,
+    width: 26,
+    height: 26,
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.32)",
+    border: "2px solid rgba(255,255,255,0.92)",
+    boxShadow: "0 0 18px rgba(103,232,249,0.82)",
+    animationDuration: "1.8s",
+    animationTimingFunction: "ease-in-out",
+    animationIterationCount: "infinite",
+  },
+
+  mapTutorialFingerLeft: {
+    left: 49,
+    "--spread": "-34px",
+  },
+
+  mapTutorialFingerRight: {
+    right: 49,
+    "--spread": "34px",
+  },
+
+  mapTutorialMonsterGuide: {
+    position: "absolute",
+    width: 140,
+    height: 105,
+    zIndex: 9,
+    pointerEvents: "none",
+  },
+
+  mapTutorialMonsterArrow: {
+    position: "absolute",
+    left: "50%",
+    bottom: 0,
+    transform: "translateX(-50%)",
+    color: "#fbbf24",
+    fontSize: 38,
+    lineHeight: 1,
+    textShadow: "0 0 18px rgba(251,191,36,0.9)",
+    animation: "tutorialBounce 1.05s ease-in-out infinite",
+  },
+
+  mapTutorialZoomGesture: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: 140,
+    height: 62,
   },
 
   tutorialBuildArrow: {
