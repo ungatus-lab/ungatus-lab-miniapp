@@ -2438,19 +2438,45 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
           {screen === "arena" && (
             <>
-              <header style={styles.arenaHud}>
-                <div style={styles.hudPill}>
-                  <span>LV</span>
-                  <strong>{hud.level}</strong>
-                </div>
-
-                <div style={styles.hudPill}>
+              <header style={styles.cityTopBar}>
+                <div style={styles.topResourceChip} title="Level">
                   <span>★</span>
-                  <strong>{hud.score}</strong>
+                  <strong>{cityStats.level}</strong>
+                  <small>
+                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
+                  </small>
                 </div>
 
-                <div style={styles.hudWide}>
-                  <span>{hud.status}</span>
+                <div style={styles.topResourceChip} title="Army">
+                  <span>⚔</span>
+                  <strong>
+                    {totalGuards}/{armyCap}
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "houses" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Workers"
+                >
+                  <span>👥</span>
+                  <strong>
+                    {cityStats.workers}/{cityStats.workerCap}
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Crystals"
+                >
+                  <span>💎</span>
+                  <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
 
