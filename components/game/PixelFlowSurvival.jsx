@@ -2536,18 +2536,19 @@ export default function PixelFlowSurvival({ open, onClose }) {
           {screen === "city" && (
             <>
               <header style={styles.cityTopBar}>
-                <div
-                  style={{
-                    ...styles.topResourceChip,
-                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
-                  }}
-                  title="Crystals"
-                >
-                  <span>💎</span>
-                  <strong>{Math.floor(cityStats.crystals)}</strong>
-                  <small>+{cityStats.crystalRate}/s</small>
+                <div style={styles.topResourceChip} title="Level">
+                  <span>★</span>
+                  <strong>{cityStats.level}</strong>
+                  <small>
+                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
+                  </small>
                 </div>
-
+                <div style={styles.topResourceChip} title="Army">
+                  <span>⚔</span>
+                  <strong>
+                    {totalGuards}/{armyCap}
+                  </strong>
+                </div>
                 <div
                   style={{
                     ...styles.topResourceChip,
@@ -2560,20 +2561,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     {cityStats.workers}/{cityStats.workerCap}
                   </strong>
                 </div>
-
-                <div style={styles.topResourceChip} title="Army">
-                  <span>⚔</span>
-                  <strong>
-                    {totalGuards}/{armyCap}
-                  </strong>
-                </div>
-
-                <div style={styles.topResourceChip} title="Level">
-                  <span>★</span>
-                  <strong>{cityStats.level}</strong>
-                  <small>
-                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
-                  </small>
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Crystals"
+                >
+                  <span>💎</span>
+                  <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
 
