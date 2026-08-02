@@ -475,6 +475,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const armyCap = cityStats.guardCap;
   const tutorialStep = getTutorialStep();
   const batchSummary = getBuildBatchSummary(buildBatchPreview);
+  const tutorialBuildTarget =
+    tutorialStep === "houses"
+      ? TUTORIAL_HOUSE_TARGET
+      : tutorialStep === "crystals"
+        ? TUTORIAL_CRYSTAL_TARGET
+        : 1;
+  const tutorialBatchReady =
+    tutorialStep === "done" || tutorialStep === "map" || batchSummary.valid >= tutorialBuildTarget;
 
   function updateLandingPreview(nextPreview) {
     landingPreviewRef.current = nextPreview;
@@ -1742,6 +1750,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (!preview || !preview.valid) return;
 
+    const step = getTutorialStep();
+    if (step === "houses" || step === "crystals") return;
+
     applyBuildings([preview]);
   }
 
@@ -1787,7 +1798,19 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (state.active) {
       state.suppressClick = true;
-      applyBuildings(buildBatchPreviewRef.current);
+
+      const step = getTutorialStep();
+      const requiredCount =
+        step === "houses"
+          ? TUTORIAL_HOUSE_TARGET
+          : step === "crystals"
+            ? TUTORIAL_CRYSTAL_TARGET
+            : 1;
+      const validCount = getBuildBatchSummary(buildBatchPreviewRef.current).valid;
+
+      if ((step !== "houses" && step !== "crystals") || validCount >= requiredCount) {
+        applyBuildings(buildBatchPreviewRef.current);
+      }
     }
 
     massBuildRef.current.pointerId = null;
@@ -2352,6 +2375,24 @@ export default function PixelFlowSurvival({ open, onClose }) {
             78% { transform: translate(0, 144px); opacity: 0.48; }
             100% { transform: translate(0, 216px); opacity: 0; }
           }
+
+          @keyframes tutorialPlaceDotPulse {
+            0%, 100% {
+              transform: scale(0.72);
+              opacity: 0.58;
+              box-shadow: 0 0 0 0 rgba(255,255,255,0.34);
+            }
+            50% {
+              transform: scale(1);
+              opacity: 1;
+              box-shadow: 0 0 0 8px rgba(255,255,255,0);
+            }
+          }
+
+          @keyframes tutorialPlaceButtonPulse {
+            0%, 100% { box-shadow: 0 0 10px rgba(34,197,94,0.34); }
+            50% { box-shadow: 0 0 24px rgba(34,197,94,0.88); }
+          }
         `}
       </style>
 
@@ -2609,6 +2650,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     style={{
                       ...styles.placeButton,
                       ...(batchSummary.valid > 0 ? {} : styles.placeButtonDisabled),
+                      ...(!tutorialBatchReady ? styles.placeButtonTutorialPending : {}),
                     }}
                     onClick={placeBuilding}
                     onPointerDown={beginPlaceButtonPointer}
@@ -2618,7 +2660,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     disabled={batchSummary.valid <= 0}
                     title="Place"
                   >
-                    ✓
+                    {tutorialBatchReady ? "✓" : <span style={styles.tutorialPlaceDot} />}
                   </button>
 
                   <button style={styles.cancelButton} onClick={cancelBuildPreview}>
@@ -3974,6 +4016,22 @@ const styles = {
     fontSize: 15,
     cursor: "pointer",
     touchAction: "none",
+  },
+
+  placeButtonTutorialPending: {
+    position: "relative",
+    animation: "tutorialPlaceButtonPulse 1.05s ease-in-out infinite",
+  },
+
+  tutorialPlaceDot: {
+    display: "block",
+    width: 11,
+    height: 11,
+    margin: "0 auto",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.96)",
+    pointerEvents: "none",
+    animation: "tutorialPlaceDotPulse 1.05s ease-in-out infinite",
   },
 
   placeButtonDisabled: {
