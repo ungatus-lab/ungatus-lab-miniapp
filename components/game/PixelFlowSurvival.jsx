@@ -218,8 +218,35 @@ function createMonster(index) {
 }
 
 function createWorld() {
+  const spawn = snapPointToLandingGrid({
+    x: WORLD_WIDTH / 2,
+    y: WORLD_HEIGHT / 2,
+  });
+  const tutorialMonster = {
+    id: "tutorial-monster",
+    x: spawn.x + MAJOR_GRID_STEP * 4,
+    y: spawn.y - MAJOR_GRID_STEP * 3,
+    r: 22,
+    hp: 24,
+    maxHp: 24,
+    armor: 1,
+    type: "small",
+    color: "#67e8f9",
+    pulse: 0,
+    tutorial: true,
+  };
+  const exclusionRadius = MAJOR_GRID_STEP * 1.35;
+  const randomMonsters = Array.from(
+    { length: MONSTER_COUNT - 1 },
+    (_, index) => createMonster(index)
+  ).filter(
+    (monster) =>
+      Math.hypot(monster.x - tutorialMonster.x, monster.y - tutorialMonster.y) >=
+      exclusionRadius
+  );
+
   return {
-    monsters: Array.from({ length: MONSTER_COUNT }, (_, index) => createMonster(index)),
+    monsters: [tutorialMonster, ...randomMonsters],
   };
 }
 
@@ -803,20 +830,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function findTutorialMonster() {
-    const player = playerRef.current;
-    if (!player) return null;
-
-    const smallMonsters = worldRef.current.monsters.filter(
-      (monster) => monster.type === "small"
+    return (
+      worldRef.current.monsters.find((monster) => monster.id === "tutorial-monster") ||
+      null
     );
-    const candidates = smallMonsters.length > 0 ? smallMonsters : worldRef.current.monsters;
-
-    return [...candidates].sort((a, b) => {
-      const distanceA = Math.hypot(a.x - player.x, a.y - player.y);
-      const distanceB = Math.hypot(b.x - player.x, b.y - player.y);
-      if (Math.abs(distanceA - distanceB) > 1) return distanceA - distanceB;
-      return a.hp - b.hp;
-    })[0] || null;
   }
 
   function updateMapTutorial(dt) {
@@ -2465,17 +2482,17 @@ export default function PixelFlowSurvival({ open, onClose }) {
           }
 
           @keyframes tutorialPinchOut {
-            0%, 15% { transform: translateX(0); opacity: 0; }
-            28%, 55% { transform: translateX(0); opacity: 1; }
-            85% { transform: translateX(var(--spread)); opacity: 1; }
-            100% { transform: translateX(var(--spread)); opacity: 0; }
+            0%, 15% { transform: translateY(0); opacity: 0; }
+            28%, 55% { transform: translateY(0); opacity: 1; }
+            85% { transform: translateY(var(--spread-y)); opacity: 1; }
+            100% { transform: translateY(var(--spread-y)); opacity: 0; }
           }
 
           @keyframes tutorialPinchIn {
-            0%, 15% { transform: translateX(var(--spread)); opacity: 0; }
-            28%, 55% { transform: translateX(var(--spread)); opacity: 1; }
-            85% { transform: translateX(0); opacity: 1; }
-            100% { transform: translateX(0); opacity: 0; }
+            0%, 15% { transform: translateY(var(--spread-y)); opacity: 0; }
+            28%, 55% { transform: translateY(var(--spread-y)); opacity: 1; }
+            85% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(0); opacity: 0; }
           }
         `}
       </style>
@@ -2570,14 +2587,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   <span
                     style={{
                       ...styles.mapTutorialFingerDot,
-                      ...styles.mapTutorialFingerLeft,
+                      ...styles.mapTutorialFingerTop,
                       animationName: "tutorialPinchIn",
                     }}
                   />
                   <span
                     style={{
                       ...styles.mapTutorialFingerDot,
-                      ...styles.mapTutorialFingerRight,
+                      ...styles.mapTutorialFingerBottom,
                       animationName: "tutorialPinchIn",
                     }}
                   />
@@ -2588,23 +2605,29 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 <div
                   style={{
                     ...styles.mapTutorialMonsterGuide,
-                    left: clamp(mapTutorialTargetScreen.x - 70, 12, viewport.width - 152),
-                    top: clamp(mapTutorialTargetScreen.y - 118, 72, viewport.height - 220),
+                    left: clamp(mapTutorialTargetScreen.x - 44, 8, viewport.width - 88),
+                    top: clamp(
+                      mapTutorialTargetScreen.y -
+                        mapTutorialTarget.r * cameraRef.current.zoom -
+                        92,
+                      62,
+                      viewport.height - 190
+                    ),
                   }}
                 >
-                  <div style={styles.mapTutorialMonsterArrow}>▼</div>
+                  <div style={styles.mapTutorialMonsterArrow}>☝︎</div>
                   <div style={styles.mapTutorialZoomGesture}>
                     <span
                       style={{
                         ...styles.mapTutorialFingerDot,
-                        ...styles.mapTutorialFingerLeft,
+                        ...styles.mapTutorialFingerTop,
                         animationName: "tutorialPinchOut",
                       }}
                     />
                     <span
                       style={{
                         ...styles.mapTutorialFingerDot,
-                        ...styles.mapTutorialFingerRight,
+                        ...styles.mapTutorialFingerBottom,
                         animationName: "tutorialPinchOut",
                       }}
                     />
@@ -2744,7 +2767,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {shouldShowBuildTutorialArrow() && (
                 <div style={styles.tutorialBuildArrow}>
-                  <div style={styles.tutorialArrowIcon}>▼</div>
+                  <div style={styles.macroPointer}>☝︎</div>
                 </div>
               )}
 
@@ -2757,7 +2780,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                         ...(shouldShowHouseMenuHint() ? styles.tutorialHouseMenuArrow : {}),
                       }}
                     >
-                      <div style={styles.tutorialArrowIcon}>▼</div>
+                      <div style={styles.macroPointer}>☝︎</div>
                     </div>
                   )}
 
@@ -2914,7 +2937,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {shouldShowMapTutorialArrow() && (
                 <div style={styles.tutorialMapArrow}>
-                  <div style={styles.tutorialArrowIcon}>▼</div>
+                  <div style={styles.macroPointer}>☝︎</div>
                 </div>
               )}
 
@@ -3912,129 +3935,117 @@ const styles = {
     position: "absolute",
     left: "50%",
     top: "42%",
-    width: 150,
-    height: 92,
+    width: 86,
+    height: 150,
     transform: "translate(-50%, -50%)",
     zIndex: 9,
     pointerEvents: "none",
   },
-
   mapTutorialGestureLabel: {
     position: "absolute",
-    left: 0,
-    right: 0,
+    left: -28,
+    right: -28,
     top: 0,
     textAlign: "center",
-    color: "#fde68a",
+    color: "rgba(255,255,255,0.9)",
     fontSize: 11,
     fontWeight: 900,
     letterSpacing: "0.12em",
-    textShadow: "0 0 14px rgba(251,191,36,0.8)",
+    textShadow: "0 0 14px rgba(103,232,249,0.9)",
   },
-
   mapTutorialFingerDot: {
     position: "absolute",
-    top: 42,
+    left: 30,
     width: 26,
     height: 26,
     borderRadius: "50%",
-    background: "rgba(255,255,255,0.32)",
-    border: "2px solid rgba(255,255,255,0.92)",
+    background: "rgba(255,255,255,0.25)",
+    border: "2px solid rgba(255,255,255,0.94)",
     boxShadow: "0 0 18px rgba(103,232,249,0.82)",
     animationDuration: "1.8s",
     animationTimingFunction: "ease-in-out",
     animationIterationCount: "infinite",
   },
-
-  mapTutorialFingerLeft: {
-    left: 49,
-    "--spread": "-34px",
+  mapTutorialFingerTop: {
+    top: 58,
+    "--spread-y": "-30px",
   },
-
-  mapTutorialFingerRight: {
-    right: 49,
-    "--spread": "34px",
+  mapTutorialFingerBottom: {
+    top: 82,
+    "--spread-y": "30px",
   },
-
   mapTutorialMonsterGuide: {
     position: "absolute",
-    width: 140,
-    height: 105,
+    width: 88,
+    height: 92,
     zIndex: 9,
     pointerEvents: "none",
   },
-
   mapTutorialMonsterArrow: {
     position: "absolute",
     left: "50%",
     bottom: 0,
-    transform: "translateX(-50%)",
-    color: "#fbbf24",
-    fontSize: 38,
+    transform: "translateX(-50%) rotate(180deg)",
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 42,
     lineHeight: 1,
-    textShadow: "0 0 18px rgba(251,191,36,0.9)",
+    textShadow: "0 0 15px rgba(103,232,249,0.95)",
     animation: "tutorialBounce 1.05s ease-in-out infinite",
   },
-
   mapTutorialZoomGesture: {
     position: "absolute",
-    left: 0,
-    top: 0,
-    width: 140,
-    height: 62,
+    left: 72,
+    top: 6,
+    width: 86,
+    height: 120,
   },
-
   tutorialBuildArrow: {
     position: "absolute",
-    left: "32%",
-    bottom: 70,
+    left: "30%",
+    bottom: 68,
     zIndex: 8,
     width: 56,
-    height: 56,
+    height: 64,
+    transform: "translateX(-50%)",
     display: "grid",
     placeItems: "center",
     pointerEvents: "none",
-    animation: "tutorialBounce 1.05s ease-in-out infinite",
   },
-
   tutorialMapArrow: {
     position: "absolute",
-    left: "9%",
-    bottom: 70,
+    left: "10%",
+    bottom: 68,
     zIndex: 8,
     width: 56,
-    height: 56,
+    height: 64,
+    transform: "translateX(-50%)",
     display: "grid",
     placeItems: "center",
     pointerEvents: "none",
-    animation: "tutorialBounce 1.05s ease-in-out infinite",
   },
-
   tutorialMenuArrow: {
     position: "absolute",
-    left: "10%",
-    top: -38,
+    left: "12.5%",
+    top: -54,
     zIndex: 9,
     width: 56,
-    height: 56,
+    height: 64,
+    transform: "translateX(-50%)",
     display: "grid",
     placeItems: "center",
     pointerEvents: "none",
+  },
+  tutorialHouseMenuArrow: {
+    left: "37.5%",
+  },
+  macroPointer: {
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 42,
+    lineHeight: 1,
+    transform: "rotate(180deg)",
+    textShadow: "0 0 15px rgba(103,232,249,0.95)",
     animation: "tutorialBounce 1.05s ease-in-out infinite",
   },
-
-  tutorialHouseMenuArrow: {
-    left: "35%",
-  },
-
-  tutorialArrowIcon: {
-    color: "#fbbf24",
-    fontSize: 34,
-    lineHeight: "34px",
-    textShadow: "0 0 18px rgba(251,191,36,0.75)",
-    fontWeight: 900,
-  },
-
   buildCardTutorial: {
     border: "1px solid rgba(34,211,238,0.72)",
     background: "rgba(34,211,238,0.16)",
