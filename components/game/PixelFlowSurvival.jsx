@@ -2532,12 +2532,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 <button
                   style={{
                     ...styles.iconControlButton,
+                    ...styles.teleportControlButton,
                     ...(hud.teleportMode ? styles.controlButtonActive : {}),
+                    ...(hud.cooldown > 0 ? styles.teleportControlButtonCooldown : {}),
                   }}
                   onClick={activateTeleport}
-                  title="Teleport"
+                  disabled={hud.cooldown > 0}
+                  title={hud.cooldown > 0 ? `Teleport ready in ${hud.cooldown}s` : "Teleport"}
                 >
-                  <span style={styles.controlIcon}>✦</span>
+                  <span style={styles.teleportIcon} aria-hidden="true">
+                    <span style={styles.teleportIconTopRing} />
+                    <span style={styles.teleportIconBeam} />
+                    <span style={styles.teleportIconBottomRing} />
+                  </span>
+                  {hud.cooldown > 0 && (
+                    <span style={styles.teleportCooldownText}>{hud.cooldown}</span>
+                  )}
                 </button>
 
                 <button style={styles.iconControlButton} onClick={centerCamera} title="Center">
@@ -4179,6 +4189,72 @@ const styles = {
   controlIcon: {
     fontSize: 21,
     lineHeight: "22px",
+  },
+
+  teleportControlButton: {
+    position: "relative",
+    overflow: "hidden",
+  },
+
+  teleportControlButtonCooldown: {
+    opacity: 0.72,
+    cursor: "not-allowed",
+  },
+
+  teleportIcon: {
+    position: "relative",
+    width: 34,
+    height: 30,
+    display: "block",
+  },
+
+  teleportIconTopRing: {
+    position: "absolute",
+    left: 8,
+    top: 2,
+    width: 18,
+    height: 7,
+    border: "2px solid #67e8f9",
+    borderRadius: "50%",
+    boxSizing: "border-box",
+    boxShadow: "0 0 8px rgba(103,232,249,0.72)",
+  },
+
+  teleportIconBeam: {
+    position: "absolute",
+    left: 10,
+    top: 7,
+    width: 14,
+    height: 15,
+    borderLeft: "2px solid rgba(103,232,249,0.72)",
+    borderRight: "2px solid rgba(103,232,249,0.72)",
+    boxSizing: "border-box",
+    background: "linear-gradient(90deg, transparent, rgba(103,232,249,0.26), transparent)",
+  },
+
+  teleportIconBottomRing: {
+    position: "absolute",
+    left: 3,
+    bottom: 1,
+    width: 28,
+    height: 9,
+    border: "2px solid #ffffff",
+    borderRadius: "50%",
+    boxSizing: "border-box",
+    boxShadow: "0 0 10px rgba(103,232,249,0.62)",
+  },
+
+  teleportCooldownText: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    color: "#ffffff",
+    fontSize: 17,
+    lineHeight: 1,
+    fontWeight: 950,
+    textShadow: "0 1px 4px #020617, 0 0 8px #020617",
+    zIndex: 2,
   },
 
   controlButtonActive: {
