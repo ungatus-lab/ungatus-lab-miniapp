@@ -498,12 +498,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
       ? worldToScreen(playerRef.current.x, playerRef.current.y)
       : null;
 
-  const buildScreen = buildPreview
+  const buildControlPreview =
+    [...buildBatchPreview].reverse().find((preview) => preview?.valid) || buildPreview;
+  const buildScreen = buildControlPreview
     ? cityWorldToScreen(
-        buildPreview.x + (buildPreview.w * CITY_GRID_STEP) / 2,
-        buildPreview.y + (buildPreview.h * CITY_GRID_STEP) / 2
+        buildControlPreview.x + (buildControlPreview.w * CITY_GRID_STEP) / 2,
+        buildControlPreview.y + (buildControlPreview.h * CITY_GRID_STEP) / 2
       )
     : null;
+  const buildPanelOnRight = buildScreen ? buildScreen.x < 150 : false;
 
   const selectedMonsterScreen = selectedMonster
     ? worldToScreen(selectedMonster.x, selectedMonster.y)
@@ -1918,6 +1921,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
       if ((step !== "houses" && step !== "crystals") || validCount >= requiredCount) {
         applyBuildings(buildBatchPreviewRef.current);
+      } else {
+        const anchor = buildPreviewRef.current;
+        updateBuildBatchPreview(anchor ? [anchor] : []);
       }
     }
 
@@ -2894,9 +2900,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
               {buildPreview && buildScreen && (
                 <div
                   style={{
-                    ...styles.buildActions,
-                    left: clamp(buildScreen.x + 28, 12, viewport.width - 140),
-                    top: clamp(buildScreen.y + 36, 90, viewport.height - 166),
+                    ...styles.buildControlAnchor,
+                    left: buildScreen.x,
+                    top: buildScreen.y,
                   }}
                 >
                   <button
@@ -2916,15 +2922,32 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     {tutorialBatchReady ? "✓" : <span style={styles.tutorialPlaceDot} />}
                   </button>
 
-                  <button style={styles.cancelButton} onClick={cancelBuildPreview}>
-                    ×
-                  </button>
+                  <div
+                    style={{
+                      ...styles.buildControlConnector,
+                      ...(buildPanelOnRight
+                        ? styles.buildControlConnectorRight
+                        : styles.buildControlConnectorLeft),
+                    }}
+                  />
 
-                  <div style={styles.buildCostBadge}>
-                    {batchSummary.workerCost > 0
-                      ? `👥${batchSummary.workerCost}`
-                      : `💎${batchSummary.crystalCost}`}
-                    {batchSummary.valid > 1 ? ` x${batchSummary.valid}` : ""}
+                  <div
+                    style={{
+                      ...styles.buildControlPanel,
+                      ...(buildPanelOnRight
+                        ? styles.buildControlPanelRight
+                        : styles.buildControlPanelLeft),
+                    }}
+                  >
+                    <button style={styles.cancelButton} onClick={cancelBuildPreview}>
+                      ×
+                    </button>
+                    <div style={styles.buildCostBadge}>
+                      {batchSummary.workerCost > 0
+                        ? `👥${batchSummary.workerCost}`
+                        : `💎${batchSummary.crystalCost}`}
+                      {batchSummary.valid > 1 ? ` x${batchSummary.valid}` : ""}
+                    </div>
                   </div>
 
                   {tutorialStep !== "done" && buildBatchPreview.length <= 1 && (
@@ -2939,7 +2962,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       >
                         ✓
                       </div>
-
                       <div
                         style={{
                           ...styles.tutorialFinger,
@@ -2954,7 +2976,6 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   )}
                 </div>
               )}
-
               {selectedBuilding && (
                 <div style={styles.buildingPanel}>
                   <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)}>
@@ -4180,17 +4201,55 @@ const styles = {
     boxShadow: "0 18px 50px rgba(0,0,0,0.42)",
   },
 
-  buildActions: {
+  buildControlAnchor: {
     position: "absolute",
-    zIndex: 6,
-    display: "flex",
-    alignItems: "center",
-    gap: 5,
-    padding: 5,
+    zIndex: 10,
+    width: 54,
+    height: 54,
+    transform: "translate(-50%, -50%)",
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+  },
+  buildControlPanel: {
+    position: "absolute",
+    top: "50%",
+    minWidth: 104,
+    height: 40,
+    transform: "translateY(-50%)",
+    padding: "5px 7px",
+    boxSizing: "border-box",
     borderRadius: 999,
-    background: "rgba(15,23,42,0.92)",
+    background: "rgba(15,23,42,0.94)",
     border: "1px solid rgba(34,197,94,0.36)",
     boxShadow: "0 18px 50px rgba(0,0,0,0.42)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    pointerEvents: "auto",
+  },
+  buildControlPanelLeft: {
+    right: 76,
+  },
+  buildControlPanelRight: {
+    left: 76,
+  },
+  buildControlConnector: {
+    position: "absolute",
+    top: "50%",
+    width: 28,
+    height: 2,
+    marginTop: -1,
+    background: "rgba(34,197,94,0.72)",
+    boxShadow: "0 0 8px rgba(34,197,94,0.5)",
+    pointerEvents: "none",
+  },
+  buildControlConnectorLeft: {
+    right: 48,
+  },
+  buildControlConnectorRight: {
+    left: 48,
   },
 
   buildCostBadge: {
@@ -4326,16 +4385,19 @@ const styles = {
   },
 
   placeButton: {
-    minWidth: 42,
-    height: 30,
-    border: 0,
-    borderRadius: 999,
+    width: 50,
+    minWidth: 50,
+    height: 50,
+    border: "2px solid rgba(255,255,255,0.28)",
+    borderRadius: "50%",
     background: "linear-gradient(135deg, #22c55e, #15803d)",
     color: "#ffffff",
     fontWeight: 900,
     fontSize: 15,
     cursor: "pointer",
     touchAction: "none",
+    pointerEvents: "auto",
+    boxShadow: "0 0 18px rgba(34,197,94,0.62)",
   },
 
   placeButtonTutorialPending: {
