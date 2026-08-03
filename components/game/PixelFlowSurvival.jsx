@@ -4051,7 +4051,7 @@ const styles = {
     position: "absolute",
     left: "50%",
     bottom: 0,
-    marginLeft: -7,
+    marginLeft: -20,
     transform: "translateX(-50%)",
     color: "rgba(255,255,255,0.88)",
     fontSize: 42,
