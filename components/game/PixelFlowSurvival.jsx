@@ -313,6 +313,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const marchesRef = useRef([]);
   const constructionQueueRef = useRef([]);
+  const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false });
   const selectedMonsterRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
@@ -624,18 +625,25 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function getTutorialStep() {
     const houseCount = getCityBuildingCount("House");
     const crystalCount = getCityBuildingCount("CrystalPoint");
-
-    if (houseCount < TUTORIAL_HOUSE_TARGET) return "houses";
-    if (crystalCount < TUTORIAL_CRYSTAL_TARGET) return "crystals";
+    if (houseCount < TUTORIAL_HOUSE_TARGET) {
+      return tutorialConstructionRef.current.housesCommitted ? "housesBuilding" : "houses";
+    }
+    if (crystalCount < TUTORIAL_CRYSTAL_TARGET) {
+      return tutorialConstructionRef.current.crystalsCommitted ? "crystalsBuilding" : "crystals";
+    }
     if (!mapTutorialSeenRef.current) return "map";
-
     return "done";
+  }
+
+  function isTutorialConstructionWaiting() {
+    return tutorialStep === "housesBuilding" || tutorialStep === "crystalsBuilding";
   }
 
   function shouldShowBuildTutorialArrow() {
     return (
       screen === "city" &&
       (tutorialStep === "houses" || tutorialStep === "crystals") &&
+      !isTutorialConstructionWaiting() &&
       !buildMenuOpen &&
       !buildMode &&
       !buildPreview
@@ -643,11 +651,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function shouldShowCrystalMenuHint() {
-    return screen === "city" && buildMenuOpen && tutorialStep === "crystals";
+    return screen === "city" && buildMenuOpen && tutorialStep === "crystals" && !isTutorialConstructionWaiting();
   }
 
   function shouldShowHouseMenuHint() {
-    return screen === "city" && buildMenuOpen && tutorialStep === "houses";
+    return screen === "city" && buildMenuOpen && tutorialStep === "houses" && !isTutorialConstructionWaiting();
   }
 
   function shouldShowMapTutorialArrow() {
@@ -716,6 +724,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     constructionQueueRef.current = [];
+    tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false };
     mapTutorialSeenRef.current = false;
     mapTutorialTargetRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
@@ -1693,6 +1702,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsRef.current = createCityStats();
     marchesRef.current = [];
     constructionQueueRef.current = [];
+    tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false };
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
@@ -1997,6 +2007,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
       const validCount = getBuildBatchSummary(buildBatchPreviewRef.current).valid;
 
       if ((step !== "houses" && step !== "crystals") || validCount >= requiredCount) {
+        if (step === "houses") tutorialConstructionRef.current.housesCommitted = true;
+        if (step === "crystals") tutorialConstructionRef.current.crystalsCommitted = true;
         applyBuildings(buildBatchPreviewRef.current);
       } else {
         const anchor = buildPreviewRef.current;
@@ -3113,7 +3125,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     </div>
                   </div>
 
-                  {tutorialStep !== "done" && buildBatchPreview.length <= 1 && (
+                  {!isTutorialConstructionWaiting() && tutorialStep !== "done" && buildBatchPreview.length <= 1 && (
                     <>
                       <div
                         style={{
