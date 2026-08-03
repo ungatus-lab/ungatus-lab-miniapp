@@ -700,7 +700,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       return snapCityPointToGrid(
         {
           x: citadel.x - definition.w * CITY_GRID_STEP,
-          y: citadel.y - definition.h * CITY_GRID_STEP,
+          y: citadel.y - definition.h * CITY_GRID_STEP - CITY_GRID_STEP,
         },
         definition.w,
         definition.h
