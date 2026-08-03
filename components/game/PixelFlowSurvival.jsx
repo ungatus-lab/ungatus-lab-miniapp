@@ -2063,7 +2063,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
       if (pointerState.lastPinchDistance > 0) {
         const ratio = distance / pointerState.lastPinchDistance;
-        zoomCamera(ratio);
+        const pinchClientX = (a.x + b.x) / 2;
+        const pinchClientY = (a.y + b.y) / 2;
+        zoomCameraAt(ratio, pinchClientX, pinchClientY);
       }
 
       pointerState.lastPinchDistance = distance;
@@ -2369,12 +2371,34 @@ export default function PixelFlowSurvival({ open, onClose }) {
     forceBuildPreviewRender();
   }
 
-  function zoomCamera(ratio) {
+  function zoomCameraAt(ratio, clientX, clientY) {
+    const canvas = canvasRef.current;
     const camera = cameraRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const screenX = clientX - rect.left;
+    const screenY = clientY - rect.top;
+    const worldX = (screenX - canvas.clientWidth / 2) / camera.zoom + camera.x;
+    const worldY = (screenY - canvas.clientHeight / 2) / camera.zoom + camera.y;
 
     camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
+    camera.x = worldX - (screenX - canvas.clientWidth / 2) / camera.zoom;
+    camera.y = worldY - (screenY - canvas.clientHeight / 2) / camera.zoom;
+
     clampCameraToWorld();
     forceLandingPreviewRender();
+  }
+
+  function zoomCamera(ratio) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    zoomCameraAt(
+      ratio,
+      rect.left + canvas.clientWidth / 2,
+      rect.top + canvas.clientHeight / 2
+    );
   }
 
   function zoomCityCamera(ratio) {
@@ -2633,22 +2657,30 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 mapTutorialPhase === "monsterZoom" ||
                 mapTutorialPhase === "monsterPointerFinal") &&
                 mapTutorialTargetScreen && (
-                  <div
-                    style={{
-                      ...styles.mapTutorialMonsterGuide,
-                      left: mapTutorialTargetScreen.x - 44,
-                      top:
-                        mapTutorialTargetScreen.y -
-                        mapTutorialTarget.r * cameraRef.current.zoom -
-                        92,
-                    }}
-                  >
+                  <>
                     {(mapTutorialPhase === "monsterPointer" ||
                       mapTutorialPhase === "monsterPointerFinal") && (
-                      <div style={styles.mapTutorialMonsterArrow}>☟︎</div>
+                      <div
+                        style={{
+                          ...styles.mapTutorialMonsterPointerGuide,
+                          left: mapTutorialTargetScreen.x,
+                          top:
+                            mapTutorialTargetScreen.y -
+                            mapTutorialTarget.r * cameraRef.current.zoom -
+                            8,
+                        }}
+                      >
+                        <div style={styles.mapTutorialMonsterArrow}>☟︎</div>
+                      </div>
                     )}
                     {mapTutorialPhase === "monsterZoom" && (
-                      <div style={styles.mapTutorialZoomGesture}>
+                      <div
+                        style={{
+                          ...styles.mapTutorialZoomGesture,
+                          left: mapTutorialTargetScreen.x,
+                          top: mapTutorialTargetScreen.y,
+                        }}
+                      >
                         <span
                           style={{
                             ...styles.mapTutorialFingerDot,
@@ -2665,7 +2697,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                         />
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
 
               {enterCoreVisible && enterScreen && (
@@ -4000,17 +4032,18 @@ const styles = {
     animationIterationCount: "infinite",
   },
   mapTutorialFingerTop: {
-    top: 58,
+    top: 35,
     "--spread-y": "-30px",
   },
   mapTutorialFingerBottom: {
-    top: 82,
+    top: 59,
     "--spread-y": "30px",
   },
-  mapTutorialMonsterGuide: {
+  mapTutorialMonsterPointerGuide: {
     position: "absolute",
     width: 88,
-    height: 92,
+    height: 82,
+    transform: "translate(-50%, -100%)",
     zIndex: 9,
     pointerEvents: "none",
   },
@@ -4018,6 +4051,7 @@ const styles = {
     position: "absolute",
     left: "50%",
     bottom: 0,
+    marginLeft: -7,
     transform: "translateX(-50%)",
     color: "rgba(255,255,255,0.88)",
     fontSize: 42,
@@ -4027,10 +4061,11 @@ const styles = {
   },
   mapTutorialZoomGesture: {
     position: "absolute",
-    left: 1,
-    top: 58,
     width: 86,
     height: 120,
+    transform: "translate(-50%, -50%)",
+    zIndex: 9,
+    pointerEvents: "none",
   },
   tutorialBuildArrow: {
     position: "absolute",
