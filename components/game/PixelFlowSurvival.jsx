@@ -884,7 +884,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (guide.phase === "monsterPointer") {
       guide.timer += dt;
-      if (guide.timer >= 2.5) {
+      if (guide.timer >= 1.25) {
         guide.zoomStart = camera.zoom;
         updateMapTutorialPhase("monsterZoom");
       }
