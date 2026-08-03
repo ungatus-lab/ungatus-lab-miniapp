@@ -387,6 +387,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [selectedMonster, setSelectedMonsterState] = useState(null);
   const [mapTutorialPhase, setMapTutorialPhase] = useState("off");
   const [mapTutorialTarget, setMapTutorialTarget] = useState(null);
+  const [tutorialThreatCardVisible, setTutorialThreatCardVisible] = useState(false);
 
   function updateMapTutorialPhase(nextPhase) {
     mapTutorialGuideRef.current.phase = nextPhase;
@@ -527,6 +528,50 @@ export default function PixelFlowSurvival({ open, onClose }) {
         : 1;
   const tutorialBatchReady =
     tutorialStep === "done" || tutorialStep === "map" || batchSummary.valid >= tutorialBuildTarget;
+  const selectedMonsterThreat = selectedMonster
+    ? (() => {
+        const army = totalGuards;
+        const compatibleArmy = Object.entries(cityStats.guardsByLevel || {}).reduce(
+          (sum, [level, count]) => sum + (Number(level) >= selectedMonster.armor ? count : 0),
+          0
+        );
+        if (army <= 0 || compatibleArmy <= 0) {
+          return {
+            key: "impossible",
+            label: "IMPOSSIBLE",
+            icon: "⚠",
+            color: "#ef4444",
+            background: "rgba(127,29,29,0.72)",
+          };
+        }
+        const ratio = compatibleArmy / Math.max(1, selectedMonster.hp);
+        if (ratio < 0.75) {
+          return {
+            key: "danger",
+            label: "HEAVY LOSSES",
+            icon: "⚠",
+            color: "#facc15",
+            background: "rgba(113,63,18,0.72)",
+          };
+        }
+        if (ratio < 1.35) {
+          return {
+            key: "even",
+            label: "EVEN FIGHT",
+            icon: "◆",
+            color: "#e5e7eb",
+            background: "rgba(55,65,81,0.78)",
+          };
+        }
+        return {
+          key: "easy",
+          label: "EASY TARGET",
+          icon: "✓",
+          color: "#38bdf8",
+          background: "rgba(7,89,133,0.72)",
+        };
+      })()
+    : null;
 
   function updateLandingPreview(nextPreview) {
     landingPreviewRef.current = nextPreview;
@@ -668,6 +713,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
     setMapTutorialTarget(null);
+    setTutorialThreatCardVisible(false);
     updateSelectedMonster(null);
     updateSelectedBuilding(null);
 
@@ -1542,6 +1588,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function enterCity() {
     updateLandingPreview(null);
+    setTutorialThreatCardVisible(false);
     updateSelectedMonster(null);
     teleportModeRef.current = false;
     setEnterCoreVisible(false);
@@ -2161,6 +2208,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
           mapTutorialSeenRef.current = true;
           mapTutorialTargetRef.current = null;
           setMapTutorialTarget(null);
+          setTutorialThreatCardVisible(true);
           updateMapTutorialPhase("off");
         }
       } else {
@@ -2552,6 +2600,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
             85% { transform: translateY(0); opacity: 1; }
             100% { transform: translateY(0); opacity: 0; }
           }
+          @keyframes monsterIntelPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.18); }
+            50% { box-shadow: 0 0 0 6px rgba(239,68,68,0.34); }
+          }
         `}
       </style>
 
@@ -2720,23 +2772,104 @@ export default function PixelFlowSurvival({ open, onClose }) {
                 </div>
               )}
 
-              {selectedMonster && selectedMonsterScreen && (
+              {selectedMonster && selectedMonsterThreat && (
                 <div
                   style={{
-                    ...styles.monsterActions,
-                    left: clamp(selectedMonsterScreen.x + 28, 12, viewport.width - 118),
-                    top: clamp(selectedMonsterScreen.y + 32, 86, viewport.height - 154),
+                    ...styles.monsterIntelCard,
+                    borderColor: selectedMonsterThreat.color,
+                    boxShadow: `0 18px 54px ${selectedMonsterThreat.color}33`,
                   }}
                 >
-                  <button style={styles.attackButton} onClick={beginAttackSelectedMonster}>
-                    ⚔ 1/1
+                  <div
+                    style={{
+                      ...styles.monsterIntelPortrait,
+                      borderColor: selectedMonster.color,
+                      boxShadow: `0 0 20px ${selectedMonster.color}88`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...styles.monsterIntelCreature,
+                        background: selectedMonster.color,
+                        boxShadow: `0 0 18px ${selectedMonster.color}`,
+                        transform:
+                          selectedMonster.type === "giant"
+                            ? "rotate(45deg) scale(1.08)"
+                            : selectedMonster.type === "brute"
+                              ? "rotate(45deg)"
+                              : selectedMonster.type === "beast"
+                                ? "rotate(30deg)"
+                                : "rotate(45deg) scale(0.78)",
+                      }}
+                    />
+                    <strong>A{selectedMonster.armor}</strong>
+                  </div>
+
+                  <div style={styles.monsterIntelStats}>
+                    <div
+                      style={{
+                        ...styles.monsterIntelStat,
+                        ...(tutorialThreatCardVisible ? styles.monsterIntelPulse : {}),
+                      }}
+                    >
+                      <small>ENEMY</small>
+                      <strong>{Math.ceil(selectedMonster.hp)}</strong>
+                    </div>
+                    <div
+                      style={{
+                        ...styles.monsterIntelStat,
+                        ...(tutorialThreatCardVisible ? styles.monsterIntelPulse : {}),
+                      }}
+                    >
+                      <small>YOUR ARMY</small>
+                      <strong>{totalGuards}/{armyCap}</strong>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      ...styles.monsterThreatState,
+                      color: selectedMonsterThreat.color,
+                      background: selectedMonsterThreat.background,
+                      ...(tutorialThreatCardVisible ? styles.monsterIntelPulse : {}),
+                    }}
+                  >
+                    <span>{selectedMonsterThreat.icon}</span>
+                    <strong>{selectedMonsterThreat.label}</strong>
+                  </div>
+
+                  <button
+                    style={{
+                      ...styles.monsterIntelAttack,
+                      ...(selectedMonsterThreat.key === "impossible"
+                        ? styles.monsterIntelAttackDisabled
+                        : {}),
+                    }}
+                    disabled={selectedMonsterThreat.key === "impossible"}
+                    onClick={beginAttackSelectedMonster}
+                  >
+                    ⚔
                   </button>
-                  <button style={styles.cancelButton} onClick={() => updateSelectedMonster(null)}>
+                  <button
+                    style={styles.monsterIntelClose}
+                    onClick={() => {
+                      setTutorialThreatCardVisible(false);
+                      updateSelectedMonster(null);
+                    }}
+                  >
                     ×
                   </button>
                 </div>
               )}
 
+              {tutorialThreatCardVisible && selectedMonster?.tutorial && (
+                <>
+                  <div style={styles.tutorialArmyHighlight} />
+                  <div style={styles.tutorialCityPointer}>
+                    <div style={styles.macroPointer}>☟︎</div>
+                  </div>
+                </>
+              )}
               {landingPreview && landingScreen && (
                 <div
                   style={{
@@ -4163,6 +4296,120 @@ const styles = {
     cursor: "pointer",
   },
 
+  monsterIntelCard: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: 60,
+    minHeight: 86,
+    zIndex: 12,
+    padding: 8,
+    boxSizing: "border-box",
+    borderRadius: 20,
+    border: "1px solid #ef4444",
+    background: "rgba(15,23,42,0.96)",
+    display: "grid",
+    gridTemplateColumns: "66px 1fr 104px 38px 30px",
+    gap: 7,
+    alignItems: "center",
+    backdropFilter: "blur(12px)",
+  },
+  monsterIntelPortrait: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    border: "2px solid #67e8f9",
+    background: "radial-gradient(circle, rgba(255,255,255,0.12), rgba(2,6,23,0.9))",
+    position: "relative",
+    display: "grid",
+    placeItems: "center",
+    overflow: "hidden",
+  },
+  monsterIntelCreature: {
+    width: 27,
+    height: 27,
+    borderRadius: 8,
+    opacity: 0.96,
+  },
+  monsterIntelStats: {
+    minWidth: 0,
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 5,
+  },
+  monsterIntelStat: {
+    minWidth: 0,
+    height: 52,
+    borderRadius: 13,
+    border: "1px solid rgba(255,255,255,0.1)",
+    background: "rgba(255,255,255,0.055)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  monsterThreatState: {
+    height: 54,
+    borderRadius: 14,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    fontSize: 9,
+    lineHeight: 1.05,
+  },
+  monsterIntelPulse: {
+    animation: "monsterIntelPulse 1.05s ease-in-out infinite",
+  },
+  monsterIntelAttack: {
+    width: 36,
+    height: 36,
+    border: 0,
+    borderRadius: "50%",
+    background: "linear-gradient(135deg, #ef4444, #f59e0b)",
+    color: "#fff",
+    fontWeight: 900,
+  },
+  monsterIntelAttackDisabled: {
+    opacity: 0.34,
+    cursor: "not-allowed",
+  },
+  monsterIntelClose: {
+    width: 28,
+    height: 28,
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.06)",
+    color: "#fff",
+    fontWeight: 900,
+  },
+  tutorialArmyHighlight: {
+    position: "absolute",
+    left: "25.8%",
+    top: 5,
+    width: "23.6%",
+    height: 48,
+    zIndex: 11,
+    borderRadius: 16,
+    border: "2px solid rgba(239,68,68,0.9)",
+    boxShadow: "0 0 22px rgba(239,68,68,0.72)",
+    pointerEvents: "none",
+    animation: "monsterIntelPulse 1.05s ease-in-out infinite",
+  },
+  tutorialCityPointer: {
+    position: "absolute",
+    left: "50%",
+    bottom: 68,
+    zIndex: 13,
+    width: 56,
+    height: 64,
+    transform: "translateX(-50%)",
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+  },
   monsterActions: {
     position: "absolute",
     zIndex: 6,
