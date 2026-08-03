@@ -1727,6 +1727,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
       updateMapTutorialPhase("zoomout");
     }
 
+    if (tutorialStep === "mapAfterBarracks") {
+      const monster = findTutorialMonster();
+      if (monster) {
+        mapTutorialTargetRef.current = monster;
+        setMapTutorialTarget({ ...monster });
+        updateTutorialFlowPhase("attackMonster");
+        updateMapTutorialPhase("monsterPointerFinal");
+      }
+    }
+
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
@@ -2131,6 +2141,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function beginAttackSelectedMonster() {
+    if (tutorialFlowRef.current.phase === "attackButton") {
+      updateTutorialFlowPhase("attackLaunched");
+      setTutorialThreatCardVisible(false);
+    }
+
     const monster = selectedMonsterRef.current;
     const player = playerRef.current;
     const stats = cityStatsRef.current;
@@ -2323,11 +2338,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
         setEnterCoreVisible(false);
 
         if (mapTutorialTargetRef.current?.id === monster.id) {
+          const attackStage = tutorialFlowRef.current.phase === "attackMonster";
           mapTutorialSeenRef.current = true;
           mapTutorialTargetRef.current = null;
           setMapTutorialTarget(null);
           setTutorialThreatCardVisible(true);
-          updateTutorialFlowPhase("inspectMonster");
+          updateTutorialFlowPhase(attackStage ? "attackButton" : "inspectMonster");
           updateMapTutorialPhase("off");
         }
       } else {
@@ -2984,6 +3000,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {tutorialThreatCardVisible && selectedMonster?.tutorial && (
                 <div style={styles.tutorialArmyHighlight} />
+              )}
+              {tutorialFlowPhase === "attackButton" && selectedMonster?.tutorial && (
+                <div style={styles.tutorialAttackPointer}>
+                  <div style={styles.macroPointerUp}>☝︎</div>
+                </div>
               )}
               {tutorialFlowPhase === "teleportButton" && (
                 <div style={styles.tutorialTeleportPointer}><div style={styles.macroPointer}>☟︎</div></div>
@@ -4621,6 +4642,25 @@ const styles = {
     display: "grid",
     placeItems: "center",
     pointerEvents: "none",
+  },
+  tutorialAttackPointer: {
+    position: "absolute",
+    left: "80.5%",
+    top: 146,
+    zIndex: 14,
+    width: 56,
+    height: 64,
+    transform: "translateX(-50%)",
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+  },
+  macroPointerUp: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 42,
+    lineHeight: 1,
+    textShadow: "0 0 15px rgba(251,146,60,0.96)",
+    animation: "tutorialBounce 1.05s ease-in-out infinite",
   },
   monsterActions: {
     position: "absolute",
