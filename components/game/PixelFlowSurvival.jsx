@@ -2615,7 +2615,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     ),
                   }}
                 >
-                  <div style={styles.mapTutorialMonsterArrow}>☝︎</div>
+                  <div style={styles.mapTutorialMonsterArrow}>☟︎</div>
                   <div style={styles.mapTutorialZoomGesture}>
                     <span
                       style={{
@@ -2767,7 +2767,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {shouldShowBuildTutorialArrow() && (
                 <div style={styles.tutorialBuildArrow}>
-                  <div style={styles.macroPointer}>☝︎</div>
+                  <div style={styles.macroPointer}>☟︎</div>
                 </div>
               )}
 
@@ -2780,7 +2780,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                         ...(shouldShowHouseMenuHint() ? styles.tutorialHouseMenuArrow : {}),
                       }}
                     >
-                      <div style={styles.macroPointer}>☝︎</div>
+                      <div style={styles.macroPointer}>☟︎</div>
                     </div>
                   )}
 
@@ -2937,7 +2937,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {shouldShowMapTutorialArrow() && (
                 <div style={styles.tutorialMapArrow}>
-                  <div style={styles.macroPointer}>☝︎</div>
+                  <div style={styles.macroPointer}>☟︎</div>
                 </div>
               )}
 
