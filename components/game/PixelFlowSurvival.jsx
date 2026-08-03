@@ -316,6 +316,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const constructionQueueRef = useRef([]);
   const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false, barracksCommitted: false });
   const tutorialFlowRef = useRef({ phase: "buildEconomy", timer: 0 });
+  const tutorialLandingTargetRef = useRef(null);
   const selectedMonsterRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
@@ -531,6 +532,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const mapTutorialTargetScreen = mapTutorialTarget
     ? worldToScreen(mapTutorialTarget.x, mapTutorialTarget.y)
     : null;
+  const tutorialLandingTargetScreen =
+    tutorialFlowPhase === "selectLanding" && tutorialLandingTargetRef.current
+      ? worldToScreen(tutorialLandingTargetRef.current.x, tutorialLandingTargetRef.current.y)
+      : null;
 
   const totalGuards = getTotalGuardsFromStats(cityStats);
   const armyCap = cityStats.guardCap;
@@ -747,6 +752,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false, barracksCommitted: false };
     mapTutorialSeenRef.current = false;
     tutorialFlowRef.current = { phase: "buildEconomy", timer: 0 };
+    tutorialLandingTargetRef.current = null;
     setTutorialFlowPhase("buildEconomy");
     mapTutorialTargetRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
@@ -880,6 +886,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     teleportModeRef.current = true;
 
     if (tutorialFlowRef.current.phase === "teleportButton") {
+      tutorialLandingTargetRef.current = getTutorialLandingTarget();
       setTutorialThreatCardVisible(false);
       updateSelectedMonster(null);
       updateTutorialFlowPhase("selectLanding");
@@ -945,6 +952,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
       worldRef.current.monsters.find((monster) => monster.id === "tutorial-monster") ||
       null
     );
+  }
+
+  function getTutorialLandingTarget() {
+    const monster = findTutorialMonster();
+    if (!monster) return null;
+    const block = getLandingBlock(monster);
+    return snapToLandingGrid({
+      x: block.centerX,
+      y: block.centerY + MAJOR_GRID_STEP,
+    });
   }
 
   function updateMapTutorial(dt) {
@@ -1637,7 +1654,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (teleportEffectRef.current?.active) return;
 
     const rawPoint = screenToWorld(clientX, clientY);
-    const snappedPoint = snapToLandingGrid(rawPoint);
+    const snappedPoint =
+      tutorialFlowRef.current.phase === "selectLanding" && tutorialLandingTargetRef.current
+        ? tutorialLandingTargetRef.current
+        : snapToLandingGrid(rawPoint);
 
     teleportModeRef.current = false;
     updateLandingPreview(snappedPoint);
@@ -2857,7 +2877,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   </>
                 )}
 
-              {enterCoreVisible && enterScreen && (
+              {enterCoreVisible && enterScreen && tutorialFlowPhase !== "enterCity" && (
                 <div
                   style={{
                     ...styles.enterCoreActions,
@@ -2968,13 +2988,38 @@ export default function PixelFlowSurvival({ open, onClose }) {
               {tutorialFlowPhase === "teleportButton" && (
                 <div style={styles.tutorialTeleportPointer}><div style={styles.macroPointer}>☟︎</div></div>
               )}
-              {tutorialFlowPhase === "selectLanding" && mapTutorialTargetScreen && (
-                <div style={{ ...styles.tutorialLandingPointer, left: mapTutorialTargetScreen.x, top: mapTutorialTargetScreen.y + MAJOR_GRID_STEP * cameraRef.current.zoom }}>
-                  <div style={styles.macroPointer}>☟︎</div>
-                </div>
+              {tutorialFlowPhase === "selectLanding" && tutorialLandingTargetScreen && (
+                <>
+                  <div
+                    style={{
+                      ...styles.tutorialLandingZone,
+                      left: tutorialLandingTargetScreen.x,
+                      top: tutorialLandingTargetScreen.y,
+                      width: MAJOR_GRID_STEP * cameraRef.current.zoom,
+                      height: MAJOR_GRID_STEP * cameraRef.current.zoom,
+                    }}
+                  />
+                  <div
+                    style={{
+                      ...styles.tutorialLandingPointer,
+                      left: tutorialLandingTargetScreen.x,
+                      top: tutorialLandingTargetScreen.y,
+                    }}
+                  >
+                    <div style={styles.macroPointer}>☟︎</div>
+                  </div>
+                </>
               )}
               {tutorialFlowPhase === "confirmLanding" && landingScreen && (
-                <div style={{ ...styles.tutorialConfirmPointer, left: landingScreen.x + 28, top: landingScreen.y + 12 }}><div style={styles.macroPointer}>☟︎</div></div>
+                <div
+                  style={{
+                    ...styles.tutorialConfirmPointer,
+                    left: clamp(landingScreen.x + 47, 46, viewport.width - 58),
+                    top: clamp(landingScreen.y + 30, 92, viewport.height - 112),
+                  }}
+                >
+                  <div style={styles.macroPointer}>☟︎</div>
+                </div>
               )}
               {tutorialFlowPhase === "enterCity" && (
                 <div style={styles.tutorialCityPointer}><div style={styles.macroPointer}>☟︎</div></div>
@@ -4424,6 +4469,7 @@ const styles = {
   },
   tutorialBarracksMenuArrow: { left: "62.5%" },
   tutorialTeleportPointer: { position: "absolute", left: "10%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
+  tutorialLandingZone: { position: "absolute", zIndex: 8, transform: "translate(-50%, -50%)", border: "3px solid rgba(34,211,238,0.95)", background: "rgba(34,211,238,0.14)", boxShadow: "0 0 22px rgba(34,211,238,0.46)", pointerEvents: "none", boxSizing: "border-box" },
   tutorialLandingPointer: { position: "absolute", zIndex: 13, width: 56, height: 64, transform: "translate(-50%, -100%)", display: "grid", placeItems: "center", pointerEvents: "none" },
   tutorialConfirmPointer: { position: "absolute", zIndex: 13, width: 56, height: 64, transform: "translate(-50%, -100%)", display: "grid", placeItems: "center", pointerEvents: "none" },
   macroPointer: {
