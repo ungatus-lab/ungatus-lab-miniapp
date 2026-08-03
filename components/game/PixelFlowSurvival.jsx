@@ -32,6 +32,11 @@ const GUARD_CRYSTAL_COST = 1;
 
 const TUTORIAL_HOUSE_TARGET = 3;
 const TUTORIAL_CRYSTAL_TARGET = 4;
+const BUILD_TIME_SECONDS = {
+  House: 2,
+  CrystalPoint: 3,
+  Barracks: 5,
+};
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -307,6 +312,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
+  const constructionQueueRef = useRef([]);
   const selectedMonsterRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
@@ -610,7 +616,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function getCityBuildingCount(type) {
-    return cityRef.current.buildings.filter((building) => building.type === type).length;
+    return cityRef.current.buildings.filter(
+      (building) => building.type === type && !building.underConstruction
+    ).length;
   }
 
   function getTutorialStep() {
@@ -707,6 +715,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsRef.current = createCityStats();
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
+    constructionQueueRef.current = [];
     mapTutorialSeenRef.current = false;
     mapTutorialTargetRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
@@ -948,18 +957,43 @@ export default function PixelFlowSurvival({ open, onClose }) {
     const stats = cityStatsRef.current;
     const buildings = cityRef.current.buildings;
 
+    const activeConstructionId = constructionQueueRef.current[0];
+    if (activeConstructionId) {
+      const building = buildings.find((item) => item.id === activeConstructionId);
+      if (!building) {
+        constructionQueueRef.current.shift();
+      } else {
+        building.buildElapsed = Math.min(
+          building.buildDuration,
+          (building.buildElapsed || 0) + dt
+        );
+        if (building.buildElapsed >= building.buildDuration) {
+          building.underConstruction = false;
+          constructionQueueRef.current.shift();
+
+          if (building.type === "House") {
+            stats.workerCap += 5;
+            stats.workers += 5;
+            stats.guardCap += 25;
+          }
+        }
+      }
+    }
+
     if (!Number.isFinite(stats.crystals)) {
       stats.crystals = 0;
     }
 
     stats.crystalRate = buildings
-      .filter((building) => building.type === "CrystalPoint")
+      .filter(
+        (building) => building.type === "CrystalPoint" && !building.underConstruction
+      )
       .reduce((sum, building) => sum + (building.level || 1), 0);
 
     stats.crystals += stats.crystalRate * dt;
 
     for (const building of buildings) {
-      if (building.type !== "Barracks") continue;
+      if (building.type !== "Barracks" || building.underConstruction) continue;
 
       const buildingLevel = building.level || 1;
       const homeArmyTotal = getTotalGuardsFromStats(stats);
@@ -1005,7 +1039,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     stats.crystalRate = cityRef.current.buildings
-      .filter((building) => building.type === "CrystalPoint")
+      .filter(
+        (building) => building.type === "CrystalPoint" && !building.underConstruction
+      )
       .reduce((sum, building) => sum + (building.level || 1), 0);
 
     setCityStats({ ...stats });
@@ -1656,6 +1692,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     marchesRef.current = [];
+    constructionQueueRef.current = [];
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
@@ -1847,21 +1884,18 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function applyBuildings(previews) {
     const validPreviews = (previews || []).filter((preview) => preview && preview.valid);
-
     if (validPreviews.length <= 0) return;
 
     const stats = cityStatsRef.current;
     let crystalCost = 0;
     let workerCost = 0;
-
     const newBuildings = [];
 
     for (const preview of validPreviews) {
       const definition = BUILDINGS[preview.type] || BUILDINGS.Barracks;
-
       crystalCost += definition.cost;
       workerCost += definition.workerCost || 0;
-
+      const buildDuration = BUILD_TIME_SECONDS[preview.type] || 3;
       newBuildings.push({
         id: `${preview.type}-${Date.now()}-${Math.random()}`,
         type: preview.type,
@@ -1872,24 +1906,20 @@ export default function PixelFlowSurvival({ open, onClose }) {
         w: preview.w,
         h: preview.h,
         color: definition.color,
+        underConstruction: true,
+        buildElapsed: 0,
+        buildDuration,
       });
     }
 
     stats.crystals = Math.max(0, stats.crystals - crystalCost);
     stats.workers = Math.max(0, stats.workers - workerCost);
 
-    for (const building of newBuildings) {
-      if (building.type === "House") {
-        stats.workerCap += 5;
-        stats.workers += 5;
-        stats.guardCap += 25;
-      }
-    }
-
     cityRef.current = {
       ...cityRef.current,
       buildings: [...cityRef.current.buildings, ...newBuildings],
     };
+    constructionQueueRef.current.push(...newBuildings.map((building) => building.id));
 
     setBuildMode(false);
     updateBuildPreview(null);
@@ -3718,10 +3748,15 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId) {
       ctx.stroke();
     }
 
+    if (building.underConstruction) {
+      drawConstructionBuilding(ctx, building, width, height, cx, cy);
+      ctx.restore();
+      continue;
+    }
+
     ctx.fillStyle = "rgba(0,0,0,0.28)";
     roundedRect(ctx, building.x + 8, building.y + 10, width, height, 22);
     ctx.fill();
-
     if (building.type === "CrystalPoint") {
       drawCrystalPointBuilding(ctx, building, width, height, cx, cy);
     } else if (building.type === "House") {
@@ -3740,6 +3775,53 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId) {
 
     ctx.restore();
   }
+}
+
+function drawConstructionBuilding(ctx, building, width, height, cx, cy) {
+  const active = building.id === constructionQueueRefSafe(building);
+  const progress = active
+    ? clamp((building.buildElapsed || 0) / Math.max(0.01, building.buildDuration || 1), 0, 1)
+    : 0;
+  const remaining = Math.max(0, Math.ceil((building.buildDuration || 0) - (building.buildElapsed || 0)));
+
+  ctx.fillStyle = "rgba(15,23,42,0.72)";
+  roundedRect(ctx, building.x + 4, building.y + 4, width - 8, height - 8, 20);
+  ctx.fill();
+  ctx.setLineDash([12, 8]);
+  ctx.strokeStyle = active ? "rgba(251,191,36,0.92)" : "rgba(148,163,184,0.46)";
+  ctx.lineWidth = 5;
+  roundedRect(ctx, building.x + 7, building.y + 7, width - 14, height - 14, 18);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(255,255,255,0.15)";
+  ctx.lineWidth = 12;
+  ctx.arc(cx, cy, Math.min(width, height) * 0.25, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.strokeStyle = active ? "#fbbf24" : "rgba(148,163,184,0.5)";
+  ctx.lineWidth = 12;
+  ctx.lineCap = "round";
+  ctx.arc(
+    cx,
+    cy,
+    Math.min(width, height) * 0.25,
+    -Math.PI / 2,
+    -Math.PI / 2 + Math.PI * 2 * progress
+  );
+  ctx.stroke();
+  ctx.lineCap = "butt";
+
+  ctx.fillStyle = active ? "#ffffff" : "rgba(255,255,255,0.52)";
+  ctx.font = "900 18px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(active ? `${remaining}s` : "…", cx, cy);
+}
+
+function constructionQueueRefSafe(building) {
+  return building.underConstruction && building.buildElapsed > 0 ? building.id : null;
 }
 
 function drawCitadelBuilding(ctx, building, width, height, cx, cy) {
