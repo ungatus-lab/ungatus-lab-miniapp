@@ -2784,6 +2784,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
           {screen === "arena" && (
             <>
+              <div style={styles.topInterfacePanel} />
+              <div style={styles.bottomInterfacePanel} />
               <header style={styles.cityTopBar}>
                 <div style={styles.topResourceChip} title="Level">
                   <span>★</span>
@@ -3105,6 +3107,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
           {screen === "city" && (
             <>
+              <div style={styles.topInterfacePanel} />
+              <div style={styles.bottomInterfacePanel} />
               <header style={styles.cityTopBar}>
                 <div style={styles.topResourceChip} title="Level">
                   <span>★</span>
@@ -4344,25 +4348,34 @@ const styles = {
     fontWeight: 800,
   },
 
+  topInterfacePanel: {
+    position: "absolute", left: 0, right: 0, top: 0, height: 59, zIndex: 2,
+    background: "linear-gradient(180deg, rgba(5,12,25,0.97), rgba(8,18,35,0.9))",
+    borderBottom: "1px solid rgba(103,232,249,0.38)",
+    boxShadow: "0 10px 28px rgba(0,0,0,0.38), inset 0 -1px 0 rgba(255,255,255,0.05)",
+    backdropFilter: "blur(14px)", pointerEvents: "none",
+  },
+  bottomInterfacePanel: {
+    position: "absolute", left: 0, right: 0, bottom: 0, height: 75, zIndex: 3,
+    background: "linear-gradient(180deg, rgba(8,18,35,0.9), rgba(5,12,25,0.98))",
+    borderTop: "1px solid rgba(103,232,249,0.38)",
+    boxShadow: "0 -12px 30px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.05)",
+    backdropFilter: "blur(14px)", pointerEvents: "none",
+  },
   cityTopBar: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    top: 8,
-    height: 42,
-    zIndex: 3,
-    display: "grid",
-    gridTemplateColumns: "1.25fr 1fr 1.25fr 1.35fr",
-    gap: 6,
+    position: "absolute", left: 7, right: 7, top: 7, height: 44, zIndex: 4,
+    display: "grid", gridTemplateColumns: "1.25fr 1fr 1.25fr 1.35fr", gap: 3,
+    padding: 3, boxSizing: "border-box", borderRadius: 17,
+    background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)",
     pointerEvents: "none",
   },
 
   topResourceChip: {
     minWidth: 0,
-    height: 42,
-    borderRadius: 14,
-    background: "rgba(15,23,42,0.72)",
-    border: "1px solid rgba(255,255,255,0.10)",
+    height: 36,
+    borderRadius: 12,
+    background: "linear-gradient(180deg, rgba(22,34,57,0.8), rgba(10,20,38,0.84))",
+    border: "1px solid rgba(255,255,255,0.085)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -4999,32 +5012,23 @@ const styles = {
   },
 
   arenaControls: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: 10,
-    display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
-    gap: 8,
-    zIndex: 4,
+    position: "absolute", left: 7, right: 7, bottom: 7,
+    display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 3,
+    padding: 3, boxSizing: "border-box", borderRadius: 20,
+    background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)", zIndex: 4,
   },
-
   cityControls: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: 10,
-    display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
-    gap: 8,
-    zIndex: 4,
+    position: "absolute", left: 7, right: 7, bottom: 7,
+    display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 3,
+    padding: 3, boxSizing: "border-box", borderRadius: 20,
+    background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)", zIndex: 4,
   },
 
   iconControlButton: {
     minHeight: 52,
-    border: "1px solid rgba(255,255,255,0.12)",
-    borderRadius: 18,
-    background: "rgba(15,23,42,0.88)",
+    border: "1px solid rgba(255,255,255,0.09)",
+    borderRadius: 16,
+    background: "linear-gradient(180deg, rgba(23,35,58,0.88), rgba(11,21,40,0.92))",
     color: "#ffffff",
     fontWeight: 900,
     cursor: "pointer",
