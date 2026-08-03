@@ -32,6 +32,7 @@ const GUARD_CRYSTAL_COST = 1;
 
 const TUTORIAL_HOUSE_TARGET = 3;
 const TUTORIAL_CRYSTAL_TARGET = 4;
+const TUTORIAL_BARRACKS_TARGET = 4;
 const BUILD_TIME_SECONDS = {
   House: 2,
   CrystalPoint: 3,
@@ -313,7 +314,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   const marchesRef = useRef([]);
   const constructionQueueRef = useRef([]);
-  const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false });
+  const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false, barracksCommitted: false });
+  const tutorialFlowRef = useRef({ phase: "buildEconomy", timer: 0 });
   const selectedMonsterRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
@@ -395,6 +397,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [mapTutorialPhase, setMapTutorialPhase] = useState("off");
   const [mapTutorialTarget, setMapTutorialTarget] = useState(null);
   const [tutorialThreatCardVisible, setTutorialThreatCardVisible] = useState(false);
+  const [tutorialFlowPhase, setTutorialFlowPhase] = useState("buildEconomy");
+
+  function updateTutorialFlowPhase(phase) {
+    tutorialFlowRef.current.phase = phase;
+    tutorialFlowRef.current.timer = 0;
+    setTutorialFlowPhase(phase);
+  }
 
   function updateMapTutorialPhase(nextPhase) {
     mapTutorialGuideRef.current.phase = nextPhase;
@@ -532,9 +541,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
       ? TUTORIAL_HOUSE_TARGET
       : tutorialStep === "crystals"
         ? TUTORIAL_CRYSTAL_TARGET
-        : 1;
+        : tutorialStep === "barracks"
+          ? TUTORIAL_BARRACKS_TARGET
+          : 1;
   const tutorialBatchReady =
-    tutorialStep === "done" || tutorialStep === "map" || batchSummary.valid >= tutorialBuildTarget;
+    tutorialStep === "done" || tutorialStep === "map" || tutorialStep === "mapAfterBarracks" || batchSummary.valid >= tutorialBuildTarget;
   const selectedMonsterThreat = selectedMonster
     ? (() => {
         const army = totalGuards;
@@ -625,6 +636,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function getTutorialStep() {
     const houseCount = getCityBuildingCount("House");
     const crystalCount = getCityBuildingCount("CrystalPoint");
+    const barracksCount = getCityBuildingCount("Barracks");
     if (houseCount < TUTORIAL_HOUSE_TARGET) {
       return tutorialConstructionRef.current.housesCommitted ? "housesBuilding" : "houses";
     }
@@ -632,17 +644,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
       return tutorialConstructionRef.current.crystalsCommitted ? "crystalsBuilding" : "crystals";
     }
     if (!mapTutorialSeenRef.current) return "map";
+    if (tutorialFlowPhase === "cityBarracks" || tutorialFlowPhase === "barracksBuilding") {
+      if (barracksCount < TUTORIAL_BARRACKS_TARGET) {
+        return tutorialConstructionRef.current.barracksCommitted ? "barracksBuilding" : "barracks";
+      }
+      return "mapAfterBarracks";
+    }
     return "done";
   }
-
   function isTutorialConstructionWaiting() {
-    return tutorialStep === "housesBuilding" || tutorialStep === "crystalsBuilding";
+    return tutorialStep === "housesBuilding" || tutorialStep === "crystalsBuilding" || tutorialStep === "barracksBuilding";
   }
 
   function shouldShowBuildTutorialArrow() {
     return (
       screen === "city" &&
-      (tutorialStep === "houses" || tutorialStep === "crystals") &&
+      (tutorialStep === "houses" || tutorialStep === "crystals" || tutorialStep === "barracks") &&
       !isTutorialConstructionWaiting() &&
       !buildMenuOpen &&
       !buildMode &&
@@ -657,11 +674,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
   function shouldShowHouseMenuHint() {
     return screen === "city" && buildMenuOpen && tutorialStep === "houses" && !isTutorialConstructionWaiting();
   }
+  function shouldShowBarracksMenuHint() {
+    return screen === "city" && buildMenuOpen && tutorialStep === "barracks" && !isTutorialConstructionWaiting();
+  }
 
   function shouldShowMapTutorialArrow() {
     return (
       screen === "city" &&
-      tutorialStep === "map" &&
+      (tutorialStep === "map" || tutorialStep === "mapAfterBarracks") &&
       !buildMenuOpen &&
       !buildMode &&
       !buildPreview &&
@@ -710,7 +730,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     return snapCityPointToGrid(
       {
         x: citadel.x + citadel.w * CITY_GRID_STEP,
-        y: citadel.y,
+        y: citadel.y - definition.h * CITY_GRID_STEP - CITY_GRID_STEP,
       },
       definition.w,
       definition.h
@@ -724,8 +744,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     constructionQueueRef.current = [];
-    tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false };
+    tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false, barracksCommitted: false };
     mapTutorialSeenRef.current = false;
+    tutorialFlowRef.current = { phase: "buildEconomy", timer: 0 };
+    setTutorialFlowPhase("buildEconomy");
     mapTutorialTargetRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
@@ -857,6 +879,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateSelectedMonster(null);
     teleportModeRef.current = true;
 
+    if (tutorialFlowRef.current.phase === "teleportButton") {
+      setTutorialThreatCardVisible(false);
+      updateSelectedMonster(null);
+      updateTutorialFlowPhase("selectLanding");
+    }
     setHud((current) => ({
       ...current,
       teleportMode: true,
@@ -880,6 +907,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
     updateMarches(dt);
     updateMapTutorial(dt);
 
+    const flow = tutorialFlowRef.current;
+    if (flow.phase === "inspectMonster") {
+      flow.timer += dt;
+      if (flow.timer >= 1.8) updateTutorialFlowPhase("teleportButton");
+    }
+    if (flow.phase === "teleporting" && !teleportEffectRef.current && cooldownRef.current > 0) {
+      setEnterCoreVisible(true);
+      updateTutorialFlowPhase("enterCity");
+    }
     setHud((current) => {
       const nextCooldown = Math.ceil(cooldownRef.current);
       const nextLevel = Math.round(player.level);
@@ -1463,6 +1499,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
         [0, 3],
       ]);
     }
+    if (step === "barracks" && preview.type === "Barracks") {
+      return makeTutorialDemoBatch(preview, [
+        [0, 0],
+        [0, 1],
+        [0, 2],
+        [0, 3],
+      ]);
+    }
 
     return [];
   }
@@ -1597,6 +1641,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     teleportModeRef.current = false;
     updateLandingPreview(snappedPoint);
+    if (tutorialFlowRef.current.phase === "selectLanding") {
+      updateTutorialFlowPhase("confirmLanding");
+    }
   }
 
   function beginTeleportToLanding() {
@@ -1606,7 +1653,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (!player || !currentLanding) return;
     if (cooldownRef.current > 0) return;
     if (teleportEffectRef.current?.active) return;
-
+    if (tutorialFlowRef.current.phase === "confirmLanding") {
+      updateTutorialFlowPhase("teleporting");
+    }
     teleportEffectRef.current = {
       active: true,
       phase: "cast",
@@ -1632,6 +1681,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function enterCity() {
+    if (tutorialFlowRef.current.phase === "enterCity") {
+      updateTutorialFlowPhase("cityBarracks");
+    }
     updateLandingPreview(null);
     setTutorialThreatCardVisible(false);
     updateSelectedMonster(null);
@@ -1687,7 +1739,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     const shouldAutoPlace =
       (type === "House" && tutorialStep === "houses") ||
-      (type === "CrystalPoint" && tutorialStep === "crystals");
+      (type === "CrystalPoint" && tutorialStep === "crystals") ||
+      (type === "Barracks" && tutorialStep === "barracks");
 
     if (shouldAutoPlace) {
       const suggested = getTutorialPlacement(type);
@@ -1702,7 +1755,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     cityStatsRef.current = createCityStats();
     marchesRef.current = [];
     constructionQueueRef.current = [];
-    tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false };
+    tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false, barracksCommitted: false };
     setBuildMode(false);
     updateBuildPreview(null);
     setBuildMenuOpen(false);
@@ -1787,11 +1840,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
 
-    if (type === "CrystalPoint" && getTutorialStep() === "crystals") {
+    if ((type === "CrystalPoint" && getTutorialStep() === "crystals") || (type === "Barracks" && getTutorialStep() === "barracks")) {
       const rawDySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
       const directionY = rawDySteps < 0 ? -1 : 1;
       const count = Math.min(
-        TUTORIAL_CRYSTAL_TARGET,
+        (type === "Barracks" ? TUTORIAL_BARRACKS_TARGET : TUTORIAL_CRYSTAL_TARGET),
         Math.max(1, Math.abs(rawDySteps) + 1)
       );
 
@@ -2003,12 +2056,15 @@ export default function PixelFlowSurvival({ open, onClose }) {
           ? TUTORIAL_HOUSE_TARGET
           : step === "crystals"
             ? TUTORIAL_CRYSTAL_TARGET
-            : 1;
+            : step === "barracks"
+              ? TUTORIAL_BARRACKS_TARGET
+              : 1;
       const validCount = getBuildBatchSummary(buildBatchPreviewRef.current).valid;
 
-      if ((step !== "houses" && step !== "crystals") || validCount >= requiredCount) {
+      if ((step !== "houses" && step !== "crystals" && step !== "barracks") || validCount >= requiredCount) {
         if (step === "houses") tutorialConstructionRef.current.housesCommitted = true;
         if (step === "crystals") tutorialConstructionRef.current.crystalsCommitted = true;
+        if (step === "barracks") { tutorialConstructionRef.current.barracksCommitted = true; updateTutorialFlowPhase("barracksBuilding"); }
         applyBuildings(buildBatchPreviewRef.current);
       } else {
         const anchor = buildPreviewRef.current;
@@ -2251,6 +2307,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
           mapTutorialTargetRef.current = null;
           setMapTutorialTarget(null);
           setTutorialThreatCardVisible(true);
+          updateTutorialFlowPhase("inspectMonster");
           updateMapTutorialPhase("off");
         }
       } else {
@@ -2878,6 +2935,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                   >
                     <span>{selectedMonsterThreat.icon}</span>
                     <strong>{selectedMonsterThreat.label}</strong>
+                    <small>RALLY 00:00</small>
                   </div>
 
                   <button
@@ -2905,12 +2963,21 @@ export default function PixelFlowSurvival({ open, onClose }) {
               )}
 
               {tutorialThreatCardVisible && selectedMonster?.tutorial && (
-                <>
-                  <div style={styles.tutorialArmyHighlight} />
-                  <div style={styles.tutorialCityPointer}>
-                    <div style={styles.macroPointer}>☟︎</div>
-                  </div>
-                </>
+                <div style={styles.tutorialArmyHighlight} />
+              )}
+              {tutorialFlowPhase === "teleportButton" && (
+                <div style={styles.tutorialTeleportPointer}><div style={styles.macroPointer}>☟︎</div></div>
+              )}
+              {tutorialFlowPhase === "selectLanding" && mapTutorialTargetScreen && (
+                <div style={{ ...styles.tutorialLandingPointer, left: mapTutorialTargetScreen.x, top: mapTutorialTargetScreen.y + MAJOR_GRID_STEP * cameraRef.current.zoom }}>
+                  <div style={styles.macroPointer}>☟︎</div>
+                </div>
+              )}
+              {tutorialFlowPhase === "confirmLanding" && landingScreen && (
+                <div style={{ ...styles.tutorialConfirmPointer, left: landingScreen.x + 28, top: landingScreen.y + 12 }}><div style={styles.macroPointer}>☟︎</div></div>
+              )}
+              {tutorialFlowPhase === "enterCity" && (
+                <div style={styles.tutorialCityPointer}><div style={styles.macroPointer}>☟︎</div></div>
               )}
               {landingPreview && landingScreen && (
                 <div
@@ -3019,11 +3086,12 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
-                  {(shouldShowCrystalMenuHint() || shouldShowHouseMenuHint()) && (
+                  {(shouldShowCrystalMenuHint() || shouldShowHouseMenuHint() || shouldShowBarracksMenuHint()) && (
                     <div
                       style={{
                         ...styles.tutorialMenuArrow,
                         ...(shouldShowHouseMenuHint() ? styles.tutorialHouseMenuArrow : {}),
+                        ...(shouldShowBarracksMenuHint() ? styles.tutorialBarracksMenuArrow : {}),
                       }}
                     >
                       <div style={styles.macroPointer}>☟︎</div>
@@ -3056,7 +3124,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                     </button>
 
                     <button
-                      style={styles.buildCard}
+                      style={{ ...styles.buildCard, ...(shouldShowBarracksMenuHint() ? styles.buildCardTutorial : {}) }}
                       onClick={() => chooseBuilding("Barracks")}
                       title="Barracks"
                     >
@@ -3130,7 +3198,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       <div
                         style={{
                           ...styles.tutorialGhostPlace,
-                          ...(tutorialStep === "crystals"
+                          ...((tutorialStep === "crystals" || tutorialStep === "barracks")
                             ? styles.tutorialGhostPlaceCrystal
                             : styles.tutorialGhostPlaceHouse),
                         }}
@@ -3140,7 +3208,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
                       <div
                         style={{
                           ...styles.tutorialFinger,
-                          ...(tutorialStep === "crystals"
+                          ...((tutorialStep === "crystals" || tutorialStep === "barracks")
                             ? styles.tutorialFingerCrystal
                             : styles.tutorialFingerHouse),
                         }}
@@ -4354,6 +4422,10 @@ const styles = {
   tutorialHouseMenuArrow: {
     left: "37.5%",
   },
+  tutorialBarracksMenuArrow: { left: "62.5%" },
+  tutorialTeleportPointer: { position: "absolute", left: "10%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
+  tutorialLandingPointer: { position: "absolute", zIndex: 13, width: 56, height: 64, transform: "translate(-50%, -100%)", display: "grid", placeItems: "center", pointerEvents: "none" },
+  tutorialConfirmPointer: { position: "absolute", zIndex: 13, width: 56, height: 64, transform: "translate(-50%, -100%)", display: "grid", placeItems: "center", pointerEvents: "none" },
   macroPointer: {
     color: "rgba(255,255,255,0.88)",
     fontSize: 42,
