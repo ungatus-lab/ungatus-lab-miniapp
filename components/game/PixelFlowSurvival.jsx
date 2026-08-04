@@ -347,6 +347,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
     downX: 0,
     downY: 0,
     lastPinchDistance: 0,
+    pinchFocusWorldX: null,
+    pinchFocusWorldY: null,
+    pinchStartZoom: 0,
   });
 
   const cityPointerRef = useRef({
@@ -802,6 +805,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
       downX: 0,
       downY: 0,
       lastPinchDistance: 0,
+      pinchFocusWorldX: null,
+      pinchFocusWorldY: null,
+      pinchStartZoom: 0,
     };
 
     cityPointerRef.current = {
@@ -1009,7 +1015,18 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     if (guide.phase === "monsterZoom") {
-      if (camera.zoom >= guide.zoomStart + 0.08) {
+      const monster = mapTutorialTargetRef.current || findTutorialMonster();
+      const canvas = canvasRef.current;
+      const monsterScreen = monster ? worldToScreen(monster.x, monster.y) : null;
+      const centeredEnough =
+        canvas && monsterScreen &&
+        Math.abs(monsterScreen.x - canvas.clientWidth / 2) <= canvas.clientWidth * 0.22 &&
+        Math.abs(monsterScreen.y - canvas.clientHeight / 2) <= canvas.clientHeight * 0.22;
+      if (camera.zoom >= guide.zoomStart * 1.5 && centeredEnough) {
+        camera.x += (monster.x - camera.x) * 0.3;
+        camera.y += (monster.y - camera.y) * 0.3;
+        clampCameraToWorld();
+        forceLandingPreviewRender();
         updateMapTutorialPhase("monsterPointerFinal");
       }
     }
@@ -2216,7 +2233,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
+      const pinchClientX = (a.x + b.x) / 2;
+      const pinchClientY = (a.y + b.y) / 2;
+      const focus = screenToWorld(pinchClientX, pinchClientY);
       pointerRef.current.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      pointerRef.current.pinchFocusWorldX = focus.x;
+      pointerRef.current.pinchFocusWorldY = focus.y;
+      pointerRef.current.pinchStartZoom = cameraRef.current.zoom;
       pointerRef.current.pinching = true;
       pointerRef.current.suppressPanUntilAllUp = true;
       pointerRef.current.dragging = true;
