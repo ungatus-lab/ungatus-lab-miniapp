@@ -347,9 +347,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     downX: 0,
     downY: 0,
     lastPinchDistance: 0,
-    pinchFocusWorldX: null,
-    pinchFocusWorldY: null,
+    pinchFocusX: null,
+    pinchFocusY: null,
     pinchStartZoom: 0,
+    pinchStartCameraX: 0,
+    pinchStartCameraY: 0,
   });
 
   const cityPointerRef = useRef({
@@ -364,6 +366,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     downX: 0,
     downY: 0,
     lastPinchDistance: 0,
+    pinchFocusX: null,
+    pinchFocusY: null,
+    pinchStartZoom: 0,
+    pinchStartCameraX: 0,
+    pinchStartCameraY: 0,
   });
 
   const cooldownRef = useRef(0);
@@ -805,9 +812,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
       downX: 0,
       downY: 0,
       lastPinchDistance: 0,
-      pinchFocusWorldX: null,
-      pinchFocusWorldY: null,
+      pinchFocusX: null,
+      pinchFocusY: null,
       pinchStartZoom: 0,
+      pinchStartCameraX: 0,
+      pinchStartCameraY: 0,
     };
 
     cityPointerRef.current = {
@@ -822,6 +831,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
       downX: 0,
       downY: 0,
       lastPinchDistance: 0,
+      pinchFocusX: null,
+      pinchFocusY: null,
+      pinchStartZoom: 0,
+      pinchStartCameraX: 0,
+      pinchStartCameraY: 0,
     };
 
     cooldownRef.current = 0;
@@ -1015,18 +1029,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     if (guide.phase === "monsterZoom") {
-      const monster = mapTutorialTargetRef.current || findTutorialMonster();
-      const canvas = canvasRef.current;
-      const monsterScreen = monster ? worldToScreen(monster.x, monster.y) : null;
-      const centeredEnough =
-        canvas && monsterScreen &&
-        Math.abs(monsterScreen.x - canvas.clientWidth / 2) <= canvas.clientWidth * 0.22 &&
-        Math.abs(monsterScreen.y - canvas.clientHeight / 2) <= canvas.clientHeight * 0.22;
-      if (camera.zoom >= guide.zoomStart * 1.5 && centeredEnough) {
-        camera.x += (monster.x - camera.x) * 0.3;
-        camera.y += (monster.y - camera.y) * 0.3;
-        clampCameraToWorld();
-        forceLandingPreviewRender();
+      if (camera.zoom >= guide.zoomStart + 0.08) {
         updateMapTutorialPhase("monsterPointerFinal");
       }
     }
@@ -2236,10 +2239,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
       const pinchClientX = (a.x + b.x) / 2;
       const pinchClientY = (a.y + b.y) / 2;
       const focus = screenToWorld(pinchClientX, pinchClientY);
+      const camera = cameraRef.current;
       pointerRef.current.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
-      pointerRef.current.pinchFocusWorldX = focus.x;
-      pointerRef.current.pinchFocusWorldY = focus.y;
-      pointerRef.current.pinchStartZoom = cameraRef.current.zoom;
+      pointerRef.current.pinchFocusX = focus.x;
+      pointerRef.current.pinchFocusY = focus.y;
+      pointerRef.current.pinchStartZoom = camera.zoom;
+      pointerRef.current.pinchStartCameraX = camera.x;
+      pointerRef.current.pinchStartCameraY = camera.y;
       pointerRef.current.pinching = true;
       pointerRef.current.suppressPanUntilAllUp = true;
       pointerRef.current.dragging = true;
@@ -2272,9 +2278,24 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
       if (pointerState.lastPinchDistance > 0) {
         const ratio = distance / pointerState.lastPinchDistance;
-        const pinchClientX = (a.x + b.x) / 2;
-        const pinchClientY = (a.y + b.y) / 2;
-        zoomCameraAt(ratio, pinchClientX, pinchClientY);
+        const camera = cameraRef.current;
+        camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
+
+        const zoomRange = Math.max(0.0001, MAX_ZOOM - pointerState.pinchStartZoom);
+        const centerProgress = clamp(
+          (camera.zoom - pointerState.pinchStartZoom) / zoomRange,
+          0,
+          1
+        );
+        camera.x =
+          pointerState.pinchStartCameraX +
+          (pointerState.pinchFocusX - pointerState.pinchStartCameraX) * centerProgress;
+        camera.y =
+          pointerState.pinchStartCameraY +
+          (pointerState.pinchFocusY - pointerState.pinchStartCameraY) * centerProgress;
+
+        clampCameraToWorld();
+        forceLandingPreviewRender();
       }
 
       pointerState.lastPinchDistance = distance;
@@ -2420,7 +2441,16 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
+      const pinchClientX = (a.x + b.x) / 2;
+      const pinchClientY = (a.y + b.y) / 2;
+      const focus = cityScreenToWorld(pinchClientX, pinchClientY);
+      const camera = cityCameraRef.current;
       cityPointerRef.current.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      cityPointerRef.current.pinchFocusX = focus.x;
+      cityPointerRef.current.pinchFocusY = focus.y;
+      cityPointerRef.current.pinchStartZoom = camera.zoom;
+      cityPointerRef.current.pinchStartCameraX = camera.x;
+      cityPointerRef.current.pinchStartCameraY = camera.y;
       cityPointerRef.current.pinching = true;
       cityPointerRef.current.suppressPanUntilAllUp = true;
       cityPointerRef.current.dragging = true;
@@ -2452,7 +2482,24 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
       if (pointerState.lastPinchDistance > 0) {
         const ratio = distance / pointerState.lastPinchDistance;
-        zoomCityCamera(ratio);
+        const camera = cityCameraRef.current;
+        camera.zoom = clamp(camera.zoom * ratio, CITY_MIN_ZOOM, CITY_MAX_ZOOM);
+
+        const zoomRange = Math.max(0.0001, CITY_MAX_ZOOM - pointerState.pinchStartZoom);
+        const centerProgress = clamp(
+          (camera.zoom - pointerState.pinchStartZoom) / zoomRange,
+          0,
+          1
+        );
+        camera.x =
+          pointerState.pinchStartCameraX +
+          (pointerState.pinchFocusX - pointerState.pinchStartCameraX) * centerProgress;
+        camera.y =
+          pointerState.pinchStartCameraY +
+          (pointerState.pinchFocusY - pointerState.pinchStartCameraY) * centerProgress;
+
+        clampCityCameraToWorld();
+        forceBuildPreviewRender();
       }
 
       pointerState.lastPinchDistance = distance;
