@@ -1029,7 +1029,24 @@ export default function PixelFlowSurvival({ open, onClose }) {
     }
 
     if (guide.phase === "monsterZoom") {
-      if (camera.zoom >= guide.zoomStart + 0.08) {
+      const monster = mapTutorialTargetRef.current || findTutorialMonster();
+      const canvas = canvasRef.current;
+      const monsterScreen = monster ? worldToScreen(monster.x, monster.y) : null;
+      const requiredZoom = guide.zoomStart + (MAX_ZOOM - guide.zoomStart) * 0.85;
+      const centeredEnough =
+        canvas &&
+        monsterScreen &&
+        Math.abs(monsterScreen.x - canvas.clientWidth / 2) <= canvas.clientWidth * 0.1 &&
+        Math.abs(monsterScreen.y - canvas.clientHeight / 2) <= canvas.clientHeight * 0.1;
+
+      if (camera.zoom >= requiredZoom && centeredEnough) {
+        updateMapTutorialPhase("monsterZoomPause");
+      }
+      return;
+    }
+    if (guide.phase === "monsterZoomPause") {
+      guide.timer += dt;
+      if (guide.timer >= 1) {
         updateMapTutorialPhase("monsterPointerFinal");
       }
     }
@@ -2936,6 +2953,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
               {(mapTutorialPhase === "monsterPointer" ||
                 mapTutorialPhase === "monsterZoom" ||
+                mapTutorialPhase === "monsterZoomPause" ||
                 mapTutorialPhase === "monsterPointerFinal") &&
                 mapTutorialTargetScreen && (
                   <>
