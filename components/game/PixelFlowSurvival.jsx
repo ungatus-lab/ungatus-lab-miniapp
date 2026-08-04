@@ -2287,12 +2287,20 @@ export default function PixelFlowSurvival({ open, onClose }) {
           0,
           1
         );
+        const initialScreenOffsetX =
+          (pointerState.pinchFocusX - pointerState.pinchStartCameraX) *
+          pointerState.pinchStartZoom;
+        const initialScreenOffsetY =
+          (pointerState.pinchFocusY - pointerState.pinchStartCameraY) *
+          pointerState.pinchStartZoom;
+        const remainingOffset = 1 - centerProgress;
+
         camera.x =
-          pointerState.pinchStartCameraX +
-          (pointerState.pinchFocusX - pointerState.pinchStartCameraX) * centerProgress;
+          pointerState.pinchFocusX -
+          (initialScreenOffsetX * remainingOffset) / camera.zoom;
         camera.y =
-          pointerState.pinchStartCameraY +
-          (pointerState.pinchFocusY - pointerState.pinchStartCameraY) * centerProgress;
+          pointerState.pinchFocusY -
+          (initialScreenOffsetY * remainingOffset) / camera.zoom;
 
         clampCameraToWorld();
         forceLandingPreviewRender();
@@ -2491,12 +2499,20 @@ export default function PixelFlowSurvival({ open, onClose }) {
           0,
           1
         );
+        const initialScreenOffsetX =
+          (pointerState.pinchFocusX - pointerState.pinchStartCameraX) *
+          pointerState.pinchStartZoom;
+        const initialScreenOffsetY =
+          (pointerState.pinchFocusY - pointerState.pinchStartCameraY) *
+          pointerState.pinchStartZoom;
+        const remainingOffset = 1 - centerProgress;
+
         camera.x =
-          pointerState.pinchStartCameraX +
-          (pointerState.pinchFocusX - pointerState.pinchStartCameraX) * centerProgress;
+          pointerState.pinchFocusX -
+          (initialScreenOffsetX * remainingOffset) / camera.zoom;
         camera.y =
-          pointerState.pinchStartCameraY +
-          (pointerState.pinchFocusY - pointerState.pinchStartCameraY) * centerProgress;
+          pointerState.pinchFocusY -
+          (initialScreenOffsetY * remainingOffset) / camera.zoom;
 
         clampCityCameraToWorld();
         forceBuildPreviewRender();
