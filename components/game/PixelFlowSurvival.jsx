@@ -1032,7 +1032,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       const monster = mapTutorialTargetRef.current || findTutorialMonster();
       const canvas = canvasRef.current;
       const monsterScreen = monster ? worldToScreen(monster.x, monster.y) : null;
-      const requiredZoom = guide.zoomStart + (MAX_ZOOM - guide.zoomStart) * 0.85;
+      const requiredZoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * 0.85;
       const centeredEnough =
         canvas &&
         monsterScreen &&
