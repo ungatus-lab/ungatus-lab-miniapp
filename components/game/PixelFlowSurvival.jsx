@@ -391,6 +391,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     downY: 0,
     suppressClick: false,
   });
+  const buildCardDragRef = useRef({ pointerId: null, type: null, active: false });
 
   const lastTimeRef = useRef(0);
 
@@ -407,6 +408,7 @@ const trainingIntroTimerRef = useRef(null);
   const [buildBatchPreview, setBuildBatchPreviewState] = useState([]);
   const [buildMode, setBuildModeState] = useState(false);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
+  const [buildCardDrag, setBuildCardDrag] = useState(null);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
@@ -872,6 +874,8 @@ resetArena();
     updateBuildPreview(null);
     setBuildMode(false);
     setBuildMenuOpen(false);
+    setBuildCardDrag(null);
+    buildCardDragRef.current = { pointerId: null, type: null, active: false };
     setSelectedBuildingType(null);
     setEnterCoreVisible(false);
     setCityStats({ ...cityStatsRef.current });
@@ -1833,6 +1837,60 @@ resetArena();
     updateBuildPreview(null);
     setSelectedBuildingType(null);
     updateSelectedBuilding(null);
+  }
+
+  function beginBuildCardDrag(type, event) {
+    if (type !== "House" || tutorialStep !== "houses") return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (buildMenuTutorialTimerRef.current) {
+      clearTimeout(buildMenuTutorialTimerRef.current);
+      buildMenuTutorialTimerRef.current = null;
+    }
+    setBuildMenuTutorialReady(false);
+    buildCardDragRef.current = { pointerId: event.pointerId, type, active: true };
+    setBuildCardDrag({ type, x: event.clientX, y: event.clientY });
+  }
+
+  function moveBuildCardDrag(event) {
+    const drag = buildCardDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setBuildCardDrag({ type: drag.type, x: event.clientX, y: event.clientY });
+  }
+
+  function endBuildCardDrag(event) {
+    const drag = buildCardDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const type = drag.type;
+    buildCardDragRef.current = { pointerId: null, type: null, active: false };
+    setBuildCardDrag(null);
+
+    const canvas = canvasRef.current;
+    if (!canvas || type !== "House") return;
+    const rect = canvas.getBoundingClientRect();
+    const insideCanvas =
+      event.clientX >= rect.left && event.clientX <= rect.right &&
+      event.clientY >= rect.top + 58 && event.clientY <= rect.bottom - 76;
+    if (!insideCanvas) {
+      setBuildMenuTutorialReady(true);
+      return;
+    }
+
+    if (buildMenuTutorialTimerRef.current) {
+      clearTimeout(buildMenuTutorialTimerRef.current);
+      buildMenuTutorialTimerRef.current = null;
+    }
+    setSelectedBuildingType(type);
+    setBuildMenuOpen(false);
+    setBuildMode(true);
+    updateSelectedBuilding(null);
+    const worldPoint = cityScreenToWorld(event.clientX, event.clientY);
+    updateBuildPreview(makeBuildPreviewFromPoint(worldPoint));
   }
 
   function chooseBuilding(type) {
@@ -2807,6 +2865,18 @@ resetArena();
           @keyframes trainingIntroPulse { 0%, 100% { box-shadow: 0 0 24px rgba(34,211,238,.38), inset 0 0 18px rgba(59,130,246,.46); } 50% { box-shadow: 0 0 56px rgba(103,232,249,.88), inset 0 0 28px rgba(37,99,235,.78); } }
           @keyframes trainingIntroDot { 0%, 100% { opacity: .42; transform: scale(.76); } 50% { opacity: 1; transform: scale(1); } }
           @keyframes trainingCityFadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes tutorialHouseDragGuide {
+            0%, 10% { transform: translate(0, 0) scale(1); opacity: 0; }
+            18%, 34% { transform: translate(0, 0) scale(0.94); opacity: 1; }
+            72% { transform: translate(0, -190px) scale(0.94); opacity: 1; }
+            88%, 100% { transform: translate(0, -190px) scale(1); opacity: 0; }
+          }
+          @keyframes tutorialHouseGhostGuide {
+            0%, 10% { transform: translate(0, 0); opacity: 0; }
+            18%, 34% { transform: translate(0, 0); opacity: 0.72; }
+            72% { transform: translate(0, -190px); opacity: 0.72; }
+            88%, 100% { transform: translate(0, -190px); opacity: 0; }
+          }
           @keyframes tutorialBounce {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-10px); }
@@ -3361,15 +3431,20 @@ resetArena();
 
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
-                  {(shouldShowCrystalMenuHint() || shouldShowHouseMenuHint() || shouldShowBarracksMenuHint()) && (
+                  {(shouldShowCrystalMenuHint() || shouldShowBarracksMenuHint()) && (
                     <div
                       style={{
                         ...styles.tutorialMenuArrow,
-                        ...(shouldShowHouseMenuHint() ? styles.tutorialHouseMenuArrow : {}),
                         ...(shouldShowBarracksMenuHint() ? styles.tutorialBarracksMenuArrow : {}),
                       }}
                     >
                       <div style={styles.macroPointer}>☟︎</div>
+                    </div>
+                  )}
+                  {shouldShowHouseMenuHint() && !buildCardDrag && (
+                    <div style={styles.tutorialHouseDragGuide}>
+                      <div style={styles.tutorialHouseDragGhost}>■</div>
+                      <div style={styles.tutorialHouseDragHand}>☝︎</div>
                     </div>
                   )}
 
@@ -3391,8 +3466,14 @@ resetArena();
                         ...styles.buildCard,
                         ...(shouldShowHouseMenuHint() ? styles.buildCardTutorial : {}),
                       }}
-                      onClick={() => chooseBuilding("House")}
-                      title="House"
+                      onClick={() => {
+                        if (tutorialStep !== "houses") chooseBuilding("House");
+                      }}
+                      onPointerDown={(event) => beginBuildCardDrag("House", event)}
+                      onPointerMove={moveBuildCardDrag}
+                      onPointerUp={endBuildCardDrag}
+                      onPointerCancel={endBuildCardDrag}
+                      title={tutorialStep === "houses" ? "Drag House to the city grid" : "House"}
                     >
                       <span style={styles.buildCardIconHouse}>■</span>
                       <small>💎25</small>
@@ -3415,6 +3496,18 @@ resetArena();
                 </div>
               )}
 
+              {buildCardDrag && (
+                <div
+                  style={{
+                    ...styles.buildCardDragGhost,
+                    left: buildCardDrag.x,
+                    top: buildCardDrag.y,
+                  }}
+                >
+                  <span>■</span>
+                  <small>HOUSE</small>
+                </div>
+              )}
               {buildPreview && buildScreen && (
                 <div
                   style={{
@@ -4741,6 +4834,27 @@ const styles = {
   },
   tutorialHouseMenuArrow: {
     left: "37.5%",
+  },
+  tutorialHouseDragGuide: {
+    position: "absolute", left: "37.5%", top: 16, zIndex: 12,
+    width: 58, height: 58, transform: "translateX(-50%)", pointerEvents: "none",
+  },
+  tutorialHouseDragGhost: {
+    position: "absolute", inset: 8, borderRadius: 12, display: "grid", placeItems: "center",
+    color: "#86efac", fontSize: 24, background: "rgba(34,197,94,0.22)",
+    border: "2px solid rgba(134,239,172,0.9)", boxShadow: "0 0 20px rgba(34,197,94,0.6)",
+    animation: "tutorialHouseGhostGuide 2.4s ease-in-out infinite",
+  },
+  tutorialHouseDragHand: {
+    position: "absolute", left: 16, top: 24, color: "rgba(255,255,255,0.94)", fontSize: 38,
+    textShadow: "0 0 15px rgba(103,232,249,0.95)",
+    animation: "tutorialHouseDragGuide 2.4s ease-in-out infinite",
+  },
+  buildCardDragGhost: {
+    position: "fixed", zIndex: 40, width: 64, height: 64, transform: "translate(-50%, -50%)",
+    borderRadius: 16, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    color: "#86efac", background: "rgba(21,128,61,0.78)", border: "2px solid rgba(134,239,172,0.95)",
+    boxShadow: "0 0 26px rgba(34,197,94,0.78)", pointerEvents: "none", fontWeight: 900,
   },
   tutorialBarracksMenuArrow: { left: "62.5%" },
   tutorialTeleportPointer: { position: "absolute", left: "10%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
