@@ -565,6 +565,12 @@ resetArena();
     tutorialFlowPhase === "selectLanding" && tutorialLandingTargetRef.current
       ? worldToScreen(tutorialLandingTargetRef.current.x, tutorialLandingTargetRef.current.y)
       : null;
+  const tutorialHouseDropGrid = getTutorialPlacement("House");
+  const tutorialHouseDropScreen = cityWorldToScreen(
+    tutorialHouseDropGrid.x + CITY_GRID_STEP / 2,
+    tutorialHouseDropGrid.y + CITY_GRID_STEP / 2
+  );
+  const tutorialHouseDropSize = CITY_GRID_STEP * cityCameraRef.current.zoom;
 
   const totalGuards = getTotalGuardsFromStats(cityStats);
   const armyCap = cityStats.guardCap;
@@ -2865,17 +2871,25 @@ resetArena();
           @keyframes trainingIntroPulse { 0%, 100% { box-shadow: 0 0 24px rgba(34,211,238,.38), inset 0 0 18px rgba(59,130,246,.46); } 50% { box-shadow: 0 0 56px rgba(103,232,249,.88), inset 0 0 28px rgba(37,99,235,.78); } }
           @keyframes trainingIntroDot { 0%, 100% { opacity: .42; transform: scale(.76); } 50% { opacity: 1; transform: scale(1); } }
           @keyframes trainingCityFadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes tutorialHouseDropPulse {
+            0%, 100% { opacity: 0.58; box-shadow: 0 0 0 0 rgba(34,197,94,0.18), inset 0 0 18px rgba(34,197,94,0.12); }
+            50% { opacity: 1; box-shadow: 0 0 0 10px rgba(34,197,94,0), 0 0 28px rgba(34,197,94,0.72), inset 0 0 24px rgba(34,197,94,0.28); }
+          }
+          @keyframes tutorialHouseBeaconPulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(0.72); opacity: 0.48; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+          }
           @keyframes tutorialHouseDragGuide {
             0%, 10% { transform: translate(0, 0) scale(1); opacity: 0; }
             18%, 34% { transform: translate(0, 0) scale(0.94); opacity: 1; }
-            72% { transform: translate(0, -190px) scale(0.94); opacity: 1; }
-            88%, 100% { transform: translate(0, -190px) scale(1); opacity: 0; }
+            72% { transform: translate(var(--tutorial-drag-x), var(--tutorial-drag-y)) scale(0.94); opacity: 1; }
+            88%, 100% { transform: translate(var(--tutorial-drag-x), var(--tutorial-drag-y)) scale(1); opacity: 0; }
           }
           @keyframes tutorialHouseGhostGuide {
             0%, 10% { transform: translate(0, 0); opacity: 0; }
             18%, 34% { transform: translate(0, 0); opacity: 0.72; }
-            72% { transform: translate(0, -190px); opacity: 0.72; }
-            88%, 100% { transform: translate(0, -190px); opacity: 0; }
+            72% { transform: translate(var(--tutorial-drag-x), var(--tutorial-drag-y)); opacity: 0.72; }
+            88%, 100% { transform: translate(var(--tutorial-drag-x), var(--tutorial-drag-y)); opacity: 0; }
           }
           @keyframes tutorialBounce {
             0%, 100% { transform: translateY(0); }
@@ -3429,6 +3443,14 @@ resetArena();
                 </div>
               )}
 
+              {shouldShowHouseMenuHint() && tutorialHouseDropScreen && (
+                <>
+                  <div style={{ ...styles.tutorialHouseDropTarget, left: tutorialHouseDropScreen.x, top: tutorialHouseDropScreen.y, width: tutorialHouseDropSize, height: tutorialHouseDropSize }}>
+                    <span>■</span>
+                  </div>
+                  <div style={{ ...styles.tutorialHouseDropBeacon, left: tutorialHouseDropScreen.x, top: tutorialHouseDropScreen.y }} />
+                </>
+              )}
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
                   {(shouldShowCrystalMenuHint() || shouldShowBarracksMenuHint()) && (
@@ -3441,8 +3463,8 @@ resetArena();
                       <div style={styles.macroPointer}>☟︎</div>
                     </div>
                   )}
-                  {shouldShowHouseMenuHint() && !buildCardDrag && (
-                    <div style={styles.tutorialHouseDragGuide}>
+                  {shouldShowHouseMenuHint() && !buildCardDrag && tutorialHouseDropScreen && (
+                    <div style={{ ...styles.tutorialHouseDragGuide, "--tutorial-drag-x": `${tutorialHouseDropScreen.x - viewport.width * 0.375}px`, "--tutorial-drag-y": `${tutorialHouseDropScreen.y - (viewport.height - 128)}px` }}>
                       <div style={styles.tutorialHouseDragGhost}>■</div>
                       <div style={styles.tutorialHouseDragHand}>☝︎</div>
                     </div>
@@ -4834,6 +4856,17 @@ const styles = {
   },
   tutorialHouseMenuArrow: {
     left: "37.5%",
+  },
+  tutorialHouseDropTarget: {
+    position: "absolute", zIndex: 6, transform: "translate(-50%, -50%)", boxSizing: "border-box",
+    border: "3px dashed rgba(134,239,172,0.96)", borderRadius: 14, background: "rgba(34,197,94,0.13)",
+    color: "rgba(134,239,172,0.34)", display: "grid", placeItems: "center", fontSize: 24,
+    pointerEvents: "none", animation: "tutorialHouseDropPulse 1.25s ease-in-out infinite",
+  },
+  tutorialHouseDropBeacon: {
+    position: "absolute", zIndex: 7, width: 14, height: 14, borderRadius: "50%", transform: "translate(-50%, -50%)",
+    background: "#dcfce7", border: "3px solid #22c55e", boxShadow: "0 0 18px rgba(34,197,94,0.95)",
+    pointerEvents: "none", animation: "tutorialHouseBeaconPulse 1.25s ease-in-out infinite",
   },
   tutorialHouseDragGuide: {
     position: "absolute", left: "37.5%", top: 16, zIndex: 12,
