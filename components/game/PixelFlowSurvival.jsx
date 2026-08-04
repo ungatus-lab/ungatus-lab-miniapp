@@ -11,7 +11,7 @@ const TELEPORT_CAST_SECONDS = 1.2;
 const TELEPORT_ARRIVAL_SECONDS = 1.1;
 
 const MIN_ZOOM = 0.12;
-const MAX_ZOOM = 1.45;
+const MAX_ZOOM = 0.95;
 
 const GRID_STEP = 110;
 const MAJOR_GRID_STEP = GRID_STEP * 2;
@@ -22,7 +22,7 @@ const CITY_HEIGHT = 1600;
 const CITY_GRID_STEP = 100;
 const CITY_OUTSIDE_PADDING = 280;
 const CITY_MIN_ZOOM = 0.45;
-const CITY_MAX_ZOOM = 1.55;
+const CITY_MAX_ZOOM = 1.1;
 
 const ATTACK_MARCH_SPEED = 0.42;
 const RETURN_MARCH_SPEED = 0.52;
@@ -1032,7 +1032,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
       const monster = mapTutorialTargetRef.current || findTutorialMonster();
       const canvas = canvasRef.current;
       const monsterScreen = monster ? worldToScreen(monster.x, monster.y) : null;
-      const requiredZoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * 0.85;
+      const requiredZoom = MAX_ZOOM - 0.002;
       const centeredEnough =
         canvas &&
         monsterScreen &&
