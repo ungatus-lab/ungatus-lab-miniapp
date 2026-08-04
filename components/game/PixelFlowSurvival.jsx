@@ -397,7 +397,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [screen, setScreen] = useState("menu");
   const [trainingIntroPhase, setTrainingIntroPhase] = useState("off");
   const [cityTutorialReady, setCityTutorialReady] = useState(false);
-  const trainingIntroTimerRef = useRef(null);
+    const [buildMenuTutorialReady, setBuildMenuTutorialReady] = useState(false);
+  const buildMenuTutorialTimerRef = useRef(null);
+const trainingIntroTimerRef = useRef(null);
   const cityTutorialTimerRef = useRef(null);
   const [profile, setProfile] = useState(initialProfile);
   const [landingPreview, setLandingPreviewState] = useState(null);
@@ -442,7 +444,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setScreen("menu");
     setTrainingIntroPhase("off");
     setCityTutorialReady(false);
-    resetArena();
+        setBuildMenuTutorialReady(false);
+resetArena();
 
     setHud({
       level: 1,
@@ -457,6 +460,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
     return () => {
       if (trainingIntroTimerRef.current) clearTimeout(trainingIntroTimerRef.current);
       if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
+      if (buildMenuTutorialTimerRef.current) clearTimeout(buildMenuTutorialTimerRef.current);
     };
   }, []);
 
@@ -697,14 +701,14 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function shouldShowCrystalMenuHint() {
-    return screen === "city" && buildMenuOpen && tutorialStep === "crystals" && !isTutorialConstructionWaiting();
+    return buildMenuTutorialReady && screen === "city" && buildMenuOpen && tutorialStep === "crystals" && !isTutorialConstructionWaiting();
   }
 
   function shouldShowHouseMenuHint() {
-    return screen === "city" && buildMenuOpen && tutorialStep === "houses" && !isTutorialConstructionWaiting();
+    return buildMenuTutorialReady && screen === "city" && buildMenuOpen && tutorialStep === "houses" && !isTutorialConstructionWaiting();
   }
   function shouldShowBarracksMenuHint() {
-    return screen === "city" && buildMenuOpen && tutorialStep === "barracks" && !isTutorialConstructionWaiting();
+    return buildMenuTutorialReady && screen === "city" && buildMenuOpen && tutorialStep === "barracks" && !isTutorialConstructionWaiting();
   }
 
   function shouldShowMapTutorialArrow() {
@@ -1810,7 +1814,21 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function openBuildMenu() {
-    setBuildMenuOpen((current) => !current);
+    if (buildMenuTutorialTimerRef.current) {
+      clearTimeout(buildMenuTutorialTimerRef.current);
+      buildMenuTutorialTimerRef.current = null;
+    }
+    setBuildMenuOpen((current) => {
+      const nextOpen = !current;
+      setBuildMenuTutorialReady(false);
+      if (nextOpen) {
+        buildMenuTutorialTimerRef.current = setTimeout(() => {
+          setBuildMenuTutorialReady(true);
+          buildMenuTutorialTimerRef.current = null;
+        }, 1000);
+      }
+      return nextOpen;
+    });
     setBuildMode(false);
     updateBuildPreview(null);
     setSelectedBuildingType(null);
@@ -1818,6 +1836,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
   }
 
   function chooseBuilding(type) {
+    if (buildMenuTutorialTimerRef.current) {
+      clearTimeout(buildMenuTutorialTimerRef.current);
+      buildMenuTutorialTimerRef.current = null;
+    }
+    setBuildMenuTutorialReady(false);
     setSelectedBuildingType(type);
     setBuildMenuOpen(false);
     setBuildMode(true);
