@@ -395,6 +395,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const lastTimeRef = useRef(0);
 
   const [screen, setScreen] = useState("menu");
+  const [trainingIntroPhase, setTrainingIntroPhase] = useState("off");
+  const [cityTutorialReady, setCityTutorialReady] = useState(false);
+  const trainingIntroTimerRef = useRef(null);
+  const cityTutorialTimerRef = useRef(null);
   const [profile, setProfile] = useState(initialProfile);
   const [landingPreview, setLandingPreviewState] = useState(null);
   const [buildPreview, setBuildPreviewState] = useState(null);
@@ -436,6 +440,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
     if (!open) return;
 
     setScreen("menu");
+    setTrainingIntroPhase("off");
+    setCityTutorialReady(false);
     resetArena();
 
     setHud({
@@ -446,6 +452,13 @@ export default function PixelFlowSurvival({ open, onClose }) {
       status: "Ready",
     });
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (trainingIntroTimerRef.current) clearTimeout(trainingIntroTimerRef.current);
+      if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -673,6 +686,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 
   function shouldShowBuildTutorialArrow() {
     return (
+      cityTutorialReady &&
       screen === "city" &&
       (tutorialStep === "houses" || tutorialStep === "crystals" || tutorialStep === "barracks") &&
       !isTutorialConstructionWaiting() &&
@@ -859,18 +873,23 @@ export default function PixelFlowSurvival({ open, onClose }) {
     setCityStats({ ...cityStatsRef.current });
   }
 
+  function beginTrainingStageOne() {
+    if (trainingIntroTimerRef.current) clearTimeout(trainingIntroTimerRef.current);
+    if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
+    setTrainingIntroPhase("boot");
+    trainingIntroTimerRef.current = setTimeout(() => {
+      setTrainingIntroPhase("launch");
+      trainingIntroTimerRef.current = setTimeout(startGame, 520);
+    }, 1450);
+  }
+
   function startGame() {
     resetArena();
-
-    setHud({
-      level: 1,
-      score: 0,
-      cooldown: 0,
-      teleportMode: false,
-      status: "Ready",
-    });
-
+    setCityTutorialReady(false);
+    setHud({ level: 1, score: 0, cooldown: 0, teleportMode: false, status: "Ready" });
     setScreen("city");
+    setTrainingIntroPhase("off");
+    cityTutorialTimerRef.current = setTimeout(() => setCityTutorialReady(true), 1000);
   }
 
   function endRun() {
@@ -2760,6 +2779,11 @@ export default function PixelFlowSurvival({ open, onClose }) {
     <div style={styles.overlay}>
       <style>
         {`
+          @keyframes trainingIntroReveal { 0% { opacity: 0; transform: scale(0.82); filter: blur(10px); } 60% { opacity: 1; transform: scale(1.04); filter: blur(0); } 100% { opacity: 1; transform: scale(1); filter: blur(0); } }
+          @keyframes trainingIntroOrbitSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes trainingIntroPulse { 0%, 100% { box-shadow: 0 0 24px rgba(34,211,238,.38), inset 0 0 18px rgba(59,130,246,.46); } 50% { box-shadow: 0 0 56px rgba(103,232,249,.88), inset 0 0 28px rgba(37,99,235,.78); } }
+          @keyframes trainingIntroDot { 0%, 100% { opacity: .42; transform: scale(.76); } 50% { opacity: 1; transform: scale(1); } }
+          @keyframes trainingCityFadeIn { from { opacity: 0; } to { opacity: 1; } }
           @keyframes tutorialBounce {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-10px); }
@@ -2889,7 +2913,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
             <div style={styles.trainingProgress}>0 / 5</div>
           </div>
           <div style={styles.trainingTrack}>
-            <button style={{ ...styles.trainingStage, ...styles.trainingStageActive }} onClick={startGame}>
+            <button style={{ ...styles.trainingStage, ...styles.trainingStageActive }} onClick={beginTrainingStageOne}>
               <div style={styles.trainingStageNumber}>01</div>
               <div style={styles.trainingStageInfo}><strong>CORE FOUNDATION</strong><small>Build the city, inspect the map, teleport and defeat the first monster.</small><span style={styles.trainingStageStatus}>AVAILABLE</span></div>
               <div style={styles.trainingStageArrow}>›</div>
@@ -2908,6 +2932,22 @@ export default function PixelFlowSurvival({ open, onClose }) {
             ))}
           </div>
           <div style={styles.trainingRewardCard}><span>◇</span><div><strong>PROGRAM REWARD</strong><small>Complete all stages to unlock free deployment.</small></div></div>
+        </section>
+      )}
+
+      {trainingIntroPhase !== "off" && (
+        <section style={{ ...styles.trainingIntroOverlay, ...(trainingIntroPhase === "launch" ? styles.trainingIntroOverlayLaunch : {}) }}>
+          <div style={styles.trainingIntroOrbit}>
+            <span style={{ ...styles.trainingIntroSatellite, ...styles.trainingIntroSatelliteOne }} />
+            <span style={{ ...styles.trainingIntroSatellite, ...styles.trainingIntroSatelliteTwo }} />
+            <span style={{ ...styles.trainingIntroSatellite, ...styles.trainingIntroSatelliteThree }} />
+            <div style={styles.trainingIntroEye}><div style={styles.trainingIntroIris}><div style={styles.trainingIntroPupil} /></div></div>
+          </div>
+          <div style={styles.trainingIntroBrand}>UNGATUS <span>LAB</span></div>
+          <div style={styles.trainingIntroDivider} />
+          <div style={styles.trainingIntroStage}>TRAINING 01</div>
+          <h2 style={styles.trainingIntroTitle}>CORE FOUNDATION</h2>
+          <div style={styles.trainingIntroStatus}><span style={styles.trainingIntroStatusDot} /> INITIALIZING CORE</div>
         </section>
       )}
 
@@ -4455,8 +4495,23 @@ const styles = {
   trainingStageArrow: { color: "#67e8f9", fontSize: 30, textAlign: "center" },
   trainingLock: { color: "rgba(255,255,255,0.46)", fontSize: 22, textAlign: "center" },
   trainingRewardCard: { width: "min(520px, 100%)", margin: "14px auto 0", minHeight: 66, borderRadius: 20, padding: "12px 16px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.22)", color: "#fde68a" },
+  trainingIntroOverlay: { position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, boxSizing: "border-box", background: "radial-gradient(circle at 50% 42%, rgba(14,116,144,.32), transparent 28%), linear-gradient(180deg, #020617, #00040c)", opacity: 1, transition: "opacity .52s ease, transform .52s ease", animation: "trainingIntroReveal .7s ease-out both", pointerEvents: "none" },
+  trainingIntroOverlayLaunch: { opacity: 0, transform: "scale(1.08)" },
+  trainingIntroOrbit: { position: "relative", width: 178, height: 122, display: "grid", placeItems: "center", animation: "trainingIntroOrbitSpin 7s linear infinite" },
+  trainingIntroEye: { width: 132, height: 78, borderRadius: "64% 36% 64% 36% / 58% 58% 42% 42%", transform: "rotate(-8deg)", border: "4px solid rgba(191,246,255,.9)", background: "linear-gradient(135deg, rgba(15,23,42,.98), rgba(8,47,73,.94))", boxShadow: "0 0 34px rgba(56,189,248,.64)", display: "grid", placeItems: "center" },
+  trainingIntroIris: { width: 62, height: 62, borderRadius: "50%", border: "5px solid #67e8f9", background: "radial-gradient(circle, #dffcff 0 10%, #0ea5e9 14% 42%, #1d4ed8 62%, #020617 70%)", display: "grid", placeItems: "center", animation: "trainingIntroPulse 1.15s ease-in-out infinite" },
+  trainingIntroPupil: { width: 20, height: 20, borderRadius: "50%", background: "#020617", border: "3px solid rgba(255,255,255,.84)" },
+  trainingIntroSatellite: { position: "absolute", width: 15, height: 15, borderRadius: "50%", background: "#dffcff", border: "3px solid #38bdf8", boxShadow: "0 0 18px #38bdf8" },
+  trainingIntroSatelliteOne: { left: 4, top: 50 }, trainingIntroSatelliteTwo: { right: 7, top: 18 }, trainingIntroSatelliteThree: { right: 18, bottom: 4 },
+  trainingIntroBrand: { marginTop: 18, color: "#fff", fontSize: 30, fontWeight: 950, letterSpacing: ".08em", textShadow: "0 0 20px rgba(56,189,248,.82)" },
+  trainingIntroDivider: { width: 180, height: 2, margin: "12px 0 16px", background: "linear-gradient(90deg, transparent, #67e8f9, transparent)", boxShadow: "0 0 14px #22d3ee" },
+  trainingIntroStage: { color: "#67e8f9", fontSize: 12, fontWeight: 950, letterSpacing: ".22em" },
+  trainingIntroTitle: { margin: "8px 0 12px", color: "#fff", fontSize: 27, letterSpacing: ".04em" },
+  trainingIntroStatus: { display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,.58)", fontSize: 10, fontWeight: 900, letterSpacing: ".16em" },
+  trainingIntroStatusDot: { width: 8, height: 8, borderRadius: "50%", background: "#67e8f9", boxShadow: "0 0 12px #22d3ee", animation: "trainingIntroDot .85s ease-in-out infinite" },
   arena: {
     position: "fixed",
+    animation: "trainingCityFadeIn .52s ease-out both",
     inset: 0,
     overflow: "hidden",
     background: "#020617",
