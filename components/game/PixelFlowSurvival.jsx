@@ -24,8 +24,8 @@ const CITY_OUTSIDE_PADDING = 280;
 const CITY_MIN_ZOOM = 0.45;
 const CITY_MAX_ZOOM = 1.1;
 
-const ATTACK_MARCH_SPEED = 0.42;
-const RETURN_MARCH_SPEED = 0.52;
+const ATTACK_MARCH_WORLD_SPEED = 154;
+const RETURN_MARCH_WORLD_SPEED = 191;
 
 const MAX_BUILDING_LEVEL = 5;
 const GUARD_CRYSTAL_COST = 1;
@@ -313,6 +313,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
+  const expeditionRef = useRef(null);
   const constructionQueueRef = useRef([]);
   const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false, barracksCommitted: false });
   const tutorialFlowRef = useRef({ phase: "buildEconomy", timer: 0 });
@@ -415,6 +416,7 @@ const trainingIntroTimerRef = useRef(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
+  const [expedition, setExpedition] = useState(null);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const [monsterSearchOpen, setMonsterSearchOpen] = useState(false);
   const [monsterSearchTier, setMonsterSearchTier] = useState(1);
@@ -812,6 +814,8 @@ resetArena();
     cityStatsRef.current = createCityStats();
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
+    expeditionRef.current = null;
+    setExpedition(null);
     constructionQueueRef.current = [];
     tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false, barracksCommitted: false };
     mapTutorialSeenRef.current = false;
@@ -1307,6 +1311,22 @@ resetArena();
     }
   }
 
+  function formatMarchTime(seconds) {
+    const safe = Math.max(0, Math.ceil(seconds || 0));
+    return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+  }
+  function getMarchDuration(fromX, fromY, toX, toY, type = "attack") {
+    const speed = type === "return" ? RETURN_MARCH_WORLD_SPEED : ATTACK_MARCH_WORLD_SPEED;
+    return Math.max(0.1, Math.hypot(toX - fromX, toY - fromY) / speed);
+  }
+  function getSelectedMonsterTravelSeconds(monster) {
+    const player = playerRef.current;
+    return monster && player ? getMarchDuration(player.x, player.y, monster.x, monster.y, "attack") : 0;
+  }
+  function publishExpedition(next) {
+    expeditionRef.current = next;
+    setExpedition(next ? { ...next } : null);
+  }
   function calculateDamageAndReturn(guardsByLevel, monster) {
     const nextReturn = {};
     let remainingHp = monster.hp;
@@ -1354,9 +1374,16 @@ resetArena();
     const nextMarches = [];
 
     for (const march of marchesRef.current) {
-      const speed = march.type === "return" ? RETURN_MARCH_SPEED : ATTACK_MARCH_SPEED;
-      const nextProgress = Math.min(1, march.progress + dt * speed);
-      const nextMarch = { ...march, progress: nextProgress };
+      const durationSeconds = march.durationSeconds || getMarchDuration(march.fromX, march.fromY, march.toX, march.toY, march.type);
+      const nextProgress = Math.min(1, march.progress + dt / durationSeconds);
+      const remainingSeconds = Math.max(0, durationSeconds * (1 - nextProgress));
+      const nextMarch = { ...march, durationSeconds, progress: nextProgress };
+      if (expeditionRef.current?.marchId === march.id) {
+        const shownSeconds = Math.ceil(remainingSeconds);
+        if (expeditionRef.current.remainingSeconds !== shownSeconds) {
+          publishExpedition({ ...expeditionRef.current, phase: march.type, count: march.count, remainingSeconds: shownSeconds });
+        }
+      }
 
       if (nextProgress < 1) {
         nextMarches.push(nextMarch);
@@ -1365,7 +1392,7 @@ resetArena();
 
       if (march.type === "attack") {
         const monster = world.monsters.find((item) => item.id === march.targetMonsterId);
-        if (!monster) continue;
+        if (!monster) { if (expeditionRef.current?.marchId === march.id) publishExpedition(null); continue; }
 
         const result = calculateDamageAndReturn(march.guardsByLevel, monster);
         monster.hp = Math.max(0, result.monsterRemainingHp);
@@ -1416,17 +1443,14 @@ resetArena();
         });
 
         if (returnCount > 0) {
-          nextMarches.push({
-            id: `return-${Date.now()}-${Math.random()}`,
-            type: "return",
-            count: returnCount,
-            guardsByLevel: result.returnGuardsByLevel,
-            fromX: march.toX,
-            fromY: march.toY,
-            toX: player.x,
-            toY: player.y,
-            progress: 0,
-          });
+          const returnId = `return-${Date.now()}-${Math.random()}`;
+          const returnDuration = getMarchDuration(march.toX, march.toY, player.x, player.y, "return");
+          nextMarches.push({ id: returnId, type: "return", count: returnCount, guardsByLevel: result.returnGuardsByLevel,
+            fromX: march.toX, fromY: march.toY, toX: player.x, toY: player.y, progress: 0,
+            durationSeconds: returnDuration, targetMonsterId: march.targetMonsterId, targetArmor: march.targetArmor, targetColor: march.targetColor });
+          publishExpedition({ marchId: returnId, phase: "return", count: returnCount,
+            remainingSeconds: Math.ceil(returnDuration), targetMonsterId: march.targetMonsterId,
+            targetArmor: march.targetArmor, targetColor: march.targetColor });
         }
 
         continue;
@@ -2016,6 +2040,8 @@ resetArena();
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     marchesRef.current = [];
+    expeditionRef.current = null;
+    setExpedition(null);
     constructionQueueRef.current = [];
     tutorialConstructionRef.current = { housesCommitted: false, crystalsCommitted: false, barracksCommitted: false };
     setBuildMode(false);
@@ -2383,19 +2409,15 @@ resetArena();
       }
     }
 
-    marchesRef.current.push({
-      id: `attack-${Date.now()}-${Math.random()}`,
-      type: "attack",
-      count: sendCount,
-      guardsByLevel: sentGuardsByLevel,
-      fromX: player.x,
-      fromY: player.y,
-      toX: monster.x,
-      toY: monster.y,
-      progress: 0,
-      targetMonsterId: monster.id,
-    });
-
+    const marchId = `attack-${Date.now()}-${Math.random()}`;
+    const durationSeconds = getMarchDuration(player.x, player.y, monster.x, monster.y, "attack");
+    marchesRef.current.push({ id: marchId, type: "attack", count: sendCount, guardsByLevel: sentGuardsByLevel,
+      fromX: player.x, fromY: player.y, toX: monster.x, toY: monster.y, progress: 0, durationSeconds,
+      targetMonsterId: monster.id, targetArmor: monster.armor, targetColor: monster.color });
+    publishExpedition({ marchId, phase: "attack", count: sendCount, remainingSeconds: Math.ceil(durationSeconds),
+      targetMonsterId: monster.id, targetArmor: monster.armor, targetColor: monster.color });
+    setTutorialThreatCardVisible(false);
+    updateSelectedMonster(null);
     setCityStats({ ...stats });
   }
 
@@ -3138,6 +3160,17 @@ resetArena();
             onWheel={onCanvasWheel}
           />
 
+          {expedition && (
+            <button style={{ ...styles.expeditionTracker, ...(expedition.phase === "return" ? styles.expeditionTrackerReturn : styles.expeditionTrackerAttack) }}
+              onClick={() => { if (screen !== "arena") return; const march = marchesRef.current.find((item) => item.id === expedition.marchId); if (!march) return;
+                cameraRef.current.x = march.fromX + (march.toX - march.fromX) * march.progress;
+                cameraRef.current.y = march.fromY + (march.toY - march.fromY) * march.progress; clampCameraToWorld(); forceLandingPreviewRender(); }}>
+              <div style={{ ...styles.expeditionPortrait, borderColor: expedition.targetColor || "#67e8f9", boxShadow: `0 0 18px ${expedition.targetColor || "#67e8f9"}88` }}>
+                <span style={{ ...styles.expeditionCreature, background: expedition.targetColor || "#67e8f9" }} /><strong>A{expedition.targetArmor || 1}</strong>
+              </div>
+              <div style={styles.expeditionTimerBlock}><span>{expedition.phase === "return" ? "←" : "→"}</span><strong>{formatMarchTime(expedition.remainingSeconds)}</strong><small>{expedition.phase === "return" ? "RETURN" : "MARCH"}</small></div>
+            </button>
+          )}
           {screen === "arena" && (
             <>
               <div style={styles.topInterfacePanel} />
@@ -3330,7 +3363,7 @@ resetArena();
                   >
                     <span>{selectedMonsterThreat.icon}</span>
                     <strong>{selectedMonsterThreat.label}</strong>
-                    <small>RALLY 00:00</small>
+                    <small>RALLY {formatMarchTime(getSelectedMonsterTravelSeconds(selectedMonster))}</small>
                   </div>
 
                   <button
@@ -5026,6 +5059,12 @@ const styles = {
     cursor: "pointer",
   },
 
+  expeditionTracker: { position:"absolute",left:9,top:61,zIndex:13,width:118,height:72,padding:6,borderRadius:19,color:"#fff",display:"grid",gridTemplateColumns:"56px 1fr",gap:5,alignItems:"center",backdropFilter:"blur(12px)",cursor:"pointer",boxShadow:"0 14px 38px rgba(0,0,0,.38)" },
+  expeditionTrackerAttack: { background:"linear-gradient(135deg,rgba(7,89,133,.94),rgba(15,23,42,.96))",border:"1px solid rgba(56,189,248,.72)" },
+  expeditionTrackerReturn: { background:"linear-gradient(135deg,rgba(21,128,61,.9),rgba(15,23,42,.96))",border:"1px solid rgba(134,239,172,.72)" },
+  expeditionPortrait: { width:52,height:56,borderRadius:16,border:"2px solid #67e8f9",background:"radial-gradient(circle,rgba(255,255,255,.12),rgba(2,6,23,.9))",position:"relative",display:"grid",placeItems:"center",overflow:"hidden",fontSize:13 },
+  expeditionCreature: { position:"absolute",width:20,height:20,borderRadius:7,transform:"rotate(45deg)",opacity:.72 },
+  expeditionTimerBlock: { minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,lineHeight:1 },
   monsterIntelCard: {
     position: "absolute",
     left: 10,
