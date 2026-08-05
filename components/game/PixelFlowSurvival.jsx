@@ -565,6 +565,7 @@ resetArena();
     tutorialFlowPhase === "selectLanding" && tutorialLandingTargetRef.current
       ? worldToScreen(tutorialLandingTargetRef.current.x, tutorialLandingTargetRef.current.y)
       : null;
+  const tutorialStep = getTutorialStep();
   const tutorialDragType =
     tutorialStep === "houses"
       ? "House"
@@ -595,7 +596,6 @@ resetArena();
 
   const totalGuards = getTotalGuardsFromStats(cityStats);
   const armyCap = cityStats.guardCap;
-  const tutorialStep = getTutorialStep();
   const batchSummary = getBuildBatchSummary(buildBatchPreview);
   const tutorialBuildTarget =
     tutorialStep === "houses"
