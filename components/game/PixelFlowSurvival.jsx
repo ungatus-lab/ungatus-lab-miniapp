@@ -331,7 +331,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
   const tutorialSearchMonsterIdRef = useRef(null);
-  const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3 });
+  const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null });
   const mapTutorialGuideRef = useRef({ phase: "off", timer: 0, zoomStart: 0.3 });
 
   const cameraRef = useRef({
@@ -836,7 +836,7 @@ resetArena();
     setTutorialFlowPhase("buildEconomy");
     mapTutorialTargetRef.current = null;
     tutorialSearchMonsterIdRef.current = null;
-    mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
+    mapTutorialZoomRef.current = { active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
     setMapTutorialTarget(null);
@@ -1092,12 +1092,31 @@ resetArena();
     const camera = cameraRef.current;
 
     if (mapTutorialZoomRef.current.active) {
-      const targetZoom = mapTutorialZoomRef.current.targetZoom;
+      const zoomEffect = mapTutorialZoomRef.current;
+      const targetZoom = zoomEffect.targetZoom;
       camera.zoom = Math.max(targetZoom, camera.zoom - dt * 0.24);
+
+      if (zoomEffect.mode === "freeOverview") {
+        const follow = Math.min(1, dt * 2.8);
+        if (Number.isFinite(zoomEffect.targetX)) camera.x += (zoomEffect.targetX - camera.x) * follow;
+        if (Number.isFinite(zoomEffect.targetY)) camera.y += (zoomEffect.targetY - camera.y) * follow;
+        clampCameraToWorld();
+        forceLandingPreviewRender();
+        const centered =
+          (!Number.isFinite(zoomEffect.targetX) || Math.abs(camera.x - zoomEffect.targetX) < 6) &&
+          (!Number.isFinite(zoomEffect.targetY) || Math.abs(camera.y - zoomEffect.targetY) < 6);
+        if (camera.zoom > targetZoom + 0.002 || !centered) return;
+        camera.zoom = targetZoom;
+        if (Number.isFinite(zoomEffect.targetX)) camera.x = zoomEffect.targetX;
+        if (Number.isFinite(zoomEffect.targetY)) camera.y = zoomEffect.targetY;
+        clampCameraToWorld();
+        mapTutorialZoomRef.current.active = false;
+        updateMapTutorialPhase("off");
+        return;
+      }
+
       clampCameraToWorld();
-
       if (camera.zoom > targetZoom + 0.002) return;
-
       camera.zoom = targetZoom;
       mapTutorialZoomRef.current.active = false;
 
@@ -1883,7 +1902,7 @@ resetArena();
   function backToMap() {
     setUtilityMenuOpen(false); setMonsterSearchOpen(false);
     if (tutorialStep === "map") {
-      mapTutorialZoomRef.current = { active: true, targetZoom: 0.3 };
+      mapTutorialZoomRef.current = { active: true, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
       mapTutorialTargetRef.current = null;
       setMapTutorialTarget(null);
       updateMapTutorialPhase("zoomout");
@@ -2402,7 +2421,22 @@ resetArena();
     if (tutorialFlowRef.current.phase === "attackButton") {
       updateTutorialFlowPhase("attackLaunched");
       setTutorialThreatCardVisible(false);
-    } else if(tutorialFlowRef.current.phase==="searchAttackButton") { updateTutorialFlowPhase("searchAttackLaunched"); setTutorialThreatCardVisible(false); }
+    } else if (tutorialFlowRef.current.phase === "searchAttackButton") {
+      updateTutorialFlowPhase("searchAttackLaunched");
+      setTutorialThreatCardVisible(false);
+      const player = playerRef.current;
+      const searchedMonster = selectedMonsterRef.current;
+      if (player && searchedMonster) {
+        mapTutorialZoomRef.current = {
+          active: true,
+          targetZoom: 0.3,
+          mode: "freeOverview",
+          targetX: (player.x + searchedMonster.x) / 2,
+          targetY: (player.y + searchedMonster.y) / 2,
+        };
+        updateMapTutorialPhase("freeOverviewZoom");
+      }
+    }
 
     const monster = selectedMonsterRef.current;
     const player = playerRef.current;
