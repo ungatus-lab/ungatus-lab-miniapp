@@ -565,12 +565,33 @@ resetArena();
     tutorialFlowPhase === "selectLanding" && tutorialLandingTargetRef.current
       ? worldToScreen(tutorialLandingTargetRef.current.x, tutorialLandingTargetRef.current.y)
       : null;
-  const tutorialHouseDropGrid = getTutorialPlacement("House");
-  const tutorialHouseDropScreen = cityWorldToScreen(
-    tutorialHouseDropGrid.x + CITY_GRID_STEP / 2,
-    tutorialHouseDropGrid.y + CITY_GRID_STEP / 2
-  );
-  const tutorialHouseDropSize = CITY_GRID_STEP * cityCameraRef.current.zoom;
+  const tutorialDragType =
+    tutorialStep === "houses"
+      ? "House"
+      : tutorialStep === "crystals"
+        ? "CrystalPoint"
+        : tutorialStep === "barracks"
+          ? "Barracks"
+          : null;
+  const tutorialDragDefinition = tutorialDragType ? BUILDINGS[tutorialDragType] : null;
+  const tutorialDragDropGrid = tutorialDragType ? getTutorialPlacement(tutorialDragType) : null;
+  const tutorialDragDropScreen =
+    tutorialDragDropGrid && tutorialDragDefinition
+      ? cityWorldToScreen(
+          tutorialDragDropGrid.x + (tutorialDragDefinition.w * CITY_GRID_STEP) / 2,
+          tutorialDragDropGrid.y + (tutorialDragDefinition.h * CITY_GRID_STEP) / 2
+        )
+      : null;
+  const tutorialDragDropWidth = tutorialDragDefinition
+    ? tutorialDragDefinition.w * CITY_GRID_STEP * cityCameraRef.current.zoom
+    : 0;
+  const tutorialDragDropHeight = tutorialDragDefinition
+    ? tutorialDragDefinition.h * CITY_GRID_STEP * cityCameraRef.current.zoom
+    : 0;
+  const tutorialDragSymbol =
+    tutorialDragType === "CrystalPoint" ? "◆" : tutorialDragType === "Barracks" ? "▲" : "■";
+  const tutorialDragColor =
+    tutorialDragType === "CrystalPoint" ? "#67e8f9" : tutorialDragType === "Barracks" ? "#fbbf24" : "#86efac";
 
   const totalGuards = getTotalGuardsFromStats(cityStats);
   const armyCap = cityStats.guardCap;
@@ -1846,7 +1867,15 @@ resetArena();
   }
 
   function beginBuildCardDrag(type, event) {
-    if (type !== "House" || tutorialStep !== "houses") return;
+    const expectedType =
+      tutorialStep === "houses"
+        ? "House"
+        : tutorialStep === "crystals"
+          ? "CrystalPoint"
+          : tutorialStep === "barracks"
+            ? "Barracks"
+            : null;
+    if (!expectedType || type !== expectedType) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -1877,7 +1906,7 @@ resetArena();
     setBuildCardDrag(null);
 
     const canvas = canvasRef.current;
-    if (!canvas || type !== "House") return;
+    if (!canvas || !BUILDINGS[type]) return;
     const rect = canvas.getBoundingClientRect();
     const insideCanvas =
       event.clientX >= rect.left && event.clientX <= rect.right &&
@@ -3443,29 +3472,67 @@ resetArena();
                 </div>
               )}
 
-              {shouldShowHouseMenuHint() && tutorialHouseDropScreen && (
+              {tutorialDragType && buildMenuTutorialReady && tutorialDragDropScreen && (
                 <>
-                  <div style={{ ...styles.tutorialHouseDropTarget, left: tutorialHouseDropScreen.x, top: tutorialHouseDropScreen.y, width: tutorialHouseDropSize, height: tutorialHouseDropSize }}>
-                    <span>■</span>
+                  <div
+                    style={{
+                      ...styles.tutorialHouseDropTarget,
+                      left: tutorialDragDropScreen.x,
+                      top: tutorialDragDropScreen.y,
+                      width: tutorialDragDropWidth,
+                      height: tutorialDragDropHeight,
+                      color: tutorialDragColor,
+                      borderColor: tutorialDragColor,
+                    }}
+                  >
+                    <span>{tutorialDragSymbol}</span>
                   </div>
-                  <div style={{ ...styles.tutorialHouseDropBeacon, left: tutorialHouseDropScreen.x, top: tutorialHouseDropScreen.y }} />
+                  <div
+                    style={{
+                      ...styles.tutorialHouseDropBeacon,
+                      left: tutorialDragDropScreen.x,
+                      top: tutorialDragDropScreen.y,
+                      borderColor: tutorialDragColor,
+                      boxShadow: `0 0 18px ${tutorialDragColor}`,
+                    }}
+                  />
                 </>
               )}
               {buildMenuOpen && (
                 <div style={styles.buildMenu}>
-                  {(shouldShowCrystalMenuHint() || shouldShowBarracksMenuHint()) && (
+                  {tutorialDragType && buildMenuTutorialReady && !buildCardDrag && tutorialDragDropScreen && (
                     <div
                       style={{
-                        ...styles.tutorialMenuArrow,
-                        ...(shouldShowBarracksMenuHint() ? styles.tutorialBarracksMenuArrow : {}),
+                        ...styles.tutorialHouseDragGuide,
+                        left:
+                          tutorialDragType === "CrystalPoint"
+                            ? "12.5%"
+                            : tutorialDragType === "Barracks"
+                              ? "62.5%"
+                              : "37.5%",
+                        "--tutorial-drag-x": `${
+                          tutorialDragDropScreen.x -
+                          viewport.width *
+                            (tutorialDragType === "CrystalPoint"
+                              ? 0.125
+                              : tutorialDragType === "Barracks"
+                                ? 0.625
+                                : 0.375)
+                        }px`,
+                        "--tutorial-drag-y": `${tutorialDragDropScreen.y - (viewport.height - 128)}px`,
+                        "--tutorial-drag-color": tutorialDragColor,
                       }}
                     >
-                      <div style={styles.macroPointer}>☟︎</div>
-                    </div>
-                  )}
-                  {shouldShowHouseMenuHint() && !buildCardDrag && tutorialHouseDropScreen && (
-                    <div style={{ ...styles.tutorialHouseDragGuide, "--tutorial-drag-x": `${tutorialHouseDropScreen.x - viewport.width * 0.375}px`, "--tutorial-drag-y": `${tutorialHouseDropScreen.y - (viewport.height - 128)}px` }}>
-                      <div style={styles.tutorialHouseDragGhost}>■</div>
+                      <div
+                        style={{
+                          ...styles.tutorialHouseDragGhost,
+                          color: tutorialDragColor,
+                          borderColor: tutorialDragColor,
+                          boxShadow: `0 0 20px ${tutorialDragColor}`,
+                        }}
+                      >
+                        {tutorialDragSymbol}
+                      </div>
                       <div style={styles.tutorialHouseDragHand}>☝︎</div>
                     </div>
                   )}
@@ -3476,8 +3543,14 @@ resetArena();
                         ...styles.buildCard,
                         ...(shouldShowCrystalMenuHint() ? styles.buildCardTutorial : {}),
                       }}
-                      onClick={() => chooseBuilding("CrystalPoint")}
-                      title="Crystal Point"
+                      onClick={() => {
+                        if (tutorialStep !== "crystals") chooseBuilding("CrystalPoint");
+                      }}
+                      onPointerDown={(event) => beginBuildCardDrag("CrystalPoint", event)}
+                      onPointerMove={moveBuildCardDrag}
+                      onPointerUp={endBuildCardDrag}
+                      onPointerCancel={endBuildCardDrag}
+                      title={tutorialStep === "crystals" ? "Drag Crystal Point to the city grid" : "Crystal Point"}
                     >
                       <span style={styles.buildCardIconCrystal}>◆</span>
                       <small>👥5</small>
@@ -3503,8 +3576,14 @@ resetArena();
 
                     <button
                       style={{ ...styles.buildCard, ...(shouldShowBarracksMenuHint() ? styles.buildCardTutorial : {}) }}
-                      onClick={() => chooseBuilding("Barracks")}
-                      title="Barracks"
+                      onClick={() => {
+                        if (tutorialStep !== "barracks") chooseBuilding("Barracks");
+                      }}
+                      onPointerDown={(event) => beginBuildCardDrag("Barracks", event)}
+                      onPointerMove={moveBuildCardDrag}
+                      onPointerUp={endBuildCardDrag}
+                      onPointerCancel={endBuildCardDrag}
+                      title={tutorialStep === "barracks" ? "Drag Barracks to the city grid" : "Barracks"}
                     >
                       <span style={styles.buildCardIconBarracks}>▲</span>
                       <small>💎30</small>
@@ -3526,8 +3605,12 @@ resetArena();
                     top: buildCardDrag.y,
                   }}
                 >
-                  <span>■</span>
-                  <small>HOUSE</small>
+                  <span style={{ color: buildCardDrag.type === "CrystalPoint" ? "#67e8f9" : buildCardDrag.type === "Barracks" ? "#fbbf24" : "#86efac" }}>
+                    {buildCardDrag.type === "CrystalPoint" ? "◆" : buildCardDrag.type === "Barracks" ? "▲" : "■"}
+                  </span>
+                  <small>
+                    {buildCardDrag.type === "CrystalPoint" ? "CRYSTAL" : buildCardDrag.type === "Barracks" ? "BARRACKS" : "HOUSE"}
+                  </small>
                 </div>
               )}
               {buildPreview && buildScreen && (
@@ -4886,8 +4969,8 @@ const styles = {
   buildCardDragGhost: {
     position: "fixed", zIndex: 40, width: 64, height: 64, transform: "translate(-50%, -50%)",
     borderRadius: 16, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-    color: "#86efac", background: "rgba(21,128,61,0.78)", border: "2px solid rgba(134,239,172,0.95)",
-    boxShadow: "0 0 26px rgba(34,197,94,0.78)", pointerEvents: "none", fontWeight: 900,
+    color: "#ffffff", background: "rgba(15,23,42,0.9)", border: "2px solid rgba(255,255,255,0.42)",
+    boxShadow: "0 0 26px rgba(103,232,249,0.46)", pointerEvents: "none", fontWeight: 900,
   },
   tutorialBarracksMenuArrow: { left: "62.5%" },
   tutorialTeleportPointer: { position: "absolute", left: "10%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
