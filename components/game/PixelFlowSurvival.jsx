@@ -330,6 +330,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const selectedMonsterRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
+  const tutorialSearchMonsterIdRef = useRef(null);
   const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3 });
   const mapTutorialGuideRef = useRef({ phase: "off", timer: 0, zoomStart: 0.3 });
 
@@ -834,6 +835,7 @@ resetArena();
     tutorialLandingTargetRef.current = null;
     setTutorialFlowPhase("buildEconomy");
     mapTutorialTargetRef.current = null;
+    tutorialSearchMonsterIdRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3 };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
@@ -978,8 +980,8 @@ resetArena();
   }
 
   function toggleUtilityMenu() { setMonsterSearchOpen(false); setUtilityMenuOpen((v) => !v); }
-  function toggleMonsterSearch() { setUtilityMenuOpen(false); setMonsterSearchOpen((v) => !v); }
-  function selectMonsterSearchTier(tier) { setMonsterSearchTier(tier); monsterSearchIndexRef.current = { tier, index: -1 }; }
+  function toggleMonsterSearch() { setUtilityMenuOpen(false); setMonsterSearchOpen((v) => { const next=!v; if(next && tutorialFlowRef.current.phase==="searchButton"){ setMonsterSearchTier(1); monsterSearchIndexRef.current={tier:1,index:-1}; updateTutorialFlowPhase("searchTier"); } return next; }); }
+  function selectMonsterSearchTier(tier) { if(tutorialFlowRef.current.phase==="searchTier" && tier!==1)return; setMonsterSearchTier(tier); monsterSearchIndexRef.current={tier,index:-1}; if(tutorialFlowRef.current.phase==="searchTier")updateTutorialFlowPhase("searchGo"); }
   function findNextMonsterByTier() {
     const player = playerRef.current;
     if (!player) return;
@@ -992,7 +994,8 @@ resetArena();
     const monster = candidates[nextIndex];
     cameraRef.current.x = monster.x; cameraRef.current.y = monster.y;
     cameraRef.current.zoom = Math.max(cameraRef.current.zoom, 0.48);
-    clampCameraToWorld(); forceLandingPreviewRender(); updateSelectedMonster({ ...monster }); setEnterCoreVisible(false);
+    clampCameraToWorld(); forceLandingPreviewRender(); setEnterCoreVisible(false);
+    if(tutorialFlowRef.current.phase==="searchGo"){ tutorialSearchMonsterIdRef.current=monster.id; mapTutorialTargetRef.current=monster; setMapTutorialTarget({...monster}); updateSelectedMonster(null); updateTutorialFlowPhase("searchMonster"); updateMapTutorialPhase("monsterPointerFinal"); } else updateSelectedMonster({...monster});
   }
   function runCityServiceAction() { resetCityBuildings(); }
   function activateTeleport() {
@@ -1472,9 +1475,9 @@ resetArena();
           stats.guardsByLevel[numericLevel] =
             (stats.guardsByLevel[numericLevel] || 0) + count;
         }
-        if (expeditionRef.current?.marchId === march.id) {
-          publishExpedition(null);
-        }
+        if (expeditionRef.current?.marchId === march.id) publishExpedition(null);
+        if(tutorialFlowRef.current.phase==="attackLaunched"){ setMonsterSearchOpen(false); updateTutorialFlowPhase("searchButton"); }
+        else if(tutorialFlowRef.current.phase==="searchAttackLaunched"){ setMonsterSearchOpen(false); updateTutorialFlowPhase("levelProgress"); }
       }
     }
 
@@ -2399,7 +2402,7 @@ resetArena();
     if (tutorialFlowRef.current.phase === "attackButton") {
       updateTutorialFlowPhase("attackLaunched");
       setTutorialThreatCardVisible(false);
-    }
+    } else if(tutorialFlowRef.current.phase==="searchAttackButton") { updateTutorialFlowPhase("searchAttackLaunched"); setTutorialThreatCardVisible(false); }
 
     const monster = selectedMonsterRef.current;
     const player = playerRef.current;
@@ -2622,11 +2625,12 @@ resetArena();
 
         if (mapTutorialTargetRef.current?.id === monster.id) {
           const attackStage = tutorialFlowRef.current.phase === "attackMonster";
+          const searchStage = tutorialFlowRef.current.phase === "searchMonster" && tutorialSearchMonsterIdRef.current === monster.id;
           mapTutorialSeenRef.current = true;
           mapTutorialTargetRef.current = null;
           setMapTutorialTarget(null);
           setTutorialThreatCardVisible(true);
-          updateTutorialFlowPhase(attackStage ? "attackButton" : "inspectMonster");
+          updateTutorialFlowPhase(searchStage ? "searchAttackButton" : attackStage ? "attackButton" : "inspectMonster");
           updateMapTutorialPhase("off");
         }
       } else {
@@ -3194,7 +3198,7 @@ resetArena();
               <div style={styles.topInterfacePanel} />
               <div style={styles.bottomInterfacePanel} />
               <header style={styles.cityTopBar}>
-                <div style={styles.topResourceChip} title="Level">
+                <div style={{...styles.topResourceChip,...(tutorialFlowPhase==="levelProgress"?styles.tutorialLevelChipGlow:{})}} title="Level">
                   <span>★</span>
                   <strong>{cityStats.level}</strong>
                   <small>
@@ -3409,7 +3413,7 @@ resetArena();
               {tutorialThreatCardVisible && selectedMonster?.tutorial && (
                 <div style={styles.tutorialArmyHighlight} />
               )}
-              {tutorialFlowPhase === "attackButton" && selectedMonster?.tutorial && (
+              {(tutorialFlowPhase === "attackButton" || tutorialFlowPhase === "searchAttackButton") && selectedMonster && (
                 <div style={styles.tutorialAttackPointer}>
                   <div style={styles.macroPointerUp}>☝︎</div>
                 </div>
@@ -3473,11 +3477,14 @@ resetArena();
               {monsterSearchOpen && (
                 <div style={styles.monsterSearchPanel}>
                   <div style={styles.monsterSearchTiers}>{[1,2,3,4,5].map((tier) => { const colors=["#67e8f9","#86efac","#facc15","#f97316","#ef4444"]; return (
-                    <button key={tier} style={{...styles.monsterSearchTier,borderColor:colors[tier-1],color:colors[tier-1],...(monsterSearchTier===tier?styles.monsterSearchTierActive:{})}} onClick={() => selectMonsterSearchTier(tier)}>
+                    <button key={tier} disabled={tutorialFlowPhase==="searchTier"&&tier!==1} style={{...styles.monsterSearchTier,borderColor:colors[tier-1],color:colors[tier-1],...(monsterSearchTier===tier?styles.monsterSearchTierActive:{}),...(tutorialFlowPhase==="searchTier"&&tier!==1?styles.monsterSearchTierLocked:{})}} onClick={() => selectMonsterSearchTier(tier)}>
                       <span style={{...styles.monsterSearchOrb,background:colors[tier-1],boxShadow:`0 0 14px ${colors[tier-1]}`}}/><strong>A{tier}</strong>
                     </button>);})}</div>
-                  <button style={styles.monsterSearchGo} onClick={findNextMonsterByTier}>⌕</button>
+                  <button style={{...styles.monsterSearchGo,...(tutorialFlowPhase==="searchGo"?styles.tutorialSearchControlGlow:{})}} disabled={tutorialFlowPhase==="searchTier"} onClick={findNextMonsterByTier}>⌕</button>
+                  {tutorialFlowPhase==="searchTier"&&<div style={styles.tutorialSearchTierPointer}><div style={styles.macroPointer}>☟︎</div></div>}
+                  {tutorialFlowPhase==="searchGo"&&<div style={styles.tutorialSearchGoPointer}><div style={styles.macroPointer}>☟︎</div></div>}
                 </div>)}
+              {tutorialFlowPhase==="searchButton"&&<div style={styles.tutorialSearchButtonPointer}><div style={styles.macroPointer}>☟︎</div></div>}
               {utilityMenuOpen && <div style={styles.utilityMenuPanel}><button style={styles.utilityMenuButton} onClick={endRun}><span>◼</span><small>END</small></button><button style={styles.utilityMenuButton} onClick={onClose}><span>×</span><small>EXIT</small></button></div>}
               <footer style={styles.arenaControls}>
                 <button style={{...styles.iconControlButton,...(monsterSearchOpen?styles.controlButtonActive:{})}} onClick={toggleMonsterSearch} title="Monster Search"><span style={styles.controlIcon}>⌕</span></button>
@@ -3494,7 +3501,7 @@ resetArena();
               <div style={styles.topInterfacePanel} />
               <div style={styles.bottomInterfacePanel} />
               <header style={styles.cityTopBar}>
-                <div style={styles.topResourceChip} title="Level">
+                <div style={{...styles.topResourceChip,...(tutorialFlowPhase==="levelProgress"?styles.tutorialLevelChipGlow:{})}} title="Level">
                   <span>★</span>
                   <strong>{cityStats.level}</strong>
                   <small>
@@ -4935,9 +4942,8 @@ const styles = {
     padding: "0 5px",
   },
 
-  tutorialChipGlow: {
-    animation: "chipGlow 1.15s ease-in-out infinite",
-  },
+  tutorialChipGlow: { animation:"chipGlow 1.15s ease-in-out infinite" },
+  tutorialLevelChipGlow: { animation:"chipGlow 1.05s ease-in-out infinite",color:"#fef08a",borderColor:"#facc15" },
 
   mapTutorialGesture: {
     position: "absolute",
@@ -5603,6 +5609,11 @@ const styles = {
   monsterSearchTiers: { display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:4 },
   monsterSearchTier: { minWidth:0,borderRadius:14,border:"1px solid",background:"rgba(255,255,255,.045)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,fontSize:10,fontWeight:950,color:"#fff" },
   monsterSearchTierActive: { background:"rgba(103,232,249,.13)",boxShadow:"inset 0 0 18px rgba(103,232,249,.16)" },
+  monsterSearchTierLocked: { opacity:.22,filter:"grayscale(1)" },
+  tutorialSearchControlGlow: { animation:"tutorialGlow 1.05s ease-in-out infinite" },
+  tutorialSearchButtonPointer: { position:"absolute",left:"10%",bottom:68,zIndex:18,width:56,height:64,transform:"translateX(-50%)",display:"grid",placeItems:"center",pointerEvents:"none" },
+  tutorialSearchTierPointer: { position:"absolute",left:"10%",bottom:58,zIndex:19,width:56,height:64,transform:"translateX(-50%)",display:"grid",placeItems:"center",pointerEvents:"none" },
+  tutorialSearchGoPointer: { position:"absolute",right:6,bottom:58,zIndex:19,width:56,height:64,display:"grid",placeItems:"center",pointerEvents:"none" },
   monsterSearchOrb: { width:16,height:16,borderRadius:"50%",display:"block" },
   monsterSearchGo: { border:"1px solid rgba(103,232,249,.42)",borderRadius:15,background:"linear-gradient(135deg,#0e7490,#2563eb)",color:"#fff",fontSize:28,fontWeight:950 },
   utilityMenuPanel: { position:"absolute",right:7,bottom:72,zIndex:16,width:130,minHeight:62,padding:6,borderRadius:18,background:"rgba(8,18,35,.97)",border:"1px solid rgba(255,255,255,.13)",display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:5 },
