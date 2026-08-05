@@ -1967,7 +1967,6 @@ resetArena();
       clearTimeout(buildMenuTutorialTimerRef.current);
       buildMenuTutorialTimerRef.current = null;
     }
-    setBuildMenuTutorialReady(false);
     const cardRect = event.currentTarget.getBoundingClientRect();
     const startX = cardRect.left + cardRect.width / 2;
     const startY = cardRect.top + cardRect.height / 2;
