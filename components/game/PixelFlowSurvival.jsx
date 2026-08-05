@@ -391,7 +391,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
     downY: 0,
     suppressClick: false,
   });
-  const buildCardDragRef = useRef({ pointerId: null, type: null, active: false });
+  const buildCardDragRef = useRef({ pointerId: null, type: null, active: false, startX: 0, startY: 0 });
+  const buildCardReturnTimerRef = useRef(null);
 
   const lastTimeRef = useRef(0);
 
@@ -409,6 +410,7 @@ const trainingIntroTimerRef = useRef(null);
   const [buildMode, setBuildModeState] = useState(false);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [buildCardDrag, setBuildCardDrag] = useState(null);
+  const [buildCardReturn, setBuildCardReturn] = useState(null);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
@@ -463,6 +465,7 @@ resetArena();
       if (trainingIntroTimerRef.current) clearTimeout(trainingIntroTimerRef.current);
       if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
       if (buildMenuTutorialTimerRef.current) clearTimeout(buildMenuTutorialTimerRef.current);
+      if (buildCardReturnTimerRef.current) clearTimeout(buildCardReturnTimerRef.current);
     };
   }, []);
 
@@ -902,7 +905,8 @@ resetArena();
     setBuildMode(false);
     setBuildMenuOpen(false);
     setBuildCardDrag(null);
-    buildCardDragRef.current = { pointerId: null, type: null, active: false };
+    setBuildCardReturn(null);
+    buildCardDragRef.current = { pointerId: null, type: null, active: false, startX: 0, startY: 0 };
     setSelectedBuildingType(null);
     setEnterCoreVisible(false);
     setCityStats({ ...cityStatsRef.current });
@@ -1866,6 +1870,32 @@ resetArena();
     updateSelectedBuilding(null);
   }
 
+  function isTutorialBuildStep() {
+    return tutorialStep === "houses" || tutorialStep === "crystals" || tutorialStep === "barracks";
+  }
+  function isTutorialBuildingAllowed(type) {
+    return !isTutorialBuildStep() || tutorialDragType === type;
+  }
+  function isPointInsideTutorialDropTarget(type, clientX, clientY) {
+    const definition = BUILDINGS[type];
+    if (!definition) return false;
+    const point = cityScreenToWorld(clientX, clientY);
+    const target = getTutorialPlacement(type);
+    return point.x >= target.x && point.x <= target.x + definition.w * CITY_GRID_STEP &&
+      point.y >= target.y && point.y <= target.y + definition.h * CITY_GRID_STEP;
+  }
+  function animateBuildCardReturn(type, fromX, fromY, toX, toY) {
+    if (buildCardReturnTimerRef.current) clearTimeout(buildCardReturnTimerRef.current);
+    setBuildCardReturn({ type, x: fromX, y: fromY, toX, toY, returning: false });
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      setBuildCardReturn({ type, x: fromX, y: fromY, toX, toY, returning: true })
+    ));
+    buildCardReturnTimerRef.current = setTimeout(() => {
+      setBuildCardReturn(null);
+      setBuildMenuTutorialReady(true);
+      buildCardReturnTimerRef.current = null;
+    }, 360);
+  }
   function beginBuildCardDrag(type, event) {
     const expectedType =
       tutorialStep === "houses"
@@ -1884,7 +1914,10 @@ resetArena();
       buildMenuTutorialTimerRef.current = null;
     }
     setBuildMenuTutorialReady(false);
-    buildCardDragRef.current = { pointerId: event.pointerId, type, active: true };
+    const cardRect = event.currentTarget.getBoundingClientRect();
+    const startX = cardRect.left + cardRect.width / 2;
+    const startY = cardRect.top + cardRect.height / 2;
+    buildCardDragRef.current = { pointerId: event.pointerId, type, active: true, startX, startY };
     setBuildCardDrag({ type, x: event.clientX, y: event.clientY });
   }
 
@@ -1901,34 +1934,34 @@ resetArena();
     if (!drag.active || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    const type = drag.type;
-    buildCardDragRef.current = { pointerId: null, type: null, active: false };
+    const { type, startX, startY } = drag;
+    buildCardDragRef.current = { pointerId: null, type: null, active: false, startX: 0, startY: 0 };
     setBuildCardDrag(null);
-
     const canvas = canvasRef.current;
     if (!canvas || !BUILDINGS[type]) return;
     const rect = canvas.getBoundingClientRect();
-    const insideCanvas =
-      event.clientX >= rect.left && event.clientX <= rect.right &&
+    const insideCanvas = event.clientX >= rect.left && event.clientX <= rect.right &&
       event.clientY >= rect.top + 58 && event.clientY <= rect.bottom - 76;
-    if (!insideCanvas) {
-      setBuildMenuTutorialReady(true);
+    const restricted = isTutorialBuildStep();
+    const accepted = restricted && isTutorialBuildingAllowed(type) &&
+      isPointInsideTutorialDropTarget(type, event.clientX, event.clientY);
+    if (!insideCanvas || (restricted && !accepted)) {
+      animateBuildCardReturn(type, event.clientX, event.clientY, startX, startY);
       return;
-    }
-
-    if (buildMenuTutorialTimerRef.current) {
-      clearTimeout(buildMenuTutorialTimerRef.current);
-      buildMenuTutorialTimerRef.current = null;
     }
     setSelectedBuildingType(type);
     setBuildMenuOpen(false);
     setBuildMode(true);
     updateSelectedBuilding(null);
-    const worldPoint = cityScreenToWorld(event.clientX, event.clientY);
-    updateBuildPreview(makeBuildPreviewFromPoint(worldPoint));
+    if (restricted) {
+      updateBuildPreview(makeBuildPreviewFromGrid(getTutorialPlacement(type), type));
+    } else {
+      updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(event.clientX, event.clientY)));
+    }
   }
 
   function chooseBuilding(type) {
+    if (!isTutorialBuildingAllowed(type)) return;
     if (buildMenuTutorialTimerRef.current) {
       clearTimeout(buildMenuTutorialTimerRef.current);
       buildMenuTutorialTimerRef.current = null;
@@ -2031,57 +2064,35 @@ resetArena();
 
   function buildBatchFromDrag(anchorPreview, clientX, clientY) {
     if (!anchorPreview) return [];
-
     const type = anchorPreview.type;
     const definition = BUILDINGS[type] || BUILDINGS.Barracks;
-    const worldPoint = cityScreenToWorld(clientX, clientY);
-    const target = snapCityPointToGrid(worldPoint, definition.w, definition.h);
-
+    const target = snapCityPointToGrid(cityScreenToWorld(clientX, clientY), definition.w, definition.h);
     const stepX = definition.w * CITY_GRID_STEP;
     const stepY = definition.h * CITY_GRID_STEP;
-
-    const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
-
-    if ((type === "CrystalPoint" && getTutorialStep() === "crystals") || (type === "Barracks" && getTutorialStep() === "barracks")) {
-      const rawDySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
-      const directionY = rawDySteps < 0 ? -1 : 1;
-      const count = Math.min(
-        (type === "Barracks" ? TUTORIAL_BARRACKS_TARGET : TUTORIAL_CRYSTAL_TARGET),
-        Math.max(1, Math.abs(rawDySteps) + 1)
-      );
-
-      for (let i = 1; i < count; i += 1) {
-        cells.push({
-          x: anchorPreview.x,
-          y: anchorPreview.y + i * directionY * stepY,
-        });
+    const step = getTutorialStep();
+    if (step === "houses" && type === "House") {
+      const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
+      if (target.x - anchorPreview.x >= stepX * 0.45) cells.push({ x: anchorPreview.x + stepX, y: anchorPreview.y });
+      if (target.x - anchorPreview.x >= stepX * 0.45 && target.y - anchorPreview.y >= stepY * 0.45) {
+        cells.push({ x: anchorPreview.x + stepX, y: anchorPreview.y + stepY });
       }
-
       return makeValidatedBuildBatch(type, cells);
     }
-
+    if ((step === "crystals" && type === "CrystalPoint") || (step === "barracks" && type === "Barracks")) {
+      const maximum = type === "Barracks" ? TUTORIAL_BARRACKS_TARGET : TUTORIAL_CRYSTAL_TARGET;
+      const count = Math.min(maximum, Math.max(1, Math.max(0, Math.round((target.y - anchorPreview.y) / stepY)) + 1));
+      return makeValidatedBuildBatch(type, Array.from({ length: count }, (_, index) => ({
+        x: anchorPreview.x, y: anchorPreview.y + index * stepY,
+      })));
+    }
+    const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
     const dxSteps = Math.round((target.x - anchorPreview.x) / Math.max(1, stepX));
     const dySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
-
     const sx = dxSteps === 0 ? 0 : dxSteps > 0 ? 1 : -1;
     const sy = dySteps === 0 ? 0 : dySteps > 0 ? 1 : -1;
-
-    for (let ix = 1; ix <= Math.abs(dxSteps); ix += 1) {
-      cells.push({
-        x: anchorPreview.x + ix * sx * stepX,
-        y: anchorPreview.y,
-      });
-    }
-
+    for (let ix = 1; ix <= Math.abs(dxSteps); ix += 1) cells.push({ x: anchorPreview.x + ix * sx * stepX, y: anchorPreview.y });
     const cornerX = anchorPreview.x + dxSteps * stepX;
-
-    for (let iy = 1; iy <= Math.abs(dySteps); iy += 1) {
-      cells.push({
-        x: cornerX,
-        y: anchorPreview.y + iy * sy * stepY,
-      });
-    }
-
+    for (let iy = 1; iy <= Math.abs(dySteps); iy += 1) cells.push({ x: cornerX, y: anchorPreview.y + iy * sy * stepY });
     return makeValidatedBuildBatch(type, cells);
   }
 
@@ -2141,10 +2152,11 @@ resetArena();
 
   function selectBuildPoint(clientX, clientY) {
     if (!buildModeRef.current && !buildPreviewRef.current) return;
-
-    const worldPoint = cityScreenToWorld(clientX, clientY);
-    const preview = makeBuildPreviewFromPoint(worldPoint);
-    updateBuildPreview(preview);
+    if (isTutorialBuildStep() && tutorialDragType) {
+      updateBuildPreview(makeBuildPreviewFromGrid(getTutorialPlacement(tutorialDragType), tutorialDragType));
+      return;
+    }
+    updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(clientX, clientY)));
   }
 
   function applyBuildings(previews) {
@@ -2589,7 +2601,7 @@ resetArena();
 
     const currentPreview = buildPreviewRef.current;
 
-    if (currentPreview && pointers.size === 1) {
+    if (currentPreview && pointers.size === 1 && !isTutorialBuildStep()) {
       const cityPoint = cityScreenToWorld(event.clientX, event.clientY);
 
       if (pointInsideBuildPreview(cityPoint, currentPreview)) {
@@ -3542,6 +3554,7 @@ resetArena();
                       style={{
                         ...styles.buildCard,
                         ...(shouldShowCrystalMenuHint() ? styles.buildCardTutorial : {}),
+                        ...(isTutorialBuildStep() && tutorialDragType !== "CrystalPoint" ? styles.buildCardTutorialLocked : {}),
                       }}
                       onClick={() => {
                         if (tutorialStep !== "crystals") chooseBuilding("CrystalPoint");
@@ -3551,6 +3564,7 @@ resetArena();
                       onPointerUp={endBuildCardDrag}
                       onPointerCancel={endBuildCardDrag}
                       title={tutorialStep === "crystals" ? "Drag Crystal Point to the city grid" : "Crystal Point"}
+                      disabled={isTutorialBuildStep() && tutorialDragType !== "CrystalPoint"}
                     >
                       <span style={styles.buildCardIconCrystal}>◆</span>
                       <small>👥5</small>
@@ -3560,6 +3574,7 @@ resetArena();
                       style={{
                         ...styles.buildCard,
                         ...(shouldShowHouseMenuHint() ? styles.buildCardTutorial : {}),
+                        ...(isTutorialBuildStep() && tutorialDragType !== "House" ? styles.buildCardTutorialLocked : {}),
                       }}
                       onClick={() => {
                         if (tutorialStep !== "houses") chooseBuilding("House");
@@ -3569,13 +3584,14 @@ resetArena();
                       onPointerUp={endBuildCardDrag}
                       onPointerCancel={endBuildCardDrag}
                       title={tutorialStep === "houses" ? "Drag House to the city grid" : "House"}
+                      disabled={isTutorialBuildStep() && tutorialDragType !== "House"}
                     >
                       <span style={styles.buildCardIconHouse}>■</span>
                       <small>💎25</small>
                     </button>
 
                     <button
-                      style={{ ...styles.buildCard, ...(shouldShowBarracksMenuHint() ? styles.buildCardTutorial : {}) }}
+                      style={{ ...styles.buildCard, ...(shouldShowBarracksMenuHint() ? styles.buildCardTutorial : {}), ...(isTutorialBuildStep() && tutorialDragType !== "Barracks" ? styles.buildCardTutorialLocked : {}) }}
                       onClick={() => {
                         if (tutorialStep !== "barracks") chooseBuilding("Barracks");
                       }}
@@ -3584,6 +3600,7 @@ resetArena();
                       onPointerUp={endBuildCardDrag}
                       onPointerCancel={endBuildCardDrag}
                       title={tutorialStep === "barracks" ? "Drag Barracks to the city grid" : "Barracks"}
+                      disabled={isTutorialBuildStep() && tutorialDragType !== "Barracks"}
                     >
                       <span style={styles.buildCardIconBarracks}>▲</span>
                       <small>💎30</small>
@@ -3597,6 +3614,15 @@ resetArena();
                 </div>
               )}
 
+              {buildCardReturn && (
+                <div style={{ ...styles.buildCardDragGhost, ...styles.buildCardReturnGhost,
+                  left: buildCardReturn.returning ? buildCardReturn.toX : buildCardReturn.x,
+                  top: buildCardReturn.returning ? buildCardReturn.toY : buildCardReturn.y }}>
+                  <span style={{ color: buildCardReturn.type === "CrystalPoint" ? "#67e8f9" : buildCardReturn.type === "Barracks" ? "#fbbf24" : "#86efac" }}>
+                    {buildCardReturn.type === "CrystalPoint" ? "◆" : buildCardReturn.type === "Barracks" ? "▲" : "■"}
+                  </span>
+                </div>
+              )}
               {buildCardDrag && (
                 <div
                   style={{
@@ -4972,6 +4998,7 @@ const styles = {
     color: "#ffffff", background: "rgba(15,23,42,0.9)", border: "2px solid rgba(255,255,255,0.42)",
     boxShadow: "0 0 26px rgba(103,232,249,0.46)", pointerEvents: "none", fontWeight: 900,
   },
+  buildCardReturnGhost: { transition: "left .34s cubic-bezier(.34,1.56,.64,1), top .34s cubic-bezier(.34,1.56,.64,1)", transform: "translate(-50%, -50%) scale(.82)", opacity: .78 },
   tutorialBarracksMenuArrow: { left: "62.5%" },
   tutorialTeleportPointer: { position: "absolute", left: "10%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
   tutorialLandingZone: { position: "absolute", zIndex: 8, transform: "translate(-50%, -50%)", border: "3px solid rgba(34,211,238,0.95)", background: "rgba(34,211,238,0.14)", boxShadow: "0 0 22px rgba(34,211,238,0.46)", pointerEvents: "none", boxSizing: "border-box" },
@@ -4985,6 +5012,7 @@ const styles = {
     textShadow: "0 0 15px rgba(103,232,249,0.95)",
     animation: "tutorialBounce 1.05s ease-in-out infinite",
   },
+  buildCardTutorialLocked: { opacity: 0.2, filter: "grayscale(1)", cursor: "not-allowed" },
   buildCardTutorial: {
     border: "1px solid rgba(34,211,238,0.72)",
     background: "rgba(34,211,238,0.16)",
