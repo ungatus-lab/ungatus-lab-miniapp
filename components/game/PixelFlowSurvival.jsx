@@ -1909,12 +1909,18 @@ resetArena();
     }
     setBuildMenuOpen((current) => {
       const nextOpen = !current;
-      setBuildMenuTutorialReady(false);
       if (nextOpen) {
-        buildMenuTutorialTimerRef.current = setTimeout(() => {
+        if (isTutorialBuildStep()) {
           setBuildMenuTutorialReady(true);
-          buildMenuTutorialTimerRef.current = null;
-        }, 1000);
+        } else {
+          setBuildMenuTutorialReady(false);
+          buildMenuTutorialTimerRef.current = setTimeout(() => {
+            setBuildMenuTutorialReady(true);
+            buildMenuTutorialTimerRef.current = null;
+          }, 1000);
+        }
+      } else {
+        setBuildMenuTutorialReady(false);
       }
       return nextOpen;
     });
