@@ -1462,6 +1462,9 @@ resetArena();
           stats.guardsByLevel[numericLevel] =
             (stats.guardsByLevel[numericLevel] || 0) + count;
         }
+        if (expeditionRef.current?.marchId === march.id) {
+          publishExpedition(null);
+        }
       }
     }
 
