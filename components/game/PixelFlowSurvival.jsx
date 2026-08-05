@@ -4142,57 +4142,106 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
 
 function drawMarches(ctx, marches) {
   const now = Date.now() / 1000;
-
   for (const march of marches) {
     const progress = march.progress;
     const count = Math.max(1, Math.floor(march.count));
     const dx = march.toX - march.fromX;
     const dy = march.toY - march.fromY;
     const distance = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / distance;
-    const ny = dx / distance;
+    const ux = dx / distance;
+    const uy = dy / distance;
+    const nx = -uy;
+    const ny = ux;
+    const centerX = march.fromX + dx * progress;
+    const centerY = march.fromY + dy * progress;
+    const returning = march.type === "return";
+    const baseGlow = returning ? "#22c55e" : "#67e8f9";
+    const pathColor = returning ? "rgba(34,197,94,0.12)" : "rgba(103,232,249,0.12)";
+    const visibleCount = Math.min(count, 110);
+    const layers = Math.max(1, Math.ceil(visibleCount / 28));
 
     ctx.save();
-
     ctx.beginPath();
-    ctx.strokeStyle =
-      march.type === "return" ? "rgba(34,197,94,0.24)" : "rgba(103,232,249,0.24)";
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = pathColor;
+    ctx.lineWidth = 2;
     ctx.moveTo(march.fromX, march.fromY);
     ctx.lineTo(march.toX, march.toY);
     ctx.stroke();
 
-    for (let i = 0; i < count; i += 1) {
-      const wave = Math.sin(now * 7 + i * 0.37) * 8;
-      const streamOffset = (i / Math.max(1, count - 1)) * 0.18;
-      const p = clamp(progress - streamOffset, 0, 1);
-
-      const x = march.fromX + dx * p + nx * wave;
-      const y = march.fromY + dy * p + ny * wave;
+    for (let i = 0; i < visibleCount; i += 1) {
+      const level = getMarchGuardLevel(march.guardsByLevel, i, visibleCount);
+      const visual = getGuardVisual(level);
+      const layer = i % layers;
+      const angleIndex = Math.floor(i / layers);
+      const itemsInLayer = Math.ceil(visibleCount / layers);
+      const phase =
+        now * (1.55 - layer * 0.12) +
+        (angleIndex / Math.max(1, itemsInLayer)) * Math.PI * 2 +
+        layer * 1.35;
+      const radius = 15 + layer * 10 + Math.min(18, Math.sqrt(count) * 1.25);
+      const forwardCrescent = Math.cos(phase) * radius * 0.5;
+      const sideOrbit = Math.sin(phase) * radius;
+      const breathing = 1 + Math.sin(now * 2.1 + i * 0.43) * 0.09;
+      const localForward = forwardCrescent * breathing - radius * 0.12;
+      const localSide = sideOrbit * breathing;
+      const driftForward = Math.sin(now * 1.8 + i * 0.71) * 2.4;
+      const driftSide = Math.cos(now * 2.4 + i * 0.57) * 2.1;
+      const x = centerX + ux * (localForward + driftForward) + nx * (localSide + driftSide);
+      const y = centerY + uy * (localForward + driftForward) + ny * (localSide + driftSide);
+      const tailX = x - ux * (5 + level * 0.35);
+      const tailY = y - uy * (5 + level * 0.35);
 
       ctx.beginPath();
-      ctx.fillStyle =
-        march.type === "return" ? "rgba(134,239,172,0.92)" : "rgba(191,246,255,0.92)";
-      ctx.shadowColor = march.type === "return" ? "#22c55e" : "#67e8f9";
-      ctx.shadowBlur = 11;
-      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.strokeStyle = returning ? "rgba(34,197,94,0.25)" : visual.tail;
+      ctx.lineWidth = 1.6;
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.fillStyle = returning ? mixMarchReturnColor(visual.fill) : visual.fill;
+      ctx.shadowColor = returning ? baseGlow : visual.glow;
+      ctx.shadowBlur = 9;
+      ctx.arc(x, y, Math.max(2.6, visual.size * 0.9), 0, Math.PI * 2);
       ctx.fill();
+      if (visual.core) {
+        ctx.beginPath();
+        ctx.fillStyle = visual.core;
+        ctx.arc(x, y, visual.size * 0.34, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.shadowBlur = 0;
     }
 
-    const headX = march.fromX + dx * progress;
-    const headY = march.fromY + dy * progress;
+    ctx.beginPath();
+    ctx.strokeStyle = returning ? "rgba(134,239,172,0.3)" : "rgba(191,246,255,0.28)";
+    ctx.lineWidth = 2;
+    ctx.arc(centerX, centerY, 14 + Math.min(16, Math.sqrt(count)), 0, Math.PI * 2);
+    ctx.stroke();
 
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
     ctx.font = "900 12px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`${count}`, headX, headY - 18);
-
+    ctx.fillText(`${count}`, centerX + nx * 4, centerY + ny * 4 - 25);
     ctx.restore();
   }
 }
-
+function getMarchGuardLevel(guardsByLevel, index, visibleCount) {
+  const levels = [];
+  for (const [level, amount] of Object.entries(guardsByLevel || {})) {
+    const share = Math.max(0, Math.floor((amount / Math.max(1, Object.values(guardsByLevel || {}).reduce((sum, value) => sum + value, 0))) * visibleCount));
+    for (let i = 0; i < share; i += 1) levels.push(Number(level));
+  }
+  return levels[index % Math.max(1, levels.length)] || 1;
+}
+function mixMarchReturnColor(fill) {
+  if (fill.includes("168,85,247")) return "rgba(196,181,253,0.96)";
+  if (fill.includes("251,191,36")) return "rgba(190,242,100,0.96)";
+  if (fill.includes("125,211,252")) return "rgba(110,231,183,0.96)";
+  if (fill.includes("165,243,252")) return "rgba(134,239,172,0.96)";
+  return "rgba(134,239,172,0.92)";
+}
 function drawPlayer(ctx, player) {
   const cityLevel = player.level || 1;
 
