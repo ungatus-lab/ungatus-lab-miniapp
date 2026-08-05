@@ -415,6 +415,10 @@ const trainingIntroTimerRef = useRef(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
+  const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
+  const [monsterSearchOpen, setMonsterSearchOpen] = useState(false);
+  const [monsterSearchTier, setMonsterSearchTier] = useState(1);
+  const monsterSearchIndexRef = useRef({ tier: 1, index: -1 });
   const [mapTutorialPhase, setMapTutorialPhase] = useState("off");
   const [mapTutorialTarget, setMapTutorialTarget] = useState(null);
   const [tutorialThreatCardVisible, setTutorialThreatCardVisible] = useState(false);
@@ -820,6 +824,9 @@ resetArena();
     updateMapTutorialPhase("off");
     setMapTutorialTarget(null);
     setTutorialThreatCardVisible(false);
+    setUtilityMenuOpen(false);
+    setMonsterSearchOpen(false);
+    monsterSearchIndexRef.current = { tier: 1, index: -1 };
     updateSelectedMonster(null);
     updateSelectedBuilding(null);
 
@@ -955,6 +962,24 @@ resetArena();
     forceLandingPreviewRender();
   }
 
+  function toggleUtilityMenu() { setMonsterSearchOpen(false); setUtilityMenuOpen((v) => !v); }
+  function toggleMonsterSearch() { setUtilityMenuOpen(false); setMonsterSearchOpen((v) => !v); }
+  function selectMonsterSearchTier(tier) { setMonsterSearchTier(tier); monsterSearchIndexRef.current = { tier, index: -1 }; }
+  function findNextMonsterByTier() {
+    const player = playerRef.current;
+    if (!player) return;
+    const candidates = worldRef.current.monsters.filter((monster) => monster.armor === monsterSearchTier).sort((a, b) =>
+      Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
+    if (!candidates.length) return;
+    const state = monsterSearchIndexRef.current;
+    const nextIndex = state.tier === monsterSearchTier ? (state.index + 1) % candidates.length : 0;
+    monsterSearchIndexRef.current = { tier: monsterSearchTier, index: nextIndex };
+    const monster = candidates[nextIndex];
+    cameraRef.current.x = monster.x; cameraRef.current.y = monster.y;
+    cameraRef.current.zoom = Math.max(cameraRef.current.zoom, 0.48);
+    clampCameraToWorld(); forceLandingPreviewRender(); updateSelectedMonster({ ...monster }); setEnterCoreVisible(false);
+  }
+  function runCityServiceAction() { resetCityBuildings(); }
   function activateTeleport() {
     if (teleportEffectRef.current?.active) return;
     if (cooldownRef.current > 0) return;
@@ -1796,6 +1821,7 @@ resetArena();
   }
 
   function enterCity() {
+    setUtilityMenuOpen(false); setMonsterSearchOpen(false);
     if (tutorialFlowRef.current.phase === "enterCity") {
       updateTutorialFlowPhase("cityBarracks");
     }
@@ -1815,6 +1841,7 @@ resetArena();
   }
 
   function backToMap() {
+    setUtilityMenuOpen(false); setMonsterSearchOpen(false);
     if (tutorialStep === "map") {
       mapTutorialZoomRef.current = { active: true, targetZoom: 0.3 };
       mapTutorialTargetRef.current = null;
@@ -3394,43 +3421,21 @@ resetArena();
                 </div>
               )}
 
+              {monsterSearchOpen && (
+                <div style={styles.monsterSearchPanel}>
+                  <div style={styles.monsterSearchTiers}>{[1,2,3,4,5].map((tier) => { const colors=["#67e8f9","#86efac","#facc15","#f97316","#ef4444"]; return (
+                    <button key={tier} style={{...styles.monsterSearchTier,borderColor:colors[tier-1],color:colors[tier-1],...(monsterSearchTier===tier?styles.monsterSearchTierActive:{})}} onClick={() => selectMonsterSearchTier(tier)}>
+                      <span style={{...styles.monsterSearchOrb,background:colors[tier-1],boxShadow:`0 0 14px ${colors[tier-1]}`}}/><strong>A{tier}</strong>
+                    </button>);})}</div>
+                  <button style={styles.monsterSearchGo} onClick={findNextMonsterByTier}>⌕</button>
+                </div>)}
+              {utilityMenuOpen && <div style={styles.utilityMenuPanel}><button style={styles.utilityMenuButton} onClick={endRun}><span>◼</span><small>END</small></button><button style={styles.utilityMenuButton} onClick={onClose}><span>×</span><small>EXIT</small></button></div>}
               <footer style={styles.arenaControls}>
-                <button
-                  style={{
-                    ...styles.iconControlButton,
-                    ...styles.teleportControlButton,
-                    ...(hud.teleportMode ? styles.controlButtonActive : {}),
-                    ...(hud.cooldown > 0 ? styles.teleportControlButtonCooldown : {}),
-                  }}
-                  onClick={activateTeleport}
-                  disabled={hud.cooldown > 0}
-                  title={hud.cooldown > 0 ? `Teleport ready in ${hud.cooldown}s` : "Teleport"}
-                >
-                  <span style={styles.teleportIcon} aria-hidden="true">
-                    <span style={styles.teleportIconTopRing} />
-                    <span style={styles.teleportIconBeam} />
-                    <span style={styles.teleportIconBottomRing} />
-                  </span>
-                  {hud.cooldown > 0 && (
-                    <span style={styles.teleportCooldownText}>{hud.cooldown}</span>
-                  )}
-                </button>
-
-                <button style={styles.iconControlButton} onClick={centerCamera} title="Center">
-                  <span style={styles.controlIcon}>◎</span>
-                </button>
-
-                <button style={styles.iconControlButton} onClick={enterCity} title="City">
-                  <span style={styles.controlIcon}>⌂</span>
-                </button>
-
-                <button style={styles.iconControlButton} onClick={endRun} title="End Run">
-                  <span style={styles.controlIcon}>◼</span>
-                </button>
-
-                <button style={styles.iconControlButton} onClick={onClose} title="Exit">
-                  <span style={styles.controlIcon}>×</span>
-                </button>
+                <button style={{...styles.iconControlButton,...(monsterSearchOpen?styles.controlButtonActive:{})}} onClick={toggleMonsterSearch} title="Monster Search"><span style={styles.controlIcon}>⌕</span></button>
+                <button style={{...styles.iconControlButton,...styles.teleportControlButton,...(hud.teleportMode?styles.controlButtonActive:{}),...(hud.cooldown>0?styles.teleportControlButtonCooldown:{})}} onClick={activateTeleport} disabled={hud.cooldown>0} title="Teleport"><span style={styles.teleportIcon}><span style={styles.teleportIconTopRing}/><span style={styles.teleportIconBeam}/><span style={styles.teleportIconBottomRing}/></span>{hud.cooldown>0&&<span style={styles.teleportCooldownText}>{hud.cooldown}</span>}</button>
+                <button style={styles.iconControlButton} onClick={enterCity} title="City"><span style={styles.controlIcon}>⌂</span></button>
+                <button style={styles.iconControlButton} onClick={centerCamera} title="Center"><span style={styles.controlIcon}>◎</span></button>
+                <button style={{...styles.iconControlButton,...(utilityMenuOpen?styles.controlButtonActive:{})}} onClick={toggleUtilityMenu} title="Menu"><span style={styles.controlIcon}>☰</span></button>
               </footer>
             </>
           )}
@@ -3769,33 +3774,13 @@ resetArena();
                 </div>
               )}
 
+              {utilityMenuOpen && <div style={styles.utilityMenuPanel}><button style={styles.utilityMenuButton} onClick={endRun}><span>◼</span><small>END</small></button><button style={styles.utilityMenuButton} onClick={onClose}><span>×</span><small>EXIT</small></button></div>}
               <footer style={styles.cityControls}>
-                <button style={styles.iconControlButton} onClick={backToMap} title="World Map">
-                  <span style={styles.controlIcon}>🗺</span>
-                </button>
-
-                <button
-                  style={{
-                    ...styles.iconControlButton,
-                    ...(buildMode || buildMenuOpen ? styles.controlButtonActive : {}),
-                  }}
-                  onClick={openBuildMenu}
-                  title="Build"
-                >
-                  <span style={styles.controlIcon}>🔨</span>
-                </button>
-
-                <button style={styles.iconControlButton} onClick={centerCityCamera} title="Center">
-                  <span style={styles.controlIcon}>◎</span>
-                </button>
-
-                <button style={styles.iconControlButton} onClick={resetCityBuildings} title="Reset">
-                  <span style={styles.controlIcon}>↺</span>
-                </button>
-
-                <button style={styles.iconControlButton} onClick={onClose} title="Exit">
-                  <span style={styles.controlIcon}>×</span>
-                </button>
+                <button style={styles.iconControlButton} onClick={runCityServiceAction} title="Service"><span style={styles.controlIcon}>↺</span></button>
+                <button style={{...styles.iconControlButton,...(buildMode||buildMenuOpen?styles.controlButtonActive:{})}} onClick={openBuildMenu} title="Build"><span style={styles.controlIcon}>🔨</span></button>
+                <button style={styles.iconControlButton} onClick={backToMap} title="World Map"><span style={styles.controlIcon}>🗺</span></button>
+                <button style={styles.iconControlButton} onClick={centerCityCamera} title="Center"><span style={styles.controlIcon}>◎</span></button>
+                <button style={{...styles.iconControlButton,...(utilityMenuOpen?styles.controlButtonActive:{})}} onClick={toggleUtilityMenu} title="Menu"><span style={styles.controlIcon}>☰</span></button>
               </footer>
             </>
           )}
@@ -4941,7 +4926,7 @@ const styles = {
   },
   tutorialMapArrow: {
     position: "absolute",
-    left: "10%",
+    left: "50%",
     bottom: 68,
     zIndex: 8,
     width: 56,
@@ -5000,7 +4985,7 @@ const styles = {
   },
   buildCardReturnGhost: { transition: "left .34s cubic-bezier(.34,1.56,.64,1), top .34s cubic-bezier(.34,1.56,.64,1)", transform: "translate(-50%, -50%) scale(.82)", opacity: .78 },
   tutorialBarracksMenuArrow: { left: "62.5%" },
-  tutorialTeleportPointer: { position: "absolute", left: "10%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
+  tutorialTeleportPointer: { position: "absolute", left: "30%", bottom: 68, zIndex: 13, width: 56, height: 64, transform: "translateX(-50%)", display: "grid", placeItems: "center", pointerEvents: "none" },
   tutorialLandingZone: { position: "absolute", zIndex: 8, transform: "translate(-50%, -50%)", border: "3px solid rgba(34,211,238,0.95)", background: "rgba(34,211,238,0.14)", boxShadow: "0 0 22px rgba(34,211,238,0.46)", pointerEvents: "none", boxSizing: "border-box" },
   tutorialLandingPointer: { position: "absolute", zIndex: 13, width: 56, height: 64, transform: "translate(-50%, -100%)", display: "grid", placeItems: "center", pointerEvents: "none" },
   tutorialConfirmPointer: { position: "absolute", zIndex: 13, width: 56, height: 64, transform: "translate(-50%, -100%)", display: "grid", placeItems: "center", pointerEvents: "none" },
@@ -5510,6 +5495,14 @@ const styles = {
     cursor: "pointer",
   },
 
+  monsterSearchPanel: { position:"absolute",left:7,right:7,bottom:72,zIndex:15,minHeight:68,padding:7,borderRadius:20,background:"rgba(8,18,35,.97)",border:"1px solid rgba(103,232,249,.28)",display:"grid",gridTemplateColumns:"1fr 54px",gap:6 },
+  monsterSearchTiers: { display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:4 },
+  monsterSearchTier: { minWidth:0,borderRadius:14,border:"1px solid",background:"rgba(255,255,255,.045)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,fontSize:10,fontWeight:950,color:"#fff" },
+  monsterSearchTierActive: { background:"rgba(103,232,249,.13)",boxShadow:"inset 0 0 18px rgba(103,232,249,.16)" },
+  monsterSearchOrb: { width:16,height:16,borderRadius:"50%",display:"block" },
+  monsterSearchGo: { border:"1px solid rgba(103,232,249,.42)",borderRadius:15,background:"linear-gradient(135deg,#0e7490,#2563eb)",color:"#fff",fontSize:28,fontWeight:950 },
+  utilityMenuPanel: { position:"absolute",right:7,bottom:72,zIndex:16,width:130,minHeight:62,padding:6,borderRadius:18,background:"rgba(8,18,35,.97)",border:"1px solid rgba(255,255,255,.13)",display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:5 },
+  utilityMenuButton: { minHeight:50,borderRadius:14,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.055)",color:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,fontWeight:950,fontSize:19 },
   arenaControls: {
     position: "absolute", left: 7, right: 7, bottom: 7,
     display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 3,
