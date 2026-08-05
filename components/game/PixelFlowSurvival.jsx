@@ -102,6 +102,15 @@ function createCityStats() {
 function getTotalGuardsFromStats(stats) {
   return Object.values(stats.guardsByLevel || {}).reduce((sum, value) => sum + value, 0);
 }
+function getTotalGuardsInMarches(marches) {
+  return (marches || []).reduce(
+    (sum, march) => sum + Math.max(0, Math.floor(march.count || 0)),
+    0
+  );
+}
+function getTotalOwnedGuards(stats, marches) {
+  return getTotalGuardsFromStats(stats) + getTotalGuardsInMarches(marches);
+}
 
 function getXpRequiredForLevel(level) {
   if (level <= 1) return 0;
@@ -603,7 +612,8 @@ resetArena();
   const tutorialDragColor =
     tutorialDragType === "CrystalPoint" ? "#67e8f9" : tutorialDragType === "Barracks" ? "#fbbf24" : "#86efac";
 
-  const totalGuards = getTotalGuardsFromStats(cityStats);
+  const homeGuards = getTotalGuardsFromStats(cityStats);
+  const totalGuards = getTotalOwnedGuards(cityStats, marchesRef.current);
   const armyCap = cityStats.guardCap;
   const batchSummary = getBuildBatchSummary(buildBatchPreview);
   const tutorialBuildTarget =
@@ -618,21 +628,22 @@ resetArena();
     tutorialStep === "done" || tutorialStep === "map" || tutorialStep === "mapAfterBarracks" || batchSummary.valid >= tutorialBuildTarget;
   const selectedMonsterThreat = selectedMonster
     ? (() => {
-        const army = totalGuards;
-        const compatibleArmy = Object.entries(cityStats.guardsByLevel || {}).reduce(
-          (sum, [level, count]) => sum + (Number(level) >= selectedMonster.armor ? count : 0),
-          0
-        );
-        if (army <= 0 || compatibleArmy <= 0) {
+        const army = homeGuards;
+        if (army <= 0) {
           return {
             key: "impossible",
-            label: "IMPOSSIBLE",
+            label: "NO ARMY READY",
             icon: "⚠",
             color: "#ef4444",
             background: "rgba(127,29,29,0.72)",
           };
         }
-        const ratio = compatibleArmy / Math.max(1, selectedMonster.hp);
+        const effectiveArmy = Object.entries(cityStats.guardsByLevel || {}).reduce(
+          (sum, [level, count]) =>
+            sum + count * (Number(level) >= selectedMonster.armor ? Number(level) : 0.25),
+          0
+        );
+        const ratio = effectiveArmy / Math.max(1, selectedMonster.hp);
         if (ratio < 0.75) {
           return {
             key: "danger",
@@ -1182,9 +1193,8 @@ resetArena();
       if (building.type !== "Barracks" || building.underConstruction) continue;
 
       const buildingLevel = building.level || 1;
-      const homeArmyTotal = getTotalGuardsFromStats(stats);
-
-      if (homeArmyTotal >= stats.guardCap) {
+      const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
+      if (ownedArmyTotal >= stats.guardCap) {
         building.trainTimer = 0;
         continue;
       }
@@ -1199,7 +1209,7 @@ resetArena();
 
       if (
         building.trainTimer >= productionTime &&
-        getTotalGuardsFromStats(stats) < stats.guardCap &&
+        getTotalOwnedGuards(stats, marchesRef.current) < stats.guardCap &&
         stats.crystals >= GUARD_CRYSTAL_COST
       ) {
         building.trainTimer = 0;
@@ -3357,7 +3367,7 @@ resetArena();
                       }}
                     >
                       <small>YOUR ARMY</small>
-                      <strong>{totalGuards}/{armyCap}</strong>
+                      <strong>{homeGuards}/{armyCap}</strong>
                     </div>
                   </div>
 
@@ -3377,11 +3387,9 @@ resetArena();
                   <button
                     style={{
                       ...styles.monsterIntelAttack,
-                      ...(selectedMonsterThreat.key === "impossible"
-                        ? styles.monsterIntelAttackDisabled
-                        : {}),
+                      ...(homeGuards <= 0 ? styles.monsterIntelAttackDisabled : {}),
                     }}
-                    disabled={selectedMonsterThreat.key === "impossible"}
+                    disabled={homeGuards <= 0}
                     onClick={beginAttackSelectedMonster}
                   >
                     ⚔
