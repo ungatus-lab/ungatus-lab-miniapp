@@ -1655,6 +1655,7 @@ resetArena();
     drawCityOutsideShadow(ctx);
     drawCityGrid(ctx);
     drawCityBorder(ctx);
+    globalThis.__macroSwarmCityStatsVisual = cityStatsRef.current;
     drawCityBuildings(ctx, cityRef.current.buildings, selectedBuilding?.id);
 
     const activePreviews =
@@ -4528,103 +4529,286 @@ function constructionQueueRefSafe(building) {
 }
 
 function drawCitadelBuilding(ctx, building, width, height, cx, cy) {
-  const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
-  gradient.addColorStop(0, "#67e8f9");
-  gradient.addColorStop(1, "#2563eb");
+  const now = Date.now() / 1000;
+  const level = building.level || 1;
+  const pulse = 1 + Math.sin(now * 1.8) * 0.035;
+  const bodyRadius = Math.min(width, height) * 0.36;
 
-  ctx.fillStyle = gradient;
-  ctx.shadowColor = "#38bdf8";
-  ctx.shadowBlur = 20;
-  roundedRect(ctx, building.x, building.y, width, height, 22);
-  ctx.fill();
+  drawModulePad(ctx, cx, cy + 18, width * 0.72, height * 0.47, "#38bdf8");
+  drawModuleLegs(ctx, cx, cy + 30, width * 0.29, height * 0.24, "#0ea5e9");
 
-  ctx.shadowBlur = 0;
-
-  ctx.strokeStyle = "rgba(255,255,255,0.38)";
-  ctx.lineWidth = 3;
-  roundedRect(ctx, building.x + 10, building.y + 10, width - 20, height - 20, 16);
-  ctx.stroke();
-
-  drawCitadelCrown(ctx, building.x, building.y, width);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "900 16px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("CITADEL", cx, cy);
-}
-
-function drawCrystalPointBuilding(ctx, building, width, height, cx, cy) {
-  ctx.fillStyle = "rgba(8,47,73,0.92)";
-  roundedRect(ctx, building.x, building.y, width, height, 22);
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(34,211,238,0.48)";
-  ctx.lineWidth = 4;
-  roundedRect(ctx, building.x + 8, building.y + 8, width - 16, height - 16, 18);
-  ctx.stroke();
-
+  ctx.save();
+  ctx.translate(cx, cy - 3);
+  ctx.scale(1, 0.76);
+  const shell = ctx.createRadialGradient(-26, -28, 8, 0, 0, bodyRadius);
+  shell.addColorStop(0, "rgba(255,255,255,0.96)");
+  shell.addColorStop(0.2, "rgba(103,232,249,0.96)");
+  shell.addColorStop(0.68, "rgba(37,99,235,0.96)");
+  shell.addColorStop(1, "rgba(30,27,75,0.98)");
   ctx.beginPath();
-  ctx.fillStyle = "#67e8f9";
+  ctx.fillStyle = shell;
+  ctx.shadowColor = "#38bdf8";
+  ctx.shadowBlur = 30;
+  ctx.arc(0, 0, bodyRadius * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(207,250,254,0.72)";
+  ctx.lineWidth = 5;
+  ctx.arc(0, 0, bodyRadius * 0.72, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  drawOrbitRing(ctx, cx, cy - 3, bodyRadius + 15, bodyRadius * 0.48, now * 0.7, "rgba(103,232,249,0.68)");
+  if (level >= 2) drawOrbitRing(ctx, cx, cy - 3, bodyRadius + 27, bodyRadius * 0.62, -now * 0.48, "rgba(196,181,253,0.52)");
+
+  ctx.save();
+  ctx.translate(cx, cy - 3);
+  ctx.rotate(-0.12);
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(2,6,23,0.92)";
+  ctx.ellipse(0, 0, bodyRadius * 0.48, bodyRadius * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.fillStyle = "#dffcff";
+  ctx.shadowColor = "#67e8f9";
+  ctx.shadowBlur = 18;
+  ctx.arc(0, 0, 14 + level * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  const visibleWorkers = Math.min(5, Math.max(0, cityStatsWorkerVisual(building)));
+  for (let i = 0; i < visibleWorkers; i += 1) {
+    const angle = now * (0.85 + i * 0.035) + (i / Math.max(1, visibleWorkers)) * Math.PI * 2;
+    const radius = bodyRadius * 0.55 + (i % 2) * 10;
+    drawWorkerOrb(ctx, cx + Math.cos(angle) * radius, cy - 3 + Math.sin(angle) * radius * 0.48, i);
+  }
+
+  if (level >= 3) {
+    for (let i = 0; i < Math.min(3, level - 1); i += 1) {
+      const angle = now * 0.32 + (i / 3) * Math.PI * 2;
+      drawSatellite(ctx, cx + Math.cos(angle) * (bodyRadius + 35), cy - 3 + Math.sin(angle) * (bodyRadius + 35) * 0.55, "#c4b5fd");
+    }
+  }
+}
+function drawCrystalPointBuilding(ctx, building, width, height, cx, cy) {
+  const now = Date.now() / 1000;
+  const level = building.level || 1;
+  const crystalH = Math.min(width, height) * (0.25 + level * 0.012);
+
+  drawModulePad(ctx, cx, cy + 28, width * 0.72, height * 0.34, "#22d3ee");
+  drawModuleLegs(ctx, cx, cy + 34, width * 0.3, height * 0.19, "#0891b2");
+
+  ctx.save();
+  ctx.translate(cx, cy - 8);
+  ctx.rotate(Math.sin(now * 0.75) * 0.06);
+  const crystal = ctx.createLinearGradient(0, -crystalH, 0, crystalH);
+  crystal.addColorStop(0, "#ecfeff");
+  crystal.addColorStop(0.35, "#67e8f9");
+  crystal.addColorStop(0.72, "#06b6d4");
+  crystal.addColorStop(1, "#164e63");
+  ctx.beginPath();
+  ctx.fillStyle = crystal;
   ctx.shadowColor = "#22d3ee";
-  ctx.shadowBlur = 24;
-  ctx.moveTo(cx, cy - 48);
-  ctx.lineTo(cx + 38, cy);
-  ctx.lineTo(cx, cy + 48);
-  ctx.lineTo(cx - 38, cy);
+  ctx.shadowBlur = 28;
+  ctx.moveTo(0, -crystalH);
+  ctx.lineTo(crystalH * 0.62, 0);
+  ctx.lineTo(0, crystalH);
+  ctx.lineTo(-crystalH * 0.62, 0);
   ctx.closePath();
   ctx.fill();
-
   ctx.shadowBlur = 0;
-}
-
-function drawHouseBuilding(ctx, building, width, height) {
-  const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
-  gradient.addColorStop(0, "#bbf7d0");
-  gradient.addColorStop(1, "#15803d");
-
-  ctx.fillStyle = gradient;
-  ctx.shadowColor = "#22c55e";
-  ctx.shadowBlur = 12;
-  roundedRect(ctx, building.x, building.y, width, height, 18);
-  ctx.fill();
-
-  ctx.shadowBlur = 0;
-
-  ctx.fillStyle = "rgba(15,23,42,0.52)";
-  roundedRect(ctx, building.x + 23, building.y + 34, width - 46, height - 50, 12);
-  ctx.fill();
-}
-
-function drawBarracksBuilding(ctx, building, width, height) {
-  const gradient = ctx.createLinearGradient(building.x, building.y, building.x, building.y + height);
-  gradient.addColorStop(0, "#fbbf24");
-  gradient.addColorStop(1, "#b45309");
-
-  ctx.fillStyle = gradient;
-  ctx.shadowColor = "#f59e0b";
-  ctx.shadowBlur = 16;
-  roundedRect(ctx, building.x + 10, building.y + 18, width - 20, height - 26, 20);
-  ctx.fill();
-
-  ctx.shadowBlur = 0;
-
-  ctx.fillStyle = "rgba(15,23,42,0.56)";
-  roundedRect(ctx, building.x + 62, building.y + 94, width - 124, height - 112, 12);
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(255,255,255,0.28)";
-  roundedRect(ctx, building.x + 28, building.y + 4, 28, 42, 8);
-  ctx.fill();
-  roundedRect(ctx, building.x + width - 56, building.y + 4, 28, 42, 8);
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(255,255,255,0.34)";
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(255,255,255,0.58)";
   ctx.lineWidth = 3;
-  roundedRect(ctx, building.x + 24, building.y + 30, width - 48, height - 52, 16);
+  ctx.moveTo(0, -crystalH * 0.84);
+  ctx.lineTo(crystalH * 0.26, 0);
+  ctx.lineTo(0, crystalH * 0.76);
   ctx.stroke();
-}
+  ctx.restore();
 
+  drawOrbitRing(ctx, cx, cy - 8, crystalH * 1.12, crystalH * 0.38, now * 1.15, "rgba(103,232,249,0.72)");
+  drawOrbitRing(ctx, cx, cy - 8, crystalH * 0.86, crystalH * 0.58, -now * 0.82, "rgba(165,243,252,0.42)");
+
+  const particles = 5 + Math.min(4, level);
+  for (let i = 0; i < particles; i += 1) {
+    const phase = (now * 0.22 + i / particles) % 1;
+    const px = cx + Math.sin(i * 2.35 + now) * (18 + i * 3);
+    const py = cy + 48 - phase * 105;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(103,232,249,${0.2 + phase * 0.65})`;
+    ctx.arc(px, py, 2.4 + (i % 2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+function drawHouseBuilding(ctx, building, width, height) {
+  const now = Date.now() / 1000;
+  const level = building.level || 1;
+  const cx = building.x + width / 2;
+  const cy = building.y + height / 2;
+  const r = Math.min(width, height) * 0.29;
+
+  drawModulePad(ctx, cx, cy + 16, width * 0.7, height * 0.33, "#22c55e");
+  drawModuleLegs(ctx, cx, cy + 23, width * 0.27, height * 0.18, "#15803d");
+
+  const dome = ctx.createRadialGradient(cx - 13, cy - 18, 4, cx, cy, r * 1.2);
+  dome.addColorStop(0, "#f0fdf4");
+  dome.addColorStop(0.22, "#86efac");
+  dome.addColorStop(0.72, "#16a34a");
+  dome.addColorStop(1, "#14532d");
+  ctx.beginPath();
+  ctx.fillStyle = dome;
+  ctx.shadowColor = "#22c55e";
+  ctx.shadowBlur = 16;
+  ctx.arc(cx, cy - 4, r, Math.PI, Math.PI * 2);
+  ctx.lineTo(cx + r, cy + 18);
+  ctx.quadraticCurveTo(cx, cy + 33, cx - r, cy + 18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const windows = Math.min(5, 2 + level);
+  for (let i = 0; i < windows; i += 1) {
+    const angle = Math.PI + ((i + 1) / (windows + 1)) * Math.PI;
+    const wx = cx + Math.cos(angle) * r * 0.58;
+    const wy = cy - 4 + Math.sin(angle) * r * 0.42;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(220,252,231,${0.65 + Math.sin(now * 1.2 + i) * 0.18})`;
+    ctx.shadowColor = "#bbf7d0";
+    ctx.shadowBlur = 8;
+    ctx.arc(wx, wy, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.strokeStyle = "rgba(187,247,208,0.54)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r - 10);
+  ctx.lineTo(cx, cy - r + 5);
+  ctx.stroke();
+  drawSatellite(ctx, cx, cy - r - 13, "#86efac", 4);
+
+  if (level >= 3) drawOrbitRing(ctx, cx, cy - 4, r + 10, r * 0.32, now * 0.45, "rgba(134,239,172,0.42)");
+}
+function drawBarracksBuilding(ctx, building, width, height) {
+  const now = Date.now() / 1000;
+  const level = building.level || 1;
+  const cx = building.x + width / 2;
+  const cy = building.y + height / 2;
+  const r = Math.min(width, height) * 0.3;
+
+  drawModulePad(ctx, cx, cy + 30, width * 0.76, height * 0.38, "#f59e0b");
+  drawModuleLegs(ctx, cx, cy + 38, width * 0.32, height * 0.2, "#b45309");
+
+  const body = ctx.createLinearGradient(cx, cy - r, cx, cy + r);
+  body.addColorStop(0, "#fde68a");
+  body.addColorStop(0.25, "#fbbf24");
+  body.addColorStop(0.78, "#d97706");
+  body.addColorStop(1, "#78350f");
+  ctx.beginPath();
+  ctx.fillStyle = body;
+  ctx.shadowColor = "#f59e0b";
+  ctx.shadowBlur = 22;
+  ctx.arc(cx, cy - 3, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(2,6,23,0.84)";
+  ctx.ellipse(cx, cy + 13, r * 0.46, r * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(254,243,199,0.68)";
+  ctx.lineWidth = 4;
+  ctx.arc(cx, cy - 3, r * 0.7, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const trainPulse = 0.55 + Math.sin(now * 4 + (building.trainTimer || 0) * 2) * 0.28;
+  ctx.beginPath();
+  ctx.fillStyle = `rgba(255,255,255,${trainPulse})`;
+  ctx.shadowColor = "#fef3c7";
+  ctx.shadowBlur = 14;
+  ctx.arc(cx, cy + 13, 8 + level, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  drawOrbitRing(ctx, cx, cy - 3, r + 13, r * 0.36, -now * 0.9, "rgba(251,191,36,0.66)");
+  const pylons = 2 + Math.min(2, Math.floor(level / 2));
+  for (let i = 0; i < pylons; i += 1) {
+    const angle = (i / pylons) * Math.PI * 2 + Math.PI / 4;
+    drawSatellite(ctx, cx + Math.cos(angle) * (r + 8), cy - 3 + Math.sin(angle) * (r + 8) * 0.55, "#fde68a", 5);
+  }
+}
+function drawModulePad(ctx, cx, cy, width, height, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, 0.48);
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(2,6,23,0.9)";
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18;
+  ctx.arc(0, 0, width * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 5;
+  ctx.arc(0, 0, width * 0.38, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawModuleLegs(ctx, cx, cy, halfWidth, legHeight, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + side * halfWidth, cy - legHeight * 0.35);
+    ctx.lineTo(cx + side * halfWidth * 1.1, cy + legHeight * 0.55);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawOrbitRing(ctx, cx, cy, rx, ry, rotation, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation);
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+  ctx.arc(rx, 0, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+function drawSatellite(ctx, x, y, color, size = 5) {
+  ctx.beginPath();
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+  ctx.arc(x, y, size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+function drawWorkerOrb(ctx, x, y, index) {
+  const colors = ["#fef08a", "#fde68a", "#bbf7d0", "#a5f3fc", "#ddd6fe"];
+  drawSatellite(ctx, x, y, colors[index % colors.length], 4.2);
+}
+function cityStatsWorkerVisual() {
+  const stats = globalThis.__macroSwarmCityStatsVisual;
+  if (!stats) return 5;
+  if (stats.workerCap <= 0) return 0;
+  return Math.ceil(clamp(stats.workers / stats.workerCap, 0, 1) * 5);
+}
 function drawBuildPreviews(ctx, previews) {
   for (const preview of previews || []) {
     drawSingleBuildPreview(ctx, preview);
