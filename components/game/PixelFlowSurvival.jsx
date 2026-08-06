@@ -394,7 +394,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const buildBatchPreviewRef = useRef([]);
   const selectedBuildingTypeRef = useRef(null);
   const selectedBuildingRef = useRef(null);
-
+  const movingBuildingRef = useRef(null);
+  const cityDoubleTapRef = useRef({ buildingId: null, time: 0 });
   const massBuildRef = useRef({
     pointerId: null,
     active: false,
@@ -424,6 +425,7 @@ const trainingIntroTimerRef = useRef(null);
   const [buildCardReturn, setBuildCardReturn] = useState(null);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
+  const [movingBuilding, setMovingBuilding] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
   const [expedition, setExpedition] = useState(null);
@@ -2150,14 +2152,15 @@ resetArena();
     const right = preview.x + preview.w * CITY_GRID_STEP;
     const bottom = preview.y + preview.h * CITY_GRID_STEP;
 
-    if (stats.crystals < preview.cost) return false;
-    if (stats.workers < (preview.workerCost || 0)) return false;
+    if (!preview.movingBuildingId && stats.crystals < preview.cost) return false;
+    if (!preview.movingBuildingId && stats.workers < (preview.workerCost || 0)) return false;
 
     if (left < 0 || top < 0 || right > CITY_WIDTH || bottom > CITY_HEIGHT) {
       return false;
     }
 
     for (const building of buildings) {
+      if (preview.movingBuildingId && building.id === preview.movingBuildingId) continue;
       const bLeft = building.x;
       const bTop = building.y;
       const bRight = building.x + building.w * CITY_GRID_STEP;
@@ -2269,6 +2272,83 @@ resetArena();
     updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(clientX, clientY)));
   }
 
+  function isFreeCityEditMode() {
+    return !isTutorialBuildStep() && tutorialFlowRef.current.phase === "levelProgress";
+  }
+  function beginMovingBuilding(building) {
+    if (!isFreeCityEditMode() || !building || building.type === "Citadel") return;
+    movingBuildingRef.current = building;
+    setMovingBuilding({ ...building });
+    setSelectedBuildingType(building.type);
+    setBuildMode(true);
+    setBuildMenuOpen(false);
+    updateSelectedBuilding(null);
+    const preview = makeBuildPreviewFromGrid({ x: building.x, y: building.y }, building.type);
+    preview.movingBuildingId = building.id;
+    preview.cost = 0;
+    preview.workerCost = 0;
+    preview.valid = true;
+    updateBuildPreview(preview);
+  }
+  function makeMovingPreview(point) {
+    const building = movingBuildingRef.current;
+    if (!building) return null;
+    const definition = BUILDINGS[building.type] || BUILDINGS.Barracks;
+    const snapped = snapCityPointToGrid(point, definition.w, definition.h);
+    const preview = makeBuildPreviewFromGrid(snapped, building.type);
+    preview.movingBuildingId = building.id;
+    preview.cost = 0;
+    preview.workerCost = 0;
+    preview.valid = canPlaceBuilding(preview);
+    return preview;
+  }
+  function finishMovingBuilding() {
+    const moving = movingBuildingRef.current;
+    const preview = buildPreviewRef.current;
+    if (!moving || !preview || !preview.valid) return;
+    const building = cityRef.current.buildings.find((item) => item.id === moving.id);
+    if (!building) return;
+    building.x = preview.x;
+    building.y = preview.y;
+    movingBuildingRef.current = null;
+    setMovingBuilding(null);
+    setBuildMode(false);
+    updateBuildPreview(null);
+    setSelectedBuildingType(null);
+    updateSelectedBuilding(building);
+  }
+  function deleteSelectedBuilding() {
+    if (!isFreeCityEditMode()) return;
+    const selected = selectedBuildingRef.current;
+    if (!selected || selected.type === "Citadel") return;
+    const building = cityRef.current.buildings.find((item) => item.id === selected.id);
+    if (!building) return;
+    const stats = cityStatsRef.current;
+    if (!building.underConstruction) {
+      if (building.type === "House") {
+        const level = building.level || 1;
+        stats.workerCap = Math.max(5, stats.workerCap - level * 5);
+        stats.workers = Math.min(stats.workers, stats.workerCap);
+        stats.guardCap = Math.max(10, stats.guardCap - level * 25);
+      }
+      if (building.type === "CrystalPoint") {
+        stats.workers = Math.min(stats.workerCap, stats.workers + (building.level || 1) * BUILDINGS.CrystalPoint.workerCost);
+      }
+    } else if (building.type === "CrystalPoint") {
+      stats.workers = Math.min(stats.workerCap, stats.workers + BUILDINGS.CrystalPoint.workerCost);
+    }
+    cityRef.current.buildings = cityRef.current.buildings.filter((item) => item.id !== building.id);
+    constructionQueueRef.current = constructionQueueRef.current.filter((id) => id !== building.id);
+    updateSelectedBuilding(null);
+    recalculateCityEconomy();
+    setCityStats({ ...stats });
+  }
+  function cancelBuildOrMove() {
+    movingBuildingRef.current = null;
+    setMovingBuilding(null);
+    cancelBuildPreview();
+  }
+
   function applyBuildings(previews) {
     const validPreviews = (previews || []).filter((preview) => preview && preview.valid);
     if (validPreviews.length <= 0) return;
@@ -2316,6 +2396,10 @@ resetArena();
   }
 
   function placeBuilding() {
+    if (movingBuildingRef.current) {
+      finishMovingBuilding();
+      return;
+    }
     if (massBuildRef.current.suppressClick) {
       massBuildRef.current.suppressClick = false;
       return;
@@ -2332,6 +2416,7 @@ resetArena();
   }
 
   function beginPlaceButtonPointer(event) {
+    if (movingBuildingRef.current) return;
     const preview = buildPreviewRef.current;
 
     if (!preview || !preview.valid) return;
@@ -2765,7 +2850,7 @@ resetArena();
       buildPreviewRef.current
     ) {
       const cityPoint = cityScreenToWorld(event.clientX, event.clientY);
-      updateBuildPreview(makeBuildPreviewFromPoint(cityPoint));
+      updateBuildPreview(movingBuildingRef.current ? makeMovingPreview(cityPoint) : makeBuildPreviewFromPoint(cityPoint));
       pointerState.dragging = true;
       return;
     }
@@ -2863,6 +2948,16 @@ resetArena();
     if (wasTap && !buildModeRef.current && !buildPreviewRef.current) {
       const cityPoint = cityScreenToWorld(event.clientX, event.clientY);
       const building = findCityBuildingAt(cityPoint);
+      if (building && isFreeCityEditMode() && building.type !== "Citadel") {
+        const now = Date.now();
+        const previous = cityDoubleTapRef.current;
+        if (previous.buildingId === building.id && now - previous.time <= 360) {
+          cityDoubleTapRef.current = { buildingId: null, time: 0 };
+          beginMovingBuilding(building);
+          return;
+        }
+        cityDoubleTapRef.current = { buildingId: building.id, time: now };
+      }
       updateSelectedBuilding(building);
     }
   }
@@ -3793,7 +3888,7 @@ resetArena();
                         : styles.buildControlPanelLeft),
                     }}
                   >
-                    <button style={styles.cancelButton} onClick={cancelBuildPreview}>
+                    <button style={styles.cancelButton} onClick={cancelBuildOrMove}>
                       ×
                     </button>
                     <div style={styles.buildCostBadge}>
@@ -3860,17 +3955,11 @@ resetArena();
                   </div>
 
                   {selectedBuilding.type !== "Citadel" && (
-                    <button
-                      style={{
-                        ...styles.upgradeButton,
-                        ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled),
-                      }}
-                      disabled={!canUpgradeBuilding(selectedBuilding)}
-                      onClick={upgradeSelectedBuilding}
-                      title="Upgrade"
-                    >
-                      ⇧ {getUpgradeCostLabel(selectedBuilding)}
-                    </button>
+                    <div style={styles.buildingActionGroup}>
+                      <button style={styles.moveBuildingButton} disabled={!isFreeCityEditMode()} onClick={() => beginMovingBuilding(selectedBuilding)} title="Move">✥</button>
+                      <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
+                      <button style={styles.deleteBuildingButton} disabled={!isFreeCityEditMode()} onClick={deleteSelectedBuilding} title="Delete">⌫</button>
+                    </div>
                   )}
                 </div>
               )}
@@ -5786,7 +5875,7 @@ const styles = {
     border: "1px solid rgba(251,191,36,0.22)",
     boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
     display: "grid",
-    gridTemplateColumns: "48px 1fr 96px 32px",
+    gridTemplateColumns: "48px 1fr minmax(126px, auto) 32px",
     gap: 8,
     alignItems: "center",
   },
@@ -5812,6 +5901,9 @@ const styles = {
     fontWeight: 900,
   },
 
+  buildingActionGroup: { display: "grid", gridTemplateColumns: "34px minmax(72px,1fr) 34px", gap: 4, alignItems: "center" },
+  moveBuildingButton: { width: 34, height: 38, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#0e7490,#2563eb)", color: "#fff", fontWeight: 900, fontSize: 18 },
+  deleteBuildingButton: { width: 34, height: 38, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#991b1b,#ef4444)", color: "#fff", fontWeight: 900, fontSize: 18 },
   upgradeButton: {
     minHeight: 38,
     border: 0,
