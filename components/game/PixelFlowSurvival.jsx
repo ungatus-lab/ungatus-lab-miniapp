@@ -20,8 +20,8 @@ const CAMERA_OUTSIDE_PADDING = 950;
 const CITY_WIDTH = 2200;
 const CITY_HEIGHT = 1600;
 const CITY_GRID_STEP = 100;
-const CITY_OUTSIDE_PADDING = 280;
-const CITY_MIN_ZOOM = 0.45;
+const CITY_OUTSIDE_PADDING = 900;
+const CITY_MIN_ZOOM = 0.32;
 const CITY_MAX_ZOOM = 1.1;
 
 const ATTACK_MARCH_WORLD_SPEED = 154;
@@ -3258,32 +3258,62 @@ resetArena();
         <section style={styles.trainingScreen}>
           <div style={styles.trainingHeader}>
             <button style={styles.trainingBackButton} onClick={() => setScreen("menu")}>←</button>
-            <div><p style={styles.kicker}>Operator Program</p><h2 style={styles.trainingTitle}>Training</h2></div>
+            <div><p style={styles.kicker}>Operator Program</p><h2 style={styles.trainingTitle}>Training Route</h2></div>
             <div style={styles.trainingProgress}>0 / 5</div>
           </div>
-          <div style={styles.trainingTrack}>
-            <button style={{ ...styles.trainingStage, ...styles.trainingStageActive }} onClick={beginTrainingStageOne}>
-              <div style={styles.trainingStageNumber}>01</div>
-              <div style={styles.trainingStageInfo}><strong>CORE FOUNDATION</strong><small>Build the city, inspect the map, teleport and defeat the first monster.</small><span style={styles.trainingStageStatus}>AVAILABLE</span></div>
-              <div style={styles.trainingStageArrow}>›</div>
-            </button>
+
+          <div style={styles.trainingRouteViewport}>
+            <div style={styles.trainingRouteLine} />
             {[
-              ["02", "CORE DEVELOPMENT", "Building upgrades, armor and penetration."],
-              ["03", "FIRST EMULATOR", "Play through the Core mirror and learn device control."],
-              ["04", "MACRO SCENARIO", "Record and launch the first reusable scenario."],
-              ["05", "SWARM ORCHESTRATION", "Run two Cores and branch their actions."],
-            ].map(([number, title, description]) => (
-              <div key={number} style={{ ...styles.trainingStage, ...styles.trainingStageLocked }}>
-                <div style={styles.trainingStageNumber}>{number}</div>
-                <div style={styles.trainingStageInfo}><strong>{title}</strong><small>{description}</small><span style={styles.trainingStageLockedText}>LOCKED</span></div>
-                <div style={styles.trainingLock}>⌁</div>
+              ["01", "CORE", "FOUNDATION", "◉", true],
+              ["02", "CORE", "DEVELOPMENT", "⌬", false],
+              ["03", "FIRST", "EMULATOR", "▣", false],
+              ["04", "MACRO", "SCENARIO", "⌁", false],
+              ["05", "SWARM", "CONTROL", "✣", false],
+            ].map(([number, top, bottom, icon, active], index) => (
+              <div key={number} style={styles.trainingRouteStage}>
+                <button
+                  style={{
+                    ...styles.trainingRouteNode,
+                    ...(active ? styles.trainingRouteNodeActive : styles.trainingRouteNodeLocked),
+                  }}
+                  onClick={active ? beginTrainingStageOne : undefined}
+                  disabled={!active}
+                  title={`${top} ${bottom}`}
+                >
+                  <span style={styles.trainingRouteOrbit} />
+                  <span style={styles.trainingRouteIcon}>{icon}</span>
+                  <strong>{number}</strong>
+                  {!active && <span style={styles.trainingRouteLock}>⌁</span>}
+                </button>
+                <small style={{ ...styles.trainingRouteLabel, ...(active ? styles.trainingRouteLabelActive : {}) }}>
+                  {top}<br />{bottom}
+                </small>
+                {index < 4 && <span style={styles.trainingRouteArrow}>›</span>}
               </div>
             ))}
           </div>
+
+          <div style={styles.trainingStageFocus}>
+            <div style={styles.trainingStageFocusGlow} />
+            <div style={styles.trainingStageFocusNumber}>01</div>
+            <div style={styles.trainingStageFocusContent}>
+              <p>ACTIVE STAGE</p>
+              <h3>CORE FOUNDATION</h3>
+              <span>Build the city, inspect the world map, test teleportation and complete the first combat route.</span>
+            </div>
+            <button style={styles.trainingStageLaunch} onClick={beginTrainingStageOne}>START ›</button>
+          </div>
+
+          <div style={styles.trainingLockedPreview}>
+            <span>02</span>
+            <div><strong>NEXT: CORE DEVELOPMENT</strong><small>Building upgrades, armor, penetration and technology systems.</small></div>
+            <b>LOCKED</b>
+          </div>
+
           <div style={styles.trainingRewardCard}><span>◇</span><div><strong>PROGRAM REWARD</strong><small>Complete all stages to unlock free deployment.</small></div></div>
         </section>
       )}
-
       {trainingIntroPhase !== "off" && (
         <section style={{ ...styles.trainingIntroOverlay, ...(trainingIntroPhase === "launch" ? styles.trainingIntroOverlayLaunch : {}) }}>
           <div style={styles.trainingIntroOrbit}>
@@ -5123,22 +5153,56 @@ const styles = {
   menuActionIcon: { color: "#67e8f9", fontSize: 17, lineHeight: 1 },
   menuActionLocked: { opacity: 0.42, cursor: "not-allowed" },
   trainingMenuButton: { border: "1px solid rgba(103,232,249,0.72)", background: "linear-gradient(135deg, rgba(37,99,235,0.9), rgba(6,182,212,0.88))", boxShadow: "0 0 24px rgba(34,211,238,0.28)" },
-  trainingScreen: { minHeight: "100vh", padding: "22px 16px 28px", boxSizing: "border-box", overflowY: "auto", background: "radial-gradient(circle at 50% 0%, rgba(37,99,235,0.24), transparent 34%), linear-gradient(180deg, #07111f 0%, #020617 100%)" },
-  trainingHeader: { width: "min(520px, 100%)", margin: "0 auto 18px", display: "grid", gridTemplateColumns: "46px 1fr auto", alignItems: "center", gap: 10 },
-  trainingBackButton: { width: 42, height: 42, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 22, cursor: "pointer" },
+  trainingScreen: {
+    minHeight: "100vh", padding: "22px 0 30px", boxSizing: "border-box", overflowY: "auto",
+    background: "radial-gradient(circle at 50% 3%, rgba(14,165,233,0.26), transparent 30%), radial-gradient(circle at 92% 42%, rgba(124,58,237,0.14), transparent 34%), linear-gradient(180deg, #071528 0%, #020617 100%)",
+  },
+  trainingHeader: { width: "min(660px, calc(100% - 28px))", margin: "0 auto 26px", display: "grid", gridTemplateColumns: "46px 1fr auto", alignItems: "center", gap: 10 },
+  trainingBackButton: { width: 42, height: 42, borderRadius: 14, border: "1px solid rgba(103,232,249,0.25)", background: "rgba(15,23,42,0.78)", color: "#fff", fontSize: 22, cursor: "pointer", boxShadow: "inset 0 0 18px rgba(56,189,248,0.08)" },
   trainingTitle: { margin: "2px 0 0", fontSize: 31, lineHeight: 1 },
-  trainingProgress: { minWidth: 60, height: 38, padding: "0 12px", borderRadius: 999, display: "grid", placeItems: "center", background: "rgba(103,232,249,0.12)", border: "1px solid rgba(103,232,249,0.32)", color: "#a5f3fc", fontWeight: 900 },
-  trainingTrack: { width: "min(520px, 100%)", margin: "0 auto", display: "grid", gap: 10 },
-  trainingStage: { width: "100%", minHeight: 94, borderRadius: 21, padding: 12, boxSizing: "border-box", display: "grid", gridTemplateColumns: "52px 1fr 28px", gap: 10, alignItems: "center", textAlign: "left", color: "#fff" },
-  trainingStageActive: { border: "1px solid rgba(103,232,249,0.74)", background: "linear-gradient(135deg, rgba(37,99,235,0.50), rgba(8,145,178,0.28)), rgba(15,23,42,0.94)", boxShadow: "0 16px 44px rgba(0,0,0,0.32), 0 0 26px rgba(34,211,238,0.18)", cursor: "pointer" },
-  trainingStageLocked: { border: "1px solid rgba(255,255,255,0.09)", background: "rgba(15,23,42,0.78)", opacity: 0.48 },
-  trainingStageNumber: { width: 48, height: 48, borderRadius: 16, display: "grid", placeItems: "center", background: "rgba(103,232,249,0.11)", border: "1px solid rgba(103,232,249,0.22)", color: "#a5f3fc", fontWeight: 950 },
-  trainingStageInfo: { minWidth: 0, display: "flex", flexDirection: "column", gap: 4 },
-  trainingStageStatus: { width: "fit-content", marginTop: 2, color: "#67e8f9", fontSize: 9, fontWeight: 950, letterSpacing: "0.12em" },
-  trainingStageLockedText: { width: "fit-content", marginTop: 2, color: "rgba(255,255,255,0.46)", fontSize: 9, fontWeight: 950, letterSpacing: "0.12em" },
-  trainingStageArrow: { color: "#67e8f9", fontSize: 30, textAlign: "center" },
-  trainingLock: { color: "rgba(255,255,255,0.46)", fontSize: 22, textAlign: "center" },
-  trainingRewardCard: { width: "min(520px, 100%)", margin: "14px auto 0", minHeight: 66, borderRadius: 20, padding: "12px 16px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.22)", color: "#fde68a" },
+  trainingProgress: { minWidth: 60, height: 38, padding: "0 12px", borderRadius: 999, display: "grid", placeItems: "center", background: "rgba(103,232,249,0.12)", border: "1px solid rgba(103,232,249,0.36)", color: "#a5f3fc", fontWeight: 900, boxShadow: "0 0 22px rgba(34,211,238,0.12)" },
+  trainingRouteViewport: {
+    position: "relative", width: "100%", minHeight: 152, padding: "18px 22px 10px", boxSizing: "border-box",
+    display: "grid", gridTemplateColumns: "repeat(5, minmax(92px, 1fr))", gap: 12,
+    overflowX: "auto", scrollbarWidth: "none",
+  },
+  trainingRouteLine: {
+    position: "absolute", left: 74, right: 74, top: 62, height: 4, borderRadius: 999,
+    background: "linear-gradient(90deg, #22d3ee 0 10%, rgba(71,85,105,0.48) 18% 100%)",
+    boxShadow: "0 0 16px rgba(34,211,238,0.42)",
+  },
+  trainingRouteStage: { position: "relative", minWidth: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 },
+  trainingRouteNode: {
+    position: "relative", width: 86, height: 86, borderRadius: "50%", display: "grid", placeItems: "center",
+    color: "#fff", fontWeight: 950, fontSize: 13, zIndex: 2, overflow: "visible",
+  },
+  trainingRouteNodeActive: {
+    border: "2px solid #67e8f9", background: "radial-gradient(circle at 36% 30%, #dffcff 0 5%, #0ea5e9 16%, #1d4ed8 55%, #111827 100%)",
+    boxShadow: "0 0 0 7px rgba(34,211,238,0.11), 0 0 34px rgba(34,211,238,0.68), inset 0 0 22px rgba(255,255,255,0.24)", cursor: "pointer",
+  },
+  trainingRouteNodeLocked: {
+    border: "2px solid rgba(100,116,139,0.42)", background: "radial-gradient(circle at 35% 30%, #334155, #0f172a 68%)",
+    boxShadow: "0 0 0 6px rgba(51,65,85,0.16), inset 0 0 20px rgba(2,6,23,0.7)", opacity: 0.62,
+  },
+  trainingRouteOrbit: { position: "absolute", inset: -8, border: "1px solid currentColor", borderRadius: "50%", opacity: 0.32, transform: "rotate(-18deg) scaleY(.58)" },
+  trainingRouteIcon: { position: "absolute", top: 16, fontSize: 22, color: "#dffcff", textShadow: "0 0 12px #22d3ee" },
+  trainingRouteNodeLocked: { border: "2px solid rgba(100,116,139,0.42)", background: "radial-gradient(circle at 35% 30%, #334155, #0f172a 68%)", boxShadow: "0 0 0 6px rgba(51,65,85,0.16), inset 0 0 20px rgba(2,6,23,0.7)", opacity: 0.62 },
+  trainingRouteLock: { position: "absolute", right: -3, bottom: 5, width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center", background: "#0f172a", border: "1px solid #475569", color: "#64748b" },
+  trainingRouteLabel: { color: "rgba(148,163,184,0.7)", textAlign: "center", fontSize: 9, fontWeight: 950, letterSpacing: ".09em", lineHeight: 1.35 },
+  trainingRouteLabelActive: { color: "#a5f3fc", textShadow: "0 0 10px rgba(34,211,238,0.55)" },
+  trainingRouteArrow: { position: "absolute", top: 30, right: -15, color: "rgba(103,232,249,0.42)", fontSize: 28, zIndex: 3 },
+  trainingStageFocus: {
+    position: "relative", width: "min(620px, calc(100% - 28px))", minHeight: 154, margin: "10px auto 0", padding: 16,
+    boxSizing: "border-box", borderRadius: 25, display: "grid", gridTemplateColumns: "58px minmax(0,1fr) auto", gap: 12, alignItems: "center",
+    background: "linear-gradient(135deg, rgba(29,78,216,0.48), rgba(8,145,178,0.22)), rgba(15,23,42,0.94)",
+    border: "1px solid rgba(103,232,249,0.72)", boxShadow: "0 20px 54px rgba(0,0,0,0.4), 0 0 30px rgba(34,211,238,0.18)", overflow: "hidden",
+  },
+  trainingStageFocusGlow: { position: "absolute", width: 170, height: 170, right: -58, top: -72, borderRadius: "50%", background: "rgba(34,211,238,0.16)", filter: "blur(10px)" },
+  trainingStageFocusNumber: { width: 54, height: 54, borderRadius: 18, display: "grid", placeItems: "center", background: "rgba(103,232,249,0.14)", border: "1px solid rgba(103,232,249,0.48)", color: "#dffcff", fontWeight: 950, fontSize: 18 },
+  trainingStageFocusContent: { minWidth: 0, display: "flex", flexDirection: "column", gap: 5 },
+  trainingStageLaunch: { minWidth: 82, height: 44, border: 0, borderRadius: 14, color: "#fff", fontWeight: 950, background: "linear-gradient(135deg,#2563eb,#06b6d4)", boxShadow: "0 0 20px rgba(34,211,238,.34)", cursor: "pointer", zIndex: 1 },
+  trainingLockedPreview: { width: "min(620px, calc(100% - 28px))", minHeight: 72, margin: "10px auto 0", padding: "10px 14px", boxSizing: "border-box", borderRadius: 20, display: "grid", gridTemplateColumns: "40px 1fr auto", gap: 10, alignItems: "center", background: "rgba(15,23,42,.72)", border: "1px solid rgba(148,163,184,.13)", color: "rgba(148,163,184,.58)" },
+  trainingRewardCard: { width: "min(620px, calc(100% - 28px))", margin: "12px auto 0", minHeight: 66, borderRadius: 20, padding: "12px 16px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.22)", color: "#fde68a" },
   trainingIntroOverlay: { position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, boxSizing: "border-box", background: "radial-gradient(circle at 50% 42%, rgba(14,116,144,.32), transparent 28%), linear-gradient(180deg, #020617, #00040c)", opacity: 1, transition: "opacity .52s ease, transform .52s ease", animation: "trainingIntroReveal .7s ease-out both", pointerEvents: "none" },
   trainingIntroOverlayLaunch: { opacity: 0, transform: "scale(1.08)" },
   trainingIntroOrbit: { position: "relative", width: 178, height: 122, display: "grid", placeItems: "center", animation: "trainingIntroOrbitSpin 7s linear infinite" },
