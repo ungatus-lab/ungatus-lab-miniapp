@@ -1998,7 +1998,8 @@ resetArena();
           : tutorialStep === "barracks"
             ? "Barracks"
             : null;
-    if (!expectedType || type !== expectedType) return;
+    const restricted = isTutorialBuildStep();
+    if (restricted && type !== expectedType) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -2011,6 +2012,12 @@ resetArena();
     const startY = cardRect.top + cardRect.height / 2;
     buildCardDragRef.current = { pointerId: event.pointerId, type, active: true, startX, startY };
     setBuildCardDrag({ type, x: event.clientX, y: event.clientY });
+    if (!restricted) {
+      setSelectedBuildingType(type);
+      setBuildMode(true);
+      updateSelectedBuilding(null);
+      updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(event.clientX, event.clientY)));
+    }
   }
 
   function moveBuildCardDrag(event) {
@@ -2019,6 +2026,10 @@ resetArena();
     event.preventDefault();
     event.stopPropagation();
     setBuildCardDrag({ type: drag.type, x: event.clientX, y: event.clientY });
+    if (!isTutorialBuildStep()) {
+      setSelectedBuildingType(drag.type);
+      updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(event.clientX, event.clientY)));
+    }
   }
 
   function endBuildCardDrag(event) {
@@ -2048,7 +2059,8 @@ resetArena();
     if (restricted) {
       updateBuildPreview(makeBuildPreviewFromGrid(getTutorialPlacement(type), type));
     } else {
-      updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(event.clientX, event.clientY)));
+      const droppedPreview = makeBuildPreviewFromPoint(cityScreenToWorld(event.clientX, event.clientY));
+      updateBuildPreview(droppedPreview);
     }
   }
 
@@ -2073,7 +2085,11 @@ resetArena();
       const suggested = getTutorialPlacement(type);
       updateBuildPreview(makeBuildPreviewFromGrid(suggested, type));
     } else {
-      updateBuildPreview(null);
+      const canvas = canvasRef.current;
+      const rect = canvas?.getBoundingClientRect();
+      const centerX = rect ? rect.left + canvas.clientWidth / 2 : viewport.width / 2;
+      const centerY = rect ? rect.top + canvas.clientHeight / 2 : viewport.height / 2;
+      updateBuildPreview(makeBuildPreviewFromPoint(cityScreenToWorld(centerX, centerY)));
     }
   }
 
