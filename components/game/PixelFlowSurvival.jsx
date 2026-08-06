@@ -3927,46 +3927,21 @@ resetArena();
               )}
               {selectedBuilding && (
                 <div style={styles.buildingPanel}>
-                  <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)}>
-                    ×
-                  </button>
-
-                  <div style={styles.panelIcon}>
-                    {selectedBuilding.type === "CrystalPoint"
-                      ? "◆"
-                      : selectedBuilding.type === "House"
-                        ? "■"
-                        : selectedBuilding.type === "Barracks"
-                          ? "▲"
-                          : "⌂"}
+                  <div style={styles.buildingPanelMain}>
+                    <div style={styles.panelIcon}>{selectedBuilding.type === "CrystalPoint" ? "◆" : selectedBuilding.type === "House" ? "■" : selectedBuilding.type === "Barracks" ? "▲" : "⌂"}</div>
+                    <div style={styles.panelInfo}>
+                      <strong>Lv {selectedBuilding.level || 1}</strong>
+                      <small>{selectedBuilding.type === "CrystalPoint" ? `+${selectedBuilding.level || 1}/s` : selectedBuilding.type === "House" ? `+${(selectedBuilding.level || 1) * 5}👥 +${(selectedBuilding.level || 1) * 25}⚔` : selectedBuilding.type === "Barracks" ? `Guard Lv${selectedBuilding.level || 1}` : `City Lv${cityStats.level}`}</small>
+                    </div>
+                    <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)} title="Close">×</button>
                   </div>
-
-                  <div style={styles.panelInfo}>
-                    <strong>Lv {selectedBuilding.level || 1}</strong>
-                    <small>
-                      {selectedBuilding.type === "CrystalPoint"
-                        ? `+${selectedBuilding.level || 1}/s`
-                        : selectedBuilding.type === "House"
-                          ? `+${(selectedBuilding.level || 1) * 5}👥 +${(selectedBuilding.level || 1) * 25}⚔`
-                          : selectedBuilding.type === "Barracks"
-                            ? `Guard Lv${selectedBuilding.level || 1}`
-                            : `City Lv${cityStats.level}`}
-                    </small>
-                  </div>
-
                   {selectedBuilding.type !== "Citadel" && (
                     <div style={styles.buildingActionGroup}>
-                      <button style={styles.moveBuildingButton} disabled={!isFreeCityEditMode()} onClick={() => beginMovingBuilding(selectedBuilding)} title="Move">✥</button>
-                      <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
-                      <button style={styles.deleteBuildingButton} disabled={!isFreeCityEditMode()} onClick={deleteSelectedBuilding} title="Delete">⌫</button>
+                      <button style={styles.moveBuildingButton} disabled={!isFreeCityEditMode()} onClick={() => beginMovingBuilding(selectedBuilding)} title="Move">✥ <small>MOVE</small></button>
+                      <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade">⇧ <small>{getUpgradeCostLabel(selectedBuilding)}</small></button>
+                      <button style={{ ...styles.deleteBuildingButton, ...(!isFreeCityEditMode() ? styles.upgradeButtonDisabled : {}) }} disabled={!isFreeCityEditMode()} onClick={deleteSelectedBuilding} title="Delete">🗑 <small>DELETE</small></button>
                     </div>
                   )}
-                </div>
-              )}
-
-              {shouldShowMapTutorialArrow() && (
-                <div style={styles.tutorialMapArrow}>
-                  <div style={styles.macroPointer}>☟︎</div>
                 </div>
               )}
 
@@ -5863,21 +5838,15 @@ const styles = {
   },
 
   buildingPanel: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: 76,
-    minHeight: 62,
-    borderRadius: 22,
-    padding: 10,
-    zIndex: 8,
-    background: "rgba(15,23,42,0.95)",
-    border: "1px solid rgba(251,191,36,0.22)",
-    boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
-    display: "grid",
-    gridTemplateColumns: "48px 1fr minmax(126px, auto) 32px",
-    gap: 8,
-    alignItems: "center",
+    position: "absolute", left: 10, right: 10, bottom: 76, minHeight: 104,
+    borderRadius: 20, padding: 8, zIndex: 8, boxSizing: "border-box", overflow: "hidden",
+    background: "rgba(15,23,42,0.96)", border: "1px solid rgba(251,191,36,0.22)",
+    boxShadow: "0 18px 48px rgba(0,0,0,0.46)", display: "grid",
+    gridTemplateRows: "44px 42px", gap: 6,
+  },
+  buildingPanelMain: {
+    minWidth: 0, display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) 30px",
+    gap: 8, alignItems: "center",
   },
 
   panelIcon: {
@@ -5901,17 +5870,20 @@ const styles = {
     fontWeight: 900,
   },
 
-  buildingActionGroup: { display: "grid", gridTemplateColumns: "34px minmax(72px,1fr) 34px", gap: 4, alignItems: "center" },
-  moveBuildingButton: { width: 34, height: 38, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#0e7490,#2563eb)", color: "#fff", fontWeight: 900, fontSize: 18 },
-  deleteBuildingButton: { width: 34, height: 38, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#991b1b,#ef4444)", color: "#fff", fontWeight: 900, fontSize: 18 },
+  buildingActionGroup: {
+    minWidth: 0, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 5,
+  },
+  moveBuildingButton: {
+    minWidth: 0, height: 42, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#0e7490,#2563eb)", color: "#fff",
+    fontWeight: 900, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer",
+  },
+  deleteBuildingButton: {
+    minWidth: 0, height: 42, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#991b1b,#ef4444)", color: "#fff",
+    fontWeight: 900, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer",
+  },
   upgradeButton: {
-    minHeight: 38,
-    border: 0,
-    borderRadius: 14,
-    background: "linear-gradient(135deg, #f59e0b, #22c55e)",
-    color: "#ffffff",
-    fontWeight: 900,
-    cursor: "pointer",
+    minWidth: 0, height: 42, border: 0, borderRadius: 12, background: "linear-gradient(135deg, #f59e0b, #22c55e)", color: "#fff",
+    fontWeight: 900, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer",
   },
 
   upgradeButtonDisabled: {
