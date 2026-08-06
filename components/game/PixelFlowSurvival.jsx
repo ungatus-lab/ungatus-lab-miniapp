@@ -113,13 +113,17 @@ function getTotalOwnedGuards(stats, marches) {
 }
 
 function getXpRequiredForLevel(level) {
-  if (level <= 1) return 0;
-  if (level === 2) return 100;
-  return Math.floor(100 * Math.pow(level - 1, 1.65));
+  if (level <= 1) return 100;
+  if (level === 2) return 300;
+  if (level === 3) return 750;
+  if (level === 4) return 1500;
+  if (level === 5) return 3000;
+  return Math.round(3000 * Math.pow(1.65, level - 5));
 }
-
-function getNextLevelXp(level) {
-  return getXpRequiredForLevel(level + 1);
+function getNextLevelXp(level) { return getXpRequiredForLevel(level); }
+function getMonsterXpMultiplier(coreLevel, monsterLevel) {
+  const difference = monsterLevel - coreLevel;
+  return difference >= 0 ? Math.pow(1.2, difference) : Math.pow(0.8, Math.abs(difference));
 }
 
 function getMonsterTier(type) {
@@ -1267,44 +1271,41 @@ resetArena();
     setCityStats({ ...stats });
   }
 
-  function applyCityLevelProgression() {
+  function applyLevelUpEffects() {
     const stats = cityStatsRef.current;
-    let changed = false;
-
-    while (stats.level < 100 && stats.xp >= getNextLevelXp(stats.level)) {
-      stats.level += 1;
-      stats.nextLevelXp = getNextLevelXp(stats.level);
-      stats.guardCap += 5;
-      changed = true;
-
-      if (stats.level >= 10) {
-        stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
-      }
-
-      if (stats.level === 5) {
-        stats.guardCap += 10;
-      }
-
-      if (stats.level === 10) {
-        stats.guardCap += 25;
-      }
-
-      if (stats.level === 20) {
-        stats.guardCap += 50;
-      }
+    stats.nextLevelXp = getNextLevelXp(stats.level);
+    stats.guardCap += 5;
+    if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
+    if (stats.level === 5) stats.guardCap += 10;
+    if (stats.level === 10) stats.guardCap += 25;
+    if (stats.level === 20) stats.guardCap += 50;
+  }
+  function awardMonsterVictoryXp(monster) {
+    const stats = cityStatsRef.current;
+    const player = playerRef.current;
+    let remainingEnemyUnits = Math.max(0, Number(monster.maxHp || monster.hp || 0));
+    let totalAwarded = 0;
+    while (remainingEnemyUnits > 0.000001 && stats.level < 100) {
+      const required = getNextLevelXp(stats.level);
+      const room = Math.max(0, required - stats.xp);
+      const multiplier = getMonsterXpMultiplier(stats.level, monster.armor || 1);
+      const consumedUnits = Math.min(remainingEnemyUnits, room / Math.max(0.000001, multiplier));
+      const awardedNow = consumedUnits * multiplier;
+      stats.xp += awardedNow;
+      totalAwarded += awardedNow;
+      remainingEnemyUnits -= consumedUnits;
+      if (stats.xp + 0.000001 >= required) {
+        stats.xp = Math.max(0, stats.xp - required);
+        stats.level += 1;
+        applyLevelUpEffects();
+      } else break;
     }
-
-    if (changed && playerRef.current) {
-      playerRef.current.level = stats.level;
-
-      setHud((current) => ({
-        ...current,
-        level: stats.level,
-        status: `Level ${stats.level}`,
-      }));
-    }
-
+    if (stats.level >= 100) stats.xp = 0;
+    stats.nextLevelXp = getNextLevelXp(stats.level);
+    if (player) { player.level = stats.level; player.score += totalAwarded; }
+    setHud((current) => ({ ...current, level: stats.level, score: Math.round(player?.score || current.score), status: `+${totalAwarded.toFixed(2)} XP` }));
     setCityStats({ ...stats });
+    return totalAwarded;
   }
 
   function updateTeleportEffect(dt) {
@@ -1443,25 +1444,8 @@ resetArena();
                     ? 24
                     : 14;
 
-          const rewardXp =
-            monster.type === "giant"
-              ? 130
-              : monster.type === "brute"
-                ? 70
-                : monster.type === "beast"
-                  ? 35
-                  : monster.type === "wild"
-                    ? 18
-                    : 10;
-
           stats.crystals += rewardCrystals;
-          stats.xp += rewardXp;
-
-          applyCityLevelProgression();
-
-          if (player) {
-            player.score += rewardXp;
-          }
+          const rewardXp = awardMonsterVictoryXp(monster);
 
           world.monsters = world.monsters.filter((item) => item.id !== monster.id);
 
@@ -3348,7 +3332,7 @@ resetArena();
                   <span>★</span>
                   <strong>{cityStats.level}</strong>
                   <small>
-                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
+                    {cityStats.xp < 10 && cityStats.xp % 1 !== 0 ? cityStats.xp.toFixed(2) : Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
                   </small>
                 </div>
 
@@ -3651,7 +3635,7 @@ resetArena();
                   <span>★</span>
                   <strong>{cityStats.level}</strong>
                   <small>
-                    {Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
+                    {cityStats.xp < 10 && cityStats.xp % 1 !== 0 ? cityStats.xp.toFixed(2) : Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
                   </small>
                 </div>
                 <div style={styles.topResourceChip} title="Army">
