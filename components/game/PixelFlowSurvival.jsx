@@ -17,9 +17,12 @@ const GRID_STEP = 110;
 const MAJOR_GRID_STEP = GRID_STEP * 2;
 const CAMERA_OUTSIDE_PADDING = 950;
 
-const CITY_WIDTH = 2200;
-const CITY_HEIGHT = 1600;
 const CITY_GRID_STEP = 100;
+const CITY_BASE_MODULES = 4;
+const CITY_MODULE_SIZE = 2;
+const CITY_LEVEL_ONE_CELLS = CITY_BASE_MODULES * CITY_MODULE_SIZE;
+const CITY_WIDTH = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
+const CITY_HEIGHT = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
 const CITY_OUTSIDE_PADDING = 900;
 const CITY_MIN_ZOOM = 0.32;
 const CITY_MAX_ZOOM = 1.1;
@@ -270,27 +273,11 @@ function createWorld() {
 }
 
 function createCityState() {
-  const citadelX =
-    Math.floor(CITY_WIDTH / 2 / CITY_GRID_STEP) * CITY_GRID_STEP - CITY_GRID_STEP;
-  const citadelY =
-    Math.floor(CITY_HEIGHT / 2 / CITY_GRID_STEP) * CITY_GRID_STEP - CITY_GRID_STEP;
-
-  return {
-    buildings: [
-      {
-        id: "citadel",
-        type: "Citadel",
-        level: 1,
-        x: citadelX,
-        y: citadelY,
-        w: 2,
-        h: 2,
-        color: "#38bdf8",
-      },
-    ],
-  };
+  const citadelSize = 4;
+  const citadelX = CITY_WIDTH / 2 - (citadelSize * CITY_GRID_STEP) / 2;
+  const citadelY = CITY_HEIGHT / 2 - (citadelSize * CITY_GRID_STEP) / 2;
+  return { buildings: [{ id: "citadel", type: "Citadel", level: 1, x: citadelX, y: citadelY, w: citadelSize, h: citadelSize, color: "#38bdf8" }] };
 }
-
 function snapPointToLandingGrid(point, radius = 30) {
   const snappedX =
     Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
@@ -880,47 +867,11 @@ resetArena();
   function getTutorialPlacement(type) {
     const citadel = getCitadelBuilding();
     const definition = BUILDINGS[type] || BUILDINGS.House;
-
-    if (!citadel) {
-      return snapCityPointToGrid(
-        { x: CITY_WIDTH / 2, y: CITY_HEIGHT / 2 },
-        definition.w,
-        definition.h
-      );
-    }
-
-    if (type === "House") {
-      return snapCityPointToGrid(
-        {
-          x: citadel.x,
-          y: citadel.y + citadel.h * CITY_GRID_STEP,
-        },
-        definition.w,
-        definition.h
-      );
-    }
-
-    if (type === "CrystalPoint") {
-      return snapCityPointToGrid(
-        {
-          x: citadel.x - definition.w * CITY_GRID_STEP,
-          y: citadel.y - definition.h * CITY_GRID_STEP - CITY_GRID_STEP,
-        },
-        definition.w,
-        definition.h
-      );
-    }
-
-    return snapCityPointToGrid(
-      {
-        x: citadel.x + citadel.w * CITY_GRID_STEP,
-        y: citadel.y - definition.h * CITY_GRID_STEP - CITY_GRID_STEP,
-      },
-      definition.w,
-      definition.h
-    );
+    if (!citadel) return snapCityPointToGrid({ x: CITY_WIDTH / 2, y: CITY_HEIGHT / 2 }, definition.w, definition.h);
+    if (type === "House") return snapCityPointToGrid({ x: citadel.x + CITY_GRID_STEP, y: citadel.y + citadel.h * CITY_GRID_STEP }, definition.w, definition.h);
+    if (type === "CrystalPoint") return snapCityPointToGrid({ x: citadel.x - definition.w * CITY_GRID_STEP, y: citadel.y }, definition.w, definition.h);
+    return snapCityPointToGrid({ x: citadel.x + citadel.w * CITY_GRID_STEP, y: citadel.y }, definition.w, definition.h);
   }
-
   function resetArena() {
     worldRef.current = createWorld();
     cityRef.current = createCityState();
@@ -4873,10 +4824,14 @@ function drawCitadelBuilding(ctx, building, width, height, cx, cy) {
   const now = Date.now() / 1000;
   const level = building.level || 1;
   const pulse = 1 + Math.sin(now * 1.8) * 0.035;
-  const bodyRadius = Math.min(width, height) * 0.36;
-
-  drawModulePad(ctx, cx, cy + 18, width * 0.72, height * 0.47, "#38bdf8");
-  drawModuleLegs(ctx, cx, cy + 30, width * 0.29, height * 0.24, "#0ea5e9");
+  const bodyRadius = Math.min(width, height) * 0.27;
+  const moduleOffsetX = width * 0.235;
+  const moduleOffsetY = height * 0.19;
+  for (const sideX of [-1, 1]) {
+    for (const sideY of [-1, 1]) drawModulePad(ctx, cx + sideX * moduleOffsetX, cy + sideY * moduleOffsetY + 18, width * 0.36, height * 0.22, "#38bdf8");
+  }
+  drawModulePad(ctx, cx, cy + 24, width * 0.58, height * 0.34, "#38bdf8");
+  drawModuleLegs(ctx, cx, cy + 42, width * 0.34, height * 0.2, "#0ea5e9");
 
   ctx.save();
   ctx.translate(cx, cy - 3);
