@@ -740,7 +740,16 @@ resetArena();
     if (!building || building.type === "Citadel") return;
     updateSelectedBuilding(null);
     const bounds = boundsForBuildings([building]);
-    publishGroupSelection({ active: true, ids: [building.id], bounds, phase: "armed", anchor: { x: bounds.left, y: bounds.top } });
+    // Keep the complete first-building rectangle as the fixed selection origin.
+    // A single top-left point made upward and leftward dragging start inside the
+    // building, so adjacent buildings in those directions could be missed.
+    publishGroupSelection({
+      active: true,
+      ids: [building.id],
+      bounds,
+      phase: "armed",
+      anchor: { ...bounds },
+    });
   }
   function getGroupUpgradePlan() {
     let crystals = cityStatsRef.current.crystals, workers = cityStatsRef.current.workers;
@@ -2990,10 +2999,33 @@ resetArena();
         for(const pos of next){ const building=cityRef.current.buildings.find((b)=>b.id===pos.id); if(building){building.x=pos.x;building.y=pos.y;} }
         publishGroupSelection({...groupSelectionRef.current,bounds:boundsForBuildings(getGroupBuildings()),moveValid:valid});
       } else if(groupSelectionRef.current.phase === "armed" && gesture.dragging){
-        const anchor=groupSelectionRef.current.anchor || gesture.downWorld;
-        const picked=buildingsInsideRect(anchor,point);
-        const ids=picked.map((b)=>b.id);
-        publishGroupSelection({active:true,ids,bounds:{left:Math.min(anchor.x,point.x),top:Math.min(anchor.y,point.y),right:Math.max(anchor.x,point.x),bottom:Math.max(anchor.y,point.y)},phase:"armed",anchor});
+        const anchor = groupSelectionRef.current.anchor;
+        const seedBounds = anchor && Number.isFinite(anchor.left)
+          ? anchor
+          : groupSelectionRef.current.bounds;
+        if (seedBounds) {
+          // Expand from the nearest edge of the originally selected building.
+          // This keeps the seed building fully enclosed and makes all four drag
+          // directions symmetrical: up, down, left and right.
+          const selectionBounds = {
+            left: point.x < seedBounds.left ? point.x : seedBounds.left,
+            top: point.y < seedBounds.top ? point.y : seedBounds.top,
+            right: point.x > seedBounds.right ? point.x : seedBounds.right,
+            bottom: point.y > seedBounds.bottom ? point.y : seedBounds.bottom,
+          };
+          const picked = buildingsInsideRect(
+            { x: selectionBounds.left, y: selectionBounds.top },
+            { x: selectionBounds.right, y: selectionBounds.bottom }
+          );
+          const ids = picked.map((b) => b.id);
+          publishGroupSelection({
+            active: true,
+            ids,
+            bounds: selectionBounds,
+            phase: "armed",
+            anchor: seedBounds,
+          });
+        }
       }
       pointerState.dragging=true; return;
     }
