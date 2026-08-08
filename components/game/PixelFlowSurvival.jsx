@@ -1182,6 +1182,28 @@ resetArena();
     const guide = mapTutorialGuideRef.current;
     const camera = cameraRef.current;
 
+    if (guide.phase === "zoomout") {
+      if (camera.zoom <= MIN_ZOOM + 0.006) {
+        const monster = findTutorialMonster();
+        const player = playerRef.current;
+        if (!monster || !player) {
+          mapTutorialSeenRef.current = true;
+          updateMapTutorialPhase("off");
+          return;
+        }
+        camera.zoom = MIN_ZOOM;
+        camera.x = (player.x + monster.x) / 2;
+        camera.y = (player.y + monster.y) / 2;
+        clampCameraToWorld();
+        forceLandingPreviewRender();
+        mapTutorialTargetRef.current = monster;
+        setMapTutorialTarget({ ...monster });
+        guide.zoomStart = camera.zoom;
+        updateMapTutorialPhase("monsterPointer");
+      }
+      return;
+    }
+
     if (mapTutorialZoomRef.current.active) {
       const zoomEffect = mapTutorialZoomRef.current;
       const targetZoom = zoomEffect.targetZoom;
@@ -2018,7 +2040,7 @@ resetArena();
   function backToMap() {
     setUtilityMenuOpen(false); setMonsterSearchOpen(false);
     if (tutorialStep === "map") {
-      mapTutorialZoomRef.current = { active: true, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
+      mapTutorialZoomRef.current = { active: false, targetZoom: MIN_ZOOM, mode: "tutorialMonster", targetX: null, targetY: null };
       mapTutorialTargetRef.current = null;
       setMapTutorialTarget(null);
       updateMapTutorialPhase("zoomout");
@@ -3648,6 +3670,13 @@ resetArena();
                 </div>
               </header>
 
+              {(mapTutorialPhase === "zoomout" || mapTutorialPhase === "monsterZoom") && (
+                <div style={styles.mapZoomMissionCard}>
+                  <span>{mapTutorialPhase === "zoomout" ? "↘↖" : "↗↙"}</span>
+                  <div><small>WORLD CONTROL</small><strong>{mapTutorialPhase === "zoomout" ? "ZOOM OUT TO MAXIMUM" : "ZOOM IN ON THE TARGET"}</strong></div>
+                  <b>{mapTutorialPhase === "zoomout" ? `${Math.round(((MAX_ZOOM-cameraRef.current.zoom)/(MAX_ZOOM-MIN_ZOOM))*100)}%` : `${Math.round(((cameraRef.current.zoom-MIN_ZOOM)/(MAX_ZOOM-MIN_ZOOM))*100)}%`}</b>
+                </div>
+              )}
               {mapTutorialPhase === "zoomout" && (
                 <div style={styles.mapTutorialGesture}>
                   <div style={styles.mapTutorialGestureLabel}>ZOOM OUT</div>
@@ -5635,6 +5664,7 @@ const styles = {
   tutorialMissionTrack: { height:4,borderRadius:999,overflow:"hidden",marginTop:4,background:"rgba(255,255,255,.09)" },
   tutorialMissionFill: { display:"block",height:"100%",borderRadius:999,background:"linear-gradient(90deg,#22d3ee,#22c55e)",boxShadow:"0 0 10px rgba(34,211,238,.8)",transition:"width .28s ease" },
   tutorialMissionCompleteToast: { position:"absolute",left:"50%",top:"28%",zIndex:22,width:"min(310px,calc(100% - 38px))",minHeight:92,transform:"translate(-50%,-50%)",padding:14,boxSizing:"border-box",borderRadius:24,display:"grid",gridTemplateColumns:"54px 1fr",gap:12,alignItems:"center",background:"linear-gradient(135deg,rgba(20,83,45,.98),rgba(6,78,59,.98))",border:"1px solid rgba(134,239,172,.75)",boxShadow:"0 24px 80px rgba(0,0,0,.58),0 0 38px rgba(34,197,94,.32)",pointerEvents:"none",animation:"tutorialMissionComplete .36s cubic-bezier(.22,.9,.3,1) both" },
+  mapZoomMissionCard: { position:"absolute",left:10,right:10,top:60,zIndex:12,minHeight:62,padding:"8px 12px",boxSizing:"border-box",borderRadius:18,display:"grid",gridTemplateColumns:"42px 1fr auto",gap:9,alignItems:"center",background:"linear-gradient(135deg,rgba(8,47,73,.96),rgba(15,23,42,.97))",border:"1px solid rgba(103,232,249,.52)",boxShadow:"0 16px 42px rgba(0,0,0,.4),0 0 24px rgba(34,211,238,.16)",pointerEvents:"none",animation:"tutorialMissionEnter .34s cubic-bezier(.22,.9,.3,1) both" },
   mapTutorialGesture: {
     position: "absolute",
     left: "50%",
