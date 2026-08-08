@@ -1821,7 +1821,7 @@ resetArena();
     };
   }
 
-  function cityScreenToWorld(clientX, clientY) {
+  function cityScreenToWorldRaw(clientX, clientY) {
     const canvas = canvasRef.current;
     const camera = cityCameraRef.current;
 
@@ -1832,8 +1832,20 @@ resetArena();
     const sy = clientY - rect.top;
 
     return {
-      x: clamp((sx - canvas.clientWidth / 2) / camera.zoom + camera.x, 0, CITY_WIDTH),
-      y: clamp((sy - canvas.clientHeight / 2) / camera.zoom + camera.y, 0, CITY_HEIGHT),
+      x: (sx - canvas.clientWidth / 2) / camera.zoom + camera.x,
+      y: (sy - canvas.clientHeight / 2) / camera.zoom + camera.y,
+    };
+  }
+
+  function isInsideCityTerritory(point) {
+    return point.x >= 0 && point.x <= CITY_WIDTH && point.y >= 0 && point.y <= CITY_HEIGHT;
+  }
+
+  function cityScreenToWorld(clientX, clientY) {
+    const raw = cityScreenToWorldRaw(clientX, clientY);
+    return {
+      x: clamp(raw.x, 0, CITY_WIDTH),
+      y: clamp(raw.y, 0, CITY_HEIGHT),
     };
   }
 
@@ -2900,8 +2912,9 @@ resetArena();
     cityPointerRef.current.lastY = event.clientY;
     cityPointerRef.current.downX = event.clientX;
     cityPointerRef.current.downY = event.clientY;
-    const downWorld = cityScreenToWorld(event.clientX, event.clientY);
-    const downBuilding = findCityBuildingAt(downWorld);
+    const downWorld = cityScreenToWorldRaw(event.clientX, event.clientY);
+    const downInsideTerritory = isInsideCityTerritory(downWorld);
+    const downBuilding = downInsideTerritory ? findCityBuildingAt(downWorld) : null;
     const group = groupSelectionRef.current;
     if (!buildModeRef.current && !buildPreviewRef.current && pointers.size === 1) {
       const insideGroup = group.active && group.bounds && downWorld.x >= group.bounds.left && downWorld.x <= group.bounds.right && downWorld.y >= group.bounds.top && downWorld.y <= group.bounds.bottom;
@@ -3092,7 +3105,11 @@ resetArena();
 
     if (wasTap && !buildModeRef.current && !buildPreviewRef.current) {
       if (groupSelectionRef.current.active) return;
-      const cityPoint = cityScreenToWorld(event.clientX, event.clientY);
+      const cityPoint = cityScreenToWorldRaw(event.clientX, event.clientY);
+      if (!isInsideCityTerritory(cityPoint)) {
+        updateSelectedBuilding(null);
+        return;
+      }
       const building = findCityBuildingAt(cityPoint);
       if (building && isFreeCityEditMode() && building.type !== "Citadel") {
         const now = Date.now();
