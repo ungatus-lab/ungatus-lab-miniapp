@@ -429,6 +429,7 @@ const trainingIntroTimerRef = useRef(null);
   const [buildCardReturn, setBuildCardReturn] = useState(null);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
+  const [buildingPanelVersion, setBuildingPanelVersion] = useState(0);
   const [movingBuilding, setMovingBuilding] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
@@ -701,8 +702,15 @@ resetArena();
   }
 
   function updateSelectedBuilding(nextBuilding) {
+    const previousId = selectedBuildingRef.current?.id ?? null;
+    const nextId = nextBuilding?.id ?? null;
     selectedBuildingRef.current = nextBuilding;
     setSelectedBuildingState(nextBuilding ? { ...nextBuilding } : null);
+    // Remount the card whenever another building is selected. This makes even
+    // identical buildings feel like a new, deliberate selection.
+    if (nextId && nextId !== previousId) {
+      setBuildingPanelVersion((version) => version + 1);
+    }
   }
 
   function setBuildMode(nextValue) {
@@ -3243,6 +3251,16 @@ resetArena();
             0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.18); }
             50% { box-shadow: 0 0 0 6px rgba(239,68,68,0.34); }
           }
+          @keyframes buildingPanelSwap {
+            0% { opacity: 0; transform: translateY(22px) scale(0.975); filter: blur(5px); }
+            55% { opacity: 1; transform: translateY(-2px) scale(1.006); filter: blur(0); }
+            100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+          }
+          @keyframes buildingPanelAccentSweep {
+            0% { transform: translateX(-130%); opacity: 0; }
+            28% { opacity: 0.9; }
+            100% { transform: translateX(130%); opacity: 0; }
+          }
         `}
       </style>
 
@@ -3968,7 +3986,11 @@ resetArena();
                 </div>
               )}
               {selectedBuilding && (
-                <div style={styles.buildingPanel}>
+                <div
+                  key={`${selectedBuilding.id}-${buildingPanelVersion}`}
+                  style={styles.buildingPanel}
+                >
+                  <div style={styles.buildingPanelAccent} />
                   <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)}>
                     ×
                   </button>
@@ -5958,6 +5980,22 @@ const styles = {
     alignItems: "center",
     boxSizing: "border-box",
     overflow: "hidden",
+    animation: "buildingPanelSwap 220ms cubic-bezier(.22,.9,.3,1) both",
+    transformOrigin: "50% 100%",
+    willChange: "transform, opacity, filter",
+  },
+
+  buildingPanelAccent: {
+    position: "absolute",
+    left: -90,
+    top: 0,
+    width: 120,
+    height: 2,
+    borderRadius: 999,
+    background: "linear-gradient(90deg, transparent, rgba(103,232,249,0.95), rgba(251,191,36,0.95), transparent)",
+    boxShadow: "0 0 14px rgba(103,232,249,0.72)",
+    pointerEvents: "none",
+    animation: "buildingPanelAccentSweep 360ms ease-out both",
   },
 
   panelIcon: {
