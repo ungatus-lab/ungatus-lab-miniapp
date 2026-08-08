@@ -869,8 +869,14 @@ resetArena();
     const definition = BUILDINGS[type] || BUILDINGS.House;
     if (!citadel) return snapCityPointToGrid({ x: CITY_WIDTH / 2, y: CITY_HEIGHT / 2 }, definition.w, definition.h);
     if (type === "House") return snapCityPointToGrid({ x: citadel.x + CITY_GRID_STEP, y: citadel.y + citadel.h * CITY_GRID_STEP }, definition.w, definition.h);
-    if (type === "CrystalPoint") return snapCityPointToGrid({ x: citadel.x - definition.w * CITY_GRID_STEP, y: citadel.y }, definition.w, definition.h);
-    return snapCityPointToGrid({ x: citadel.x + citadel.w * CITY_GRID_STEP, y: citadel.y }, definition.w, definition.h);
+    if (type === "CrystalPoint") return snapCityPointToGrid({
+      x: citadel.x - definition.w * CITY_GRID_STEP,
+      y: citadel.y - definition.h * CITY_GRID_STEP,
+    }, definition.w, definition.h);
+    return snapCityPointToGrid({
+      x: citadel.x + citadel.w * CITY_GRID_STEP,
+      y: citadel.y - definition.h * CITY_GRID_STEP,
+    }, definition.w, definition.h);
   }
   function resetArena() {
     worldRef.current = createWorld();
