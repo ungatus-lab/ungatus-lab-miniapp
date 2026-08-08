@@ -411,6 +411,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const buildMenuTutorialTimerRef = useRef(null);
 const trainingIntroTimerRef = useRef(null);
   const cityTutorialTimerRef = useRef(null);
+  const tutorialMissionTimerRef = useRef(null);
+  const [tutorialMissionComplete, setTutorialMissionComplete] = useState(null);
   const [profile, setProfile] = useState(initialProfile);
   const [landingPreview, setLandingPreviewState] = useState(null);
   const [buildPreview, setBuildPreviewState] = useState(null);
@@ -484,6 +486,7 @@ resetArena();
       if (buildMenuTutorialTimerRef.current) clearTimeout(buildMenuTutorialTimerRef.current);
       if (buildCardReturnTimerRef.current) clearTimeout(buildCardReturnTimerRef.current);
       if (groupGestureRef.current.timer) clearTimeout(groupGestureRef.current.timer);
+      if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
     };
   }, []);
 
@@ -587,6 +590,10 @@ resetArena();
       ? worldToScreen(tutorialLandingTargetRef.current.x, tutorialLandingTargetRef.current.y)
       : null;
   const tutorialStep = getTutorialStep();
+  const tutorialMission = getTutorialMission(tutorialStep);
+  const tutorialMissionProgress = tutorialMission
+    ? Math.min(tutorialMission.target, getCityBuildingCount(tutorialMission.type))
+    : 0;
   const tutorialDragType =
     tutorialStep === "houses"
       ? "House"
@@ -834,6 +841,15 @@ resetArena();
     }
     return "done";
   }
+  function getTutorialMission(step) {
+    if (step === "houses" || step === "housesBuilding") return { key: "houses", index: 1, total: 3, type: "House", target: TUTORIAL_HOUSE_TARGET, icon: "■", title: "BUILD 3 HOUSES", detail: "Expand worker and army capacity" };
+    if (step === "crystals" || step === "crystalsBuilding") return { key: "crystals", index: 2, total: 3, type: "CrystalPoint", target: TUTORIAL_CRYSTAL_TARGET, icon: "◆", title: "BUILD 4 CRYSTAL POINTS", detail: "Establish crystal production" };
+    if (step === "map") return { key: "map", index: 3, total: 3, type: null, target: 1, icon: "⌖", title: "OPEN THE WORLD MAP", detail: "Continue the Core Foundation route" };
+    if (step === "barracks" || step === "barracksBuilding") return { key: "barracks", index: 1, total: 1, type: "Barracks", target: TUTORIAL_BARRACKS_TARGET, icon: "▲", title: "BUILD 4 BARRACKS", detail: "Prepare the first Core Guards" };
+    if (step === "mapAfterBarracks") return { key: "mapAfterBarracks", index: 1, total: 1, type: null, target: 1, icon: "⌖", title: "RETURN TO THE WORLD", detail: "Deploy the new Core Guards" };
+    return null;
+  }
+
   function isTutorialConstructionWaiting() {
     return tutorialStep === "housesBuilding" || tutorialStep === "crystalsBuilding" || tutorialStep === "barracksBuilding";
   }
@@ -913,6 +929,7 @@ resetArena();
     updateMapTutorialPhase("off");
     setMapTutorialTarget(null);
     setTutorialThreatCardVisible(false);
+    setTutorialMissionComplete(null);
     setUtilityMenuOpen(false);
     setMonsterSearchOpen(false);
     monsterSearchIndexRef.current = { tier: 1, index: -1 };
@@ -1263,6 +1280,15 @@ resetArena();
         if (building.buildElapsed >= building.buildDuration) {
           building.underConstruction = false;
           constructionQueueRef.current.shift();
+          const completedType = building.type;
+          const completedCount = buildings.filter((item) => item.type === completedType && !item.underConstruction).length;
+          const completedTarget = completedType === "House" ? TUTORIAL_HOUSE_TARGET : completedType === "CrystalPoint" ? TUTORIAL_CRYSTAL_TARGET : completedType === "Barracks" ? TUTORIAL_BARRACKS_TARGET : 0;
+          if (completedTarget > 0 && completedCount >= completedTarget && !tutorialMissionComplete) {
+            const labels = { House: "HOUSING ONLINE", CrystalPoint: "CRYSTAL NETWORK ONLINE", Barracks: "DEFENSE GRID ONLINE" };
+            setTutorialMissionComplete({ icon: "✓", title: "OBJECTIVE COMPLETE", detail: labels[completedType] });
+            if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+            tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1250);
+          }
 
           if (building.type === "House") {
             stats.workerCap += 5;
@@ -3436,6 +3462,8 @@ resetArena();
             28% { opacity: 0.9; }
             100% { transform: translateX(130%); opacity: 0; }
           }
+          @keyframes tutorialMissionEnter { from { opacity:0; transform:translateY(-14px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+          @keyframes tutorialMissionComplete { 0% { opacity:0; transform:translate(-50%,-50%) scale(.78); } 55% { opacity:1; transform:translate(-50%,-50%) scale(1.05); } 100% { opacity:1; transform:translate(-50%,-50%) scale(1); } }
         `}
       </style>
 
@@ -3920,6 +3948,22 @@ resetArena();
                 </div>
               </header>
 
+              {tutorialMission && cityTutorialReady && !tutorialMissionComplete && (
+                <div style={styles.tutorialMissionCard}>
+                  <div style={styles.tutorialMissionIcon}>{tutorialMission.icon}</div>
+                  <div style={styles.tutorialMissionBody}>
+                    <div style={styles.tutorialMissionTop}><span>CORE FOUNDATION · {tutorialMission.index}/{tutorialMission.total}</span><b>{tutorialMission.type ? `${tutorialMissionProgress}/${tutorialMission.target}` : "ACTIVE"}</b></div>
+                    <strong>{tutorialMission.title}</strong>
+                    <small>{isTutorialConstructionWaiting() ? "CONSTRUCTION IN PROGRESS" : tutorialMission.detail}</small>
+                    <div style={styles.tutorialMissionTrack}><i style={{...styles.tutorialMissionFill,width:`${tutorialMission.type ? (tutorialMissionProgress/tutorialMission.target)*100 : 18}%`}} /></div>
+                  </div>
+                </div>
+              )}
+              {tutorialMissionComplete && (
+                <div style={styles.tutorialMissionCompleteToast}>
+                  <span>{tutorialMissionComplete.icon}</span><div><strong>{tutorialMissionComplete.title}</strong><small>{tutorialMissionComplete.detail}</small></div>
+                </div>
+              )}
               {shouldShowBuildTutorialArrow() && (
                 <div style={styles.tutorialBuildArrow}>
                   <div style={styles.macroPointer}>☟︎</div>
@@ -5584,6 +5628,13 @@ const styles = {
   tutorialChipGlow: { animation:"chipGlow 1.15s ease-in-out infinite" },
   tutorialLevelChipGlow: { animation:"chipGlow 1.05s ease-in-out infinite",color:"#fef08a",borderColor:"#facc15" },
 
+  tutorialMissionCard: { position:"absolute",left:10,right:10,top:60,zIndex:7,minHeight:74,padding:9,boxSizing:"border-box",borderRadius:19,display:"grid",gridTemplateColumns:"48px 1fr",gap:9,alignItems:"center",background:"linear-gradient(135deg,rgba(8,47,73,.96),rgba(15,23,42,.97))",border:"1px solid rgba(103,232,249,.48)",boxShadow:"0 16px 42px rgba(0,0,0,.4),0 0 24px rgba(34,211,238,.12)",backdropFilter:"blur(12px)",pointerEvents:"none",animation:"tutorialMissionEnter .34s cubic-bezier(.22,.9,.3,1) both" },
+  tutorialMissionIcon: { width:46,height:46,borderRadius:15,display:"grid",placeItems:"center",fontSize:21,fontWeight:950,color:"#dffcff",background:"rgba(34,211,238,.13)",border:"1px solid rgba(103,232,249,.38)",boxShadow:"inset 0 0 18px rgba(34,211,238,.1)" },
+  tutorialMissionBody: { minWidth:0,display:"flex",flexDirection:"column",gap:2 },
+  tutorialMissionTop: { display:"flex",justifyContent:"space-between",gap:6,color:"#67e8f9",fontSize:8,fontWeight:950,letterSpacing:".1em" },
+  tutorialMissionTrack: { height:4,borderRadius:999,overflow:"hidden",marginTop:4,background:"rgba(255,255,255,.09)" },
+  tutorialMissionFill: { display:"block",height:"100%",borderRadius:999,background:"linear-gradient(90deg,#22d3ee,#22c55e)",boxShadow:"0 0 10px rgba(34,211,238,.8)",transition:"width .28s ease" },
+  tutorialMissionCompleteToast: { position:"absolute",left:"50%",top:"28%",zIndex:22,width:"min(310px,calc(100% - 38px))",minHeight:92,transform:"translate(-50%,-50%)",padding:14,boxSizing:"border-box",borderRadius:24,display:"grid",gridTemplateColumns:"54px 1fr",gap:12,alignItems:"center",background:"linear-gradient(135deg,rgba(20,83,45,.98),rgba(6,78,59,.98))",border:"1px solid rgba(134,239,172,.75)",boxShadow:"0 24px 80px rgba(0,0,0,.58),0 0 38px rgba(34,197,94,.32)",pointerEvents:"none",animation:"tutorialMissionComplete .36s cubic-bezier(.22,.9,.3,1) both" },
   mapTutorialGesture: {
     position: "absolute",
     left: "50%",
