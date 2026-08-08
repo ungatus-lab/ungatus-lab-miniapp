@@ -400,6 +400,9 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const selectedBuildingRef = useRef(null);
   const movingBuildingRef = useRef(null);
   const cityDoubleTapRef = useRef({ buildingId: null, time: 0 });
+  const groupSelectionRef = useRef({ active: false, ids: [], bounds: null, phase: "off", anchor: null });
+  const groupDialogRef = useRef(null);
+  const groupGestureRef = useRef({ timer: null, pointerId: null, downClientX: 0, downClientY: 0, downWorld: null, building: null, longPressed: false, dragging: false, moveOrigin: null, originalPositions: null });
   const massBuildRef = useRef({
     pointerId: null,
     active: false,
@@ -430,6 +433,8 @@ const trainingIntroTimerRef = useRef(null);
   const [selectedBuildingType, setSelectedBuildingTypeState] = useState(null);
   const [selectedBuilding, setSelectedBuildingState] = useState(null);
   const [buildingPanelVersion, setBuildingPanelVersion] = useState(0);
+  const [groupSelection, setGroupSelection] = useState({ active: false, ids: [], bounds: null, phase: "off" });
+  const [groupDialog, setGroupDialog] = useState(null);
   const [movingBuilding, setMovingBuilding] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
@@ -489,6 +494,7 @@ resetArena();
       if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
       if (buildMenuTutorialTimerRef.current) clearTimeout(buildMenuTutorialTimerRef.current);
       if (buildCardReturnTimerRef.current) clearTimeout(buildCardReturnTimerRef.current);
+      if (groupGestureRef.current.timer) clearTimeout(groupGestureRef.current.timer);
     };
   }, []);
 
@@ -713,6 +719,87 @@ resetArena();
     }
   }
 
+  function publishGroupSelection(next) {
+    groupSelectionRef.current = next;
+    setGroupSelection({ ...next, ids: [...(next.ids || [])], bounds: next.bounds ? { ...next.bounds } : null });
+  }
+  function clearGroupSelection() {
+    if (groupGestureRef.current.timer) clearTimeout(groupGestureRef.current.timer);
+    groupGestureRef.current = { timer: null, pointerId: null, downClientX: 0, downClientY: 0, downWorld: null, building: null, longPressed: false, dragging: false, moveOrigin: null, originalPositions: null };
+    publishGroupSelection({ active: false, ids: [], bounds: null, phase: "off", anchor: null });
+    publishGroupDialog(null);
+  }
+  function getGroupBuildings(ids = groupSelectionRef.current.ids) {
+    const set = new Set(ids || []);
+    return cityRef.current.buildings.filter((b) => set.has(b.id) && b.type !== "Citadel");
+  }
+  function boundsForBuildings(buildings) {
+    if (!buildings.length) return null;
+    return {
+      left: Math.min(...buildings.map((b) => b.x)), top: Math.min(...buildings.map((b) => b.y)),
+      right: Math.max(...buildings.map((b) => b.x + b.w * CITY_GRID_STEP)),
+      bottom: Math.max(...buildings.map((b) => b.y + b.h * CITY_GRID_STEP)),
+    };
+  }
+  function buildingsInsideRect(a, b) {
+    const left = Math.min(a.x, b.x), right = Math.max(a.x, b.x);
+    const top = Math.min(a.y, b.y), bottom = Math.max(a.y, b.y);
+    return cityRef.current.buildings.filter((item) => item.type !== "Citadel" &&
+      item.x < right && item.x + item.w * CITY_GRID_STEP > left && item.y < bottom && item.y + item.h * CITY_GRID_STEP > top);
+  }
+  function startGroupFromBuilding(building) {
+    if (!building || building.type === "Citadel") return;
+    updateSelectedBuilding(null);
+    const bounds = boundsForBuildings([building]);
+    publishGroupSelection({ active: true, ids: [building.id], bounds, phase: "armed", anchor: { x: bounds.left, y: bounds.top } });
+  }
+  function getGroupUpgradePlan() {
+    let crystals = cityStatsRef.current.crystals, workers = cityStatsRef.current.workers;
+    return getGroupBuildings().map((building) => {
+      const crystalCost = getUpgradeCrystalCost(building), workerCost = getUpgradeWorkerCost(building);
+      const levelAllowed = (building.level || 1) < MAX_BUILDING_LEVEL && cityStatsRef.current.level >= (building.level || 1) + 1;
+      const affordable = levelAllowed && crystals >= crystalCost && workers >= workerCost;
+      if (affordable) { crystals -= crystalCost; workers -= workerCost; }
+      return { id: building.id, affordable, crystalCost, workerCost };
+    });
+  }
+  function publishGroupDialog(next) { groupDialogRef.current = next; setGroupDialog(next); }
+  function openGroupUpgrade() { publishGroupDialog({ type: "upgrade", plan: getGroupUpgradePlan() }); }
+  function confirmGroupUpgrade() {
+    const plan = groupDialog?.plan || getGroupUpgradePlan();
+    const ok = new Set(plan.filter((x) => x.affordable).map((x) => x.id));
+    for (const building of getGroupBuildings()) {
+      if (!ok.has(building.id)) continue;
+      cityStatsRef.current.crystals -= getUpgradeCrystalCost(building);
+      cityStatsRef.current.workers -= getUpgradeWorkerCost(building);
+      const oldLevel = building.level || 1; building.level = oldLevel + 1;
+      if (building.type === "House") { cityStatsRef.current.workerCap += 5; cityStatsRef.current.workers += 5; cityStatsRef.current.guardCap += 25; }
+    }
+    setGroupDialog(null); recalculateCityEconomy(); setCityStats({ ...cityStatsRef.current });
+  }
+  function confirmGroupDelete() {
+    const ids = new Set(groupSelectionRef.current.ids); const stats = cityStatsRef.current;
+    for (const building of getGroupBuildings()) {
+      if (!building.underConstruction && building.type === "House") { const level=building.level||1; stats.workerCap=Math.max(5,stats.workerCap-level*5); stats.workers=Math.min(stats.workers,stats.workerCap); stats.guardCap=Math.max(10,stats.guardCap-level*25); }
+      if (building.type === "CrystalPoint") stats.workers=Math.min(stats.workerCap,stats.workers+(building.level||1)*BUILDINGS.CrystalPoint.workerCost);
+    }
+    cityRef.current.buildings=cityRef.current.buildings.filter((b)=>!ids.has(b.id));
+    constructionQueueRef.current=constructionQueueRef.current.filter((id)=>!ids.has(id));
+    clearGroupSelection(); recalculateCityEconomy(); setCityStats({ ...stats });
+  }
+  function armGroupMove() {
+    const buildings=getGroupBuildings(); if(!buildings.length)return;
+    publishGroupSelection({ ...groupSelectionRef.current, phase:"move", bounds:boundsForBuildings(buildings) });
+  }
+  function isGroupMoveValid(positions) {
+    const selected=new Set(groupSelectionRef.current.ids);
+    for(const pos of positions){
+      if(pos.x<0||pos.y<0||pos.x+pos.w*CITY_GRID_STEP>CITY_WIDTH||pos.y+pos.h*CITY_GRID_STEP>CITY_HEIGHT)return false;
+      for(const other of cityRef.current.buildings){ if(selected.has(other.id))continue;
+        if(!(pos.x+pos.w*CITY_GRID_STEP<=other.x||pos.x>=other.x+other.w*CITY_GRID_STEP||pos.y+pos.h*CITY_GRID_STEP<=other.y||pos.y>=other.y+other.h*CITY_GRID_STEP))return false;
+      }
+    } return true;
+  }
   function setBuildMode(nextValue) {
     buildModeRef.current = nextValue;
     setBuildModeState(nextValue);
@@ -1652,7 +1739,9 @@ resetArena();
     drawCityGrid(ctx);
     drawCityBorder(ctx);
     globalThis.__macroSwarmCityStatsVisual = cityStatsRef.current;
-    drawCityBuildings(ctx, cityRef.current.buildings, selectedBuilding?.id);
+    const upgradePlan = groupDialogRef.current?.type === "upgrade" ? groupDialogRef.current.plan : null;
+    drawCityBuildings(ctx, cityRef.current.buildings, selectedBuildingRef.current?.id, groupSelectionRef.current, upgradePlan);
+    drawGroupSelection(ctx, groupSelectionRef.current);
 
     const activePreviews =
       buildBatchPreviewRef.current.length > 0
@@ -1919,6 +2008,7 @@ resetArena();
     updateBuildPreview(null);
     setBuildMenuOpen(false);
     updateSelectedBuilding(null);
+    clearGroupSelection();
     recalculateCityEconomy();
     setScreen("arena");
   }
@@ -2825,7 +2915,21 @@ resetArena();
     cityPointerRef.current.lastY = event.clientY;
     cityPointerRef.current.downX = event.clientX;
     cityPointerRef.current.downY = event.clientY;
-
+    const downWorld = cityScreenToWorld(event.clientX, event.clientY);
+    const downBuilding = findCityBuildingAt(downWorld);
+    const group = groupSelectionRef.current;
+    if (!buildModeRef.current && !buildPreviewRef.current && pointers.size === 1) {
+      const insideGroup = group.active && group.bounds && downWorld.x >= group.bounds.left && downWorld.x <= group.bounds.right && downWorld.y >= group.bounds.top && downWorld.y <= group.bounds.bottom;
+      groupGestureRef.current = { timer:null, pointerId:event.pointerId, downClientX:event.clientX, downClientY:event.clientY, downWorld, building:downBuilding, longPressed:false, dragging:false, moveOrigin:null, originalPositions:null };
+      if (group.active && group.phase === "move" && insideGroup) {
+        groupGestureRef.current.longPressed=true; groupGestureRef.current.moveOrigin=downWorld;
+        groupGestureRef.current.originalPositions=getGroupBuildings().map((b)=>({id:b.id,x:b.x,y:b.y,w:b.w,h:b.h}));
+      } else if (group.active && insideGroup) {
+        groupGestureRef.current.longPressed=true;
+      } else if (downBuilding && downBuilding.type !== "Citadel" && isFreeCityEditMode()) {
+        groupGestureRef.current.timer=setTimeout(()=>{ groupGestureRef.current.longPressed=true; startGroupFromBuilding(downBuilding); }, 480);
+      }
+    }
     const currentPreview = buildPreviewRef.current;
 
     if (currentPreview && pointers.size === 1 && !isTutorialBuildStep()) {
@@ -2875,6 +2979,26 @@ resetArena();
       return;
     }
 
+    const gesture = groupGestureRef.current;
+    if (gesture.pointerId === event.pointerId && gesture.longPressed && groupSelectionRef.current.active) {
+      const point=cityScreenToWorld(event.clientX,event.clientY);
+      const distance=Math.hypot(event.clientX-gesture.downClientX,event.clientY-gesture.downClientY);
+      if(distance>7) gesture.dragging=true;
+      if(groupSelectionRef.current.phase === "move" && gesture.moveOrigin && gesture.originalPositions){
+        const dx=Math.round((point.x-gesture.moveOrigin.x)/CITY_GRID_STEP)*CITY_GRID_STEP;
+        const dy=Math.round((point.y-gesture.moveOrigin.y)/CITY_GRID_STEP)*CITY_GRID_STEP;
+        const next=gesture.originalPositions.map((p)=>({...p,x:p.x+dx,y:p.y+dy}));
+        const valid=isGroupMoveValid(next);
+        for(const pos of next){ const building=cityRef.current.buildings.find((b)=>b.id===pos.id); if(building){building.x=pos.x;building.y=pos.y;} }
+        publishGroupSelection({...groupSelectionRef.current,bounds:boundsForBuildings(getGroupBuildings()),moveValid:valid});
+      } else if(groupSelectionRef.current.phase === "armed" && gesture.dragging){
+        const anchor=groupSelectionRef.current.anchor || gesture.downWorld;
+        const picked=buildingsInsideRect(anchor,point);
+        const ids=picked.map((b)=>b.id);
+        publishGroupSelection({active:true,ids,bounds:{left:Math.min(anchor.x,point.x),top:Math.min(anchor.y,point.y),right:Math.max(anchor.x,point.x),bottom:Math.max(anchor.y,point.y)},phase:"armed",anchor});
+      }
+      pointerState.dragging=true; return;
+    }
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
       const distance = Math.hypot(a.x - b.x, a.y - b.y);
@@ -2958,6 +3082,22 @@ resetArena();
       pointerState.buildPointerId = null;
     }
 
+    const gesture = groupGestureRef.current;
+    if (gesture.pointerId === event.pointerId) {
+      if (gesture.timer) clearTimeout(gesture.timer);
+      if (gesture.longPressed) {
+        if (groupSelectionRef.current.phase === "move") {
+          if (groupSelectionRef.current.moveValid === false && gesture.originalPositions) {
+            for(const pos of gesture.originalPositions){const b=cityRef.current.buildings.find((x)=>x.id===pos.id);if(b){b.x=pos.x;b.y=pos.y;}}
+          }
+          publishGroupSelection({...groupSelectionRef.current,phase:"armed",bounds:boundsForBuildings(getGroupBuildings()),moveValid:undefined});
+        } else if (gesture.dragging) {
+          publishGroupSelection({...groupSelectionRef.current,phase:"ready",bounds:boundsForBuildings(getGroupBuildings())});
+        }
+        groupGestureRef.current={timer:null,pointerId:null,downClientX:0,downClientY:0,downWorld:null,building:null,longPressed:false,dragging:false,moveOrigin:null,originalPositions:null};
+        return;
+      }
+    }
     if (wasDraggingPreview) return;
 
     if (wasTap && (buildModeRef.current || buildPreviewRef.current)) {
@@ -2966,6 +3106,7 @@ resetArena();
     }
 
     if (wasTap && !buildModeRef.current && !buildPreviewRef.current) {
+      if (groupSelectionRef.current.active) return;
       const cityPoint = cityScreenToWorld(event.clientX, event.clientY);
       const building = findCityBuildingAt(cityPoint);
       if (building && isFreeCityEditMode() && building.type !== "Citadel") {
@@ -3985,7 +4126,29 @@ resetArena();
                   )}
                 </div>
               )}
-              {selectedBuilding && (
+              {groupSelection.active && groupSelection.ids.length > 0 && (
+                <div style={{...styles.buildingPanel,...styles.groupBuildingPanel}}>
+                  <button style={styles.panelClose} onClick={clearGroupSelection}>×</button>
+                  <div style={{...styles.panelIcon,...styles.groupPanelIcon}}>▦</div>
+                  <div style={styles.panelInfo}><strong>GROUP · {groupSelection.ids.length}</strong><small>{groupSelection.phase === "armed" ? "Drag from selection to expand" : groupSelection.phase === "move" ? "Drag the selected area" : "Selected buildings"}</small></div>
+                  <div style={styles.buildingActionGroup}>
+                    <button style={styles.moveBuildingButton} onClick={armGroupMove} title="Move group">✥</button>
+                    <button style={styles.upgradeButton} onClick={openGroupUpgrade} title="Upgrade group">⇧ CHECK</button>
+                    <button style={styles.deleteBuildingButton} onClick={()=>publishGroupDialog({type:"delete"})} title="Delete group">⌫</button>
+                  </div>
+                </div>
+              )}
+              {groupDialog && (
+                <div style={styles.groupDialogBackdrop}>
+                  <div style={{...styles.groupDialog,...(groupDialog.type === "delete" ? styles.groupDialogDanger : {})}}>
+                    <div style={styles.groupDialogIcon}>{groupDialog.type === "delete" ? "!" : "⇧"}</div>
+                    <strong>{groupDialog.type === "delete" ? `DELETE ${groupSelection.ids.length} BUILDINGS?` : "GROUP UPGRADE"}</strong>
+                    <small>{groupDialog.type === "delete" ? "This action cannot be undone." : `${(groupDialog.plan||[]).filter(x=>x.affordable).length} of ${groupSelection.ids.length} can be upgraded now.`}</small>
+                    <div style={styles.groupDialogActions}><button onClick={()=>publishGroupDialog(null)}>CANCEL</button><button onClick={groupDialog.type === "delete" ? confirmGroupDelete : confirmGroupUpgrade}>{groupDialog.type === "delete" ? "DELETE" : "UPGRADE"}</button></div>
+                  </div>
+                </div>
+              )}
+              {!groupSelection.active && selectedBuilding && (
                 <div
                   key={`${selectedBuilding.id}-${buildingPanelVersion}`}
                   style={styles.buildingPanel}
@@ -4604,7 +4767,7 @@ function drawCityBorder(ctx) {
   ctx.restore();
 }
 
-function drawCityBuildings(ctx, buildings, selectedBuildingId) {
+function drawCityBuildings(ctx, buildings, selectedBuildingId, groupSelection, upgradePlan) {
   for (const building of buildings) {
     const width = building.w * CITY_GRID_STEP;
     const height = building.h * CITY_GRID_STEP;
@@ -4613,9 +4776,11 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId) {
 
     ctx.save();
 
-    if (selectedBuildingId === building.id) {
+    const groupSelected = groupSelection?.active && groupSelection.ids?.includes(building.id);
+    const planItem = upgradePlan?.find((item) => item.id === building.id);
+    if (selectedBuildingId === building.id || groupSelected) {
       ctx.beginPath();
-      ctx.strokeStyle = "rgba(251,191,36,0.78)";
+      ctx.strokeStyle = planItem ? (planItem.affordable ? "rgba(34,197,94,0.96)" : "rgba(239,68,68,0.96)") : groupSelected ? "rgba(34,211,238,0.95)" : "rgba(251,191,36,0.78)";
       ctx.lineWidth = 7;
       roundedRect(ctx, building.x - 8, building.y - 8, width + 16, height + 16, 26);
       ctx.stroke();
@@ -4650,6 +4815,13 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId) {
   }
 }
 
+function drawGroupSelection(ctx, selection) {
+  if (!selection?.active || !selection.bounds) return;
+  const b=selection.bounds; ctx.save();
+  ctx.fillStyle=selection.moveValid===false?"rgba(239,68,68,0.10)":"rgba(34,211,238,0.08)";
+  ctx.strokeStyle=selection.moveValid===false?"rgba(239,68,68,0.96)":"rgba(34,211,238,0.92)";
+  ctx.lineWidth=6; ctx.setLineDash([18,10]); roundedRect(ctx,b.left-14,b.top-14,b.right-b.left+28,b.bottom-b.top+28,28); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+}
 function drawConstructionBuilding(ctx, building, width, height, cx, cy) {
   const active = building.id === constructionQueueRefSafe(building);
   const progress = active
@@ -5998,6 +6170,13 @@ const styles = {
     animation: "buildingPanelAccentSweep 360ms ease-out both",
   },
 
+  groupBuildingPanel: { border: "1px solid rgba(34,211,238,0.62)", boxShadow: "0 18px 54px rgba(0,0,0,.5), 0 0 24px rgba(34,211,238,.18)" },
+  groupPanelIcon: { color: "#67e8f9", background: "rgba(34,211,238,.13)", border: "1px solid rgba(103,232,249,.35)" },
+  groupDialogBackdrop: { position:"absolute",inset:0,zIndex:30,display:"grid",placeItems:"center",padding:22,background:"rgba(2,6,23,.72)",backdropFilter:"blur(8px)" },
+  groupDialog: { width:"min(330px,100%)",minHeight:190,borderRadius:26,padding:20,boxSizing:"border-box",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,textAlign:"center",background:"linear-gradient(180deg,rgba(15,23,42,.99),rgba(7,16,32,.99))",border:"1px solid rgba(34,211,238,.58)",boxShadow:"0 28px 90px rgba(0,0,0,.65),0 0 35px rgba(34,211,238,.18)" },
+  groupDialogDanger: { border:"1px solid rgba(239,68,68,.72)",boxShadow:"0 28px 90px rgba(0,0,0,.65),0 0 35px rgba(239,68,68,.22)" },
+  groupDialogIcon: { width:54,height:54,borderRadius:"50%",display:"grid",placeItems:"center",fontSize:27,fontWeight:950,color:"#fff",background:"linear-gradient(135deg,#0e7490,#2563eb)" },
+  groupDialogActions: { width:"100%",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:6 },
   panelIcon: {
     gridArea: "icon",
     width: 44,
