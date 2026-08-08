@@ -928,6 +928,8 @@ resetArena();
       downX: 0,
       downY: 0,
       suppressClick: false,
+      path: [],
+      pathType: null,
     };
 
     updateLandingPreview(null);
@@ -2182,15 +2184,37 @@ resetArena();
         x: anchorPreview.x, y: anchorPreview.y + index * stepY,
       })));
     }
-    const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
-    const dxSteps = Math.round((target.x - anchorPreview.x) / Math.max(1, stepX));
-    const dySteps = Math.round((target.y - anchorPreview.y) / Math.max(1, stepY));
-    const sx = dxSteps === 0 ? 0 : dxSteps > 0 ? 1 : -1;
-    const sy = dySteps === 0 ? 0 : dySteps > 0 ? 1 : -1;
-    for (let ix = 1; ix <= Math.abs(dxSteps); ix += 1) cells.push({ x: anchorPreview.x + ix * sx * stepX, y: anchorPreview.y });
-    const cornerX = anchorPreview.x + dxSteps * stepX;
-    for (let iy = 1; iy <= Math.abs(dySteps); iy += 1) cells.push({ x: cornerX, y: anchorPreview.y + iy * sy * stepY });
-    return makeValidatedBuildBatch(type, cells);
+    // In free mode the batch follows the route actually traced by the finger.
+    // The tutorial keeps its deliberate fixed routes above.
+    const state = massBuildRef.current;
+    const snappedTarget = {
+      x: anchorPreview.x + Math.round((target.x - anchorPreview.x) / Math.max(1, stepX)) * stepX,
+      y: anchorPreview.y + Math.round((target.y - anchorPreview.y) / Math.max(1, stepY)) * stepY,
+    };
+    if (!Array.isArray(state.path) || state.pathType !== type || state.path.length === 0) {
+      state.path = [{ x: anchorPreview.x, y: anchorPreview.y }];
+      state.pathType = type;
+    }
+    const sameCell = (a, b) => a.x === b.x && a.y === b.y;
+    const appendOrBacktrack = (cell) => {
+      const existingIndex = state.path.findIndex((item) => sameCell(item, cell));
+      if (existingIndex >= 0) state.path = state.path.slice(0, existingIndex + 1);
+      else state.path.push(cell);
+    };
+    let current = state.path[state.path.length - 1];
+    let guard = 0;
+    while (!sameCell(current, snappedTarget) && guard < 80) {
+      guard += 1;
+      const remainingX = snappedTarget.x - current.x;
+      const remainingY = snappedTarget.y - current.y;
+      const moveX = Math.abs(remainingX) > Math.abs(remainingY);
+      const next = moveX
+        ? { x: current.x + Math.sign(remainingX) * stepX, y: current.y }
+        : { x: current.x, y: current.y + Math.sign(remainingY) * stepY };
+      appendOrBacktrack(next);
+      current = state.path[state.path.length - 1];
+    }
+    return makeValidatedBuildBatch(type, state.path);
   }
 
   function makeValidatedBuildBatch(type, cells) {
@@ -2413,6 +2437,8 @@ resetArena();
       downX: event.clientX,
       downY: event.clientY,
       suppressClick: false,
+      path: [{ x: preview.x, y: preview.y }],
+      pathType: preview.type,
     };
 
     updateBuildBatchPreview([preview]);
@@ -2467,6 +2493,8 @@ resetArena();
 
     massBuildRef.current.pointerId = null;
     massBuildRef.current.active = false;
+    massBuildRef.current.path = [];
+    massBuildRef.current.pathType = null;
   }
 
   function cancelBuildPreview() {
