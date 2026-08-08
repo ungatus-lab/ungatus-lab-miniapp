@@ -21,8 +21,10 @@ const CITY_GRID_STEP = 100;
 const CITY_BASE_MODULES = 4;
 const CITY_MODULE_SIZE = 2;
 const CITY_LEVEL_ONE_CELLS = CITY_BASE_MODULES * CITY_MODULE_SIZE;
-const CITY_WIDTH = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
-const CITY_HEIGHT = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
+const CITY_LEVEL_ONE_SIZE = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
+let CITY_WIDTH = CITY_LEVEL_ONE_SIZE;
+let CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
+const CITY_EXPANSION_PER_SIDE = CITY_MODULE_SIZE * CITY_GRID_STEP;
 const CITY_OUTSIDE_PADDING = 900;
 const CITY_MIN_ZOOM = 0.32;
 const CITY_MAX_ZOOM = 1.1;
@@ -30,7 +32,7 @@ const CITY_MAX_ZOOM = 1.1;
 const ATTACK_MARCH_WORLD_SPEED = 154;
 const RETURN_MARCH_WORLD_SPEED = 191;
 
-const MAX_BUILDING_LEVEL = 5;
+const MAX_BUILDING_LEVEL = 100;
 const GUARD_CRYSTAL_COST = 1;
 
 const TUTORIAL_HOUSE_TARGET = 3;
@@ -744,7 +746,8 @@ resetArena();
     let crystals = cityStatsRef.current.crystals, workers = cityStatsRef.current.workers;
     return getGroupBuildings().map((building) => {
       const crystalCost = getUpgradeCrystalCost(building), workerCost = getUpgradeWorkerCost(building);
-      const levelAllowed = (building.level || 1) < MAX_BUILDING_LEVEL && cityStatsRef.current.level >= (building.level || 1) + 1;
+      const citadelLevel = getCitadelBuilding()?.level || 1;
+      const levelAllowed = (building.level || 1) < MAX_BUILDING_LEVEL && citadelLevel >= (building.level || 1) + 1;
       const affordable = levelAllowed && crystals >= crystalCost && workers >= workerCost;
       if (affordable) { crystals -= crystalCost; workers -= workerCost; }
       return { id: building.id, affordable, crystalCost, workerCost };
@@ -880,6 +883,8 @@ resetArena();
   }
   function resetArena() {
     worldRef.current = createWorld();
+    CITY_WIDTH = CITY_LEVEL_ONE_SIZE;
+    CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     cityStatsUiTimerRef.current = 0;
@@ -1548,7 +1553,8 @@ resetArena();
   }
 
   function getUpgradeCrystalCost(building) {
-    if (!building || building.type === "Citadel") return 0;
+    if (!building) return 0;
+    if (building.type === "Citadel") return 0;
 
     const currentLevel = building.level || 1;
     const nextLevel = currentLevel + 1;
@@ -1562,7 +1568,8 @@ resetArena();
   }
 
   function getUpgradeWorkerCost(building) {
-    if (!building || building.type === "Citadel") return 0;
+    if (!building) return 0;
+    if (building.type === "Citadel") return 0;
 
     const currentLevel = building.level || 1;
     const nextLevel = currentLevel + 1;
@@ -1575,7 +1582,8 @@ resetArena();
   }
 
   function getUpgradeCostLabel(building) {
-    if (!building || building.type === "Citadel") return "";
+    if (!building) return "";
+    if (building.type === "Citadel") return `EXPAND +${CITY_MODULE_SIZE}×${CITY_MODULE_SIZE}`;
 
     const crystalCost = getUpgradeCrystalCost(building);
     const workerCost = getUpgradeWorkerCost(building);
@@ -1586,13 +1594,12 @@ resetArena();
 
   function canUpgradeBuilding(building) {
     if (!building) return false;
-    if (building.type === "Citadel") return false;
-
     const currentLevel = building.level || 1;
     const nextLevel = currentLevel + 1;
-
     if (currentLevel >= MAX_BUILDING_LEVEL) return false;
-    if (cityStatsRef.current.level < nextLevel) return false;
+    const citadelLevel = getCitadelBuilding()?.level || 1;
+    if (building.type === "Citadel") return cityStatsRef.current.level >= nextLevel;
+    if (citadelLevel < nextLevel) return false;
 
     const crystalCost = getUpgradeCrystalCost(building);
     const workerCost = getUpgradeWorkerCost(building);
@@ -1621,7 +1628,26 @@ resetArena();
 
     const oldLevel = building.level || 1;
     building.level = oldLevel + 1;
-
+    if (building.type === "Citadel") {
+      const shift = CITY_EXPANSION_PER_SIDE;
+      for (const cityBuilding of cityRef.current.buildings) {
+        cityBuilding.x += shift;
+        cityBuilding.y += shift;
+      }
+      CITY_WIDTH += shift * 2;
+      CITY_HEIGHT += shift * 2;
+      cityCameraRef.current.x = CITY_WIDTH / 2;
+      cityCameraRef.current.y = CITY_HEIGHT / 2;
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const fitZoom = Math.min(
+          (canvas.clientWidth - 34) / CITY_WIDTH,
+          (canvas.clientHeight - 154) / CITY_HEIGHT
+        );
+        cityCameraRef.current.zoom = clamp(fitZoom, CITY_MIN_ZOOM, CITY_MAX_ZOOM);
+      }
+      clampCityCameraToWorld();
+    }
     if (building.type === "House") {
       const oldWorkerBonus = oldLevel * 5;
       const newWorkerBonus = building.level * 5;
@@ -2137,6 +2163,8 @@ resetArena();
   }
 
   function resetCityBuildings() {
+    CITY_WIDTH = CITY_LEVEL_ONE_SIZE;
+    CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     marchesRef.current = [];
@@ -4134,17 +4162,25 @@ resetArena();
                           ? `+${(selectedBuilding.level || 1) * 5}👥 +${(selectedBuilding.level || 1) * 25}⚔`
                           : selectedBuilding.type === "Barracks"
                             ? `Guard Lv${selectedBuilding.level || 1}`
-                            : `City Lv${cityStats.level}`}
+                            : `Territory ${CITY_WIDTH / CITY_GRID_STEP}×${CITY_HEIGHT / CITY_GRID_STEP}`}
                     </small>
                   </div>
 
-                  {selectedBuilding.type !== "Citadel" && (
-                    <div style={styles.buildingActionGroup}>
-                      <button style={styles.moveBuildingButton} disabled={!isFreeCityEditMode()} onClick={() => beginMovingBuilding(selectedBuilding)} title="Move">✥</button>
-                      <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
-                      <button style={styles.deleteBuildingButton} disabled={!isFreeCityEditMode()} onClick={deleteSelectedBuilding} title="Delete">⌫</button>
-                    </div>
-                  )}
+                  <div style={styles.buildingActionGroup}>
+                    {selectedBuilding.type === "Citadel" ? (
+                      <>
+                        <div style={styles.citadelLevelGate}>★ {cityStats.level} / {Math.min(MAX_BUILDING_LEVEL, (selectedBuilding.level || 1) + 1)}</div>
+                        <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade Citadel and expand territory">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
+                        <div style={styles.citadelLevelGate}>MAX {cityStats.level}</div>
+                      </>
+                    ) : (
+                      <>
+                        <button style={styles.moveBuildingButton} disabled={!isFreeCityEditMode()} onClick={() => beginMovingBuilding(selectedBuilding)} title="Move">✥</button>
+                        <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
+                        <button style={styles.deleteBuildingButton} disabled={!isFreeCityEditMode()} onClick={deleteSelectedBuilding} title="Delete">⌫</button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -6170,6 +6206,7 @@ const styles = {
     gap: 6,
     alignItems: "center",
   },
+  citadelLevelGate: { height:42,borderRadius:12,display:"grid",placeItems:"center",background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.24)",color:"#fde68a",fontSize:9,fontWeight:950 },
   moveBuildingButton: { width: 44, height: 42, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#0e7490,#2563eb)", color: "#fff", fontWeight: 900, fontSize: 18 },
   deleteBuildingButton: { width: 44, height: 42, border: 0, borderRadius: 12, background: "linear-gradient(135deg,#991b1b,#ef4444)", color: "#fff", fontWeight: 900, fontSize: 20 },
   upgradeButton: {
