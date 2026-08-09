@@ -4080,7 +4080,7 @@ resetArena();
                 </div>
               )}
 
-              {tutorialDragType && buildMenuTutorialReady && tutorialDragDropScreen && (
+              {buildMenuOpen && tutorialDragType && buildMenuTutorialReady && tutorialDragDropScreen && (
                 <>
                   <div
                     style={{
