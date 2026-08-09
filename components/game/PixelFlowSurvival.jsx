@@ -324,6 +324,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
   const tutorialSearchMonsterIdRef = useRef(null);
+  const tutorialKillsRef = useRef(0);
+  const [tutorialKills, setTutorialKills] = useState(0);
   const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null });
   const mapTutorialGuideRef = useRef({ phase: "off", timer: 0, zoomStart: 0.3 });
 
@@ -594,6 +596,7 @@ resetArena();
   const tutorialMissionProgress = tutorialMission
     ? Math.min(tutorialMission.target, getCityBuildingCount(tutorialMission.type))
     : 0;
+  const arenaTutorialMission = getArenaTutorialMission();
   const tutorialDragType =
     tutorialStep === "houses"
       ? "House"
@@ -842,14 +845,23 @@ resetArena();
     return "done";
   }
   function getTutorialMission(step) {
-    if (step === "houses" || step === "housesBuilding") return { key: "houses", index: 1, total: 3, type: "House", target: TUTORIAL_HOUSE_TARGET, icon: "■", title: "BUILD 3 HOUSES", detail: "Expand worker and army capacity" };
-    if (step === "crystals" || step === "crystalsBuilding") return { key: "crystals", index: 2, total: 3, type: "CrystalPoint", target: TUTORIAL_CRYSTAL_TARGET, icon: "◆", title: "BUILD 4 CRYSTAL POINTS", detail: "Establish crystal production" };
-    if (step === "map") return { key: "map", index: 3, total: 3, type: null, target: 1, icon: "⌖", title: "OPEN THE WORLD MAP", detail: "Continue the Core Foundation route" };
-    if (step === "barracks" || step === "barracksBuilding") return { key: "barracks", index: 1, total: 1, type: "Barracks", target: TUTORIAL_BARRACKS_TARGET, icon: "▲", title: "BUILD 4 BARRACKS", detail: "Prepare the first Core Guards" };
-    if (step === "mapAfterBarracks") return { key: "mapAfterBarracks", index: 1, total: 1, type: null, target: 1, icon: "⌖", title: "RETURN TO THE WORLD", detail: "Deploy the new Core Guards" };
+    if (step === "houses" || step === "housesBuilding") return { key: "houses", index: 1, total: 7, type: "House", target: TUTORIAL_HOUSE_TARGET, icon: "■", title: "BUILD 3 HOUSES", detail: "Expand worker and army capacity" };
+    if (step === "crystals" || step === "crystalsBuilding") return { key: "crystals", index: 2, total: 7, type: "CrystalPoint", target: TUTORIAL_CRYSTAL_TARGET, icon: "◆", title: "BUILD 4 CRYSTAL POINTS", detail: "Establish crystal production" };
+    if (step === "map") return { key: "camera", index: 3, total: 7, type: null, target: 2, icon: "⌖", title: "MASTER WORLD CAMERA", detail: "Open the map, zoom out, then zoom in" };
+    if (step === "barracks" || step === "barracksBuilding") return { key: "barracks", index: 5, total: 7, type: "Barracks", target: TUTORIAL_BARRACKS_TARGET, icon: "▲", title: "BUILD 4 BARRACKS", detail: "Prepare the first Core Guards" };
+    if (tutorialFlowPhase === "citadelUpgrade") return { key: "citadel", index: 7, total: 7, type: null, target: 1, icon: "⌂", title: "UPGRADE CITADEL TO LV2", detail: "Expand the city territory" };
     return null;
   }
-
+  function getArenaTutorialMission() {
+    if (screen !== "arena") return null;
+    if (["zoomout","monsterPointer","monsterZoom","monsterZoomPause"].includes(mapTutorialPhase)) {
+      const half = mapTutorialPhase === "zoomout" ? 0 : 1;
+      return { index:3,total:7,icon:"⌖",title:"MASTER WORLD CAMERA",detail:mapTutorialPhase === "zoomout" ? "ZOOM OUT TO MAXIMUM" : "ZOOM IN ON THE MARKED TARGET",progress:half,target:2 };
+    }
+    if (["teleportButton","selectLanding","confirmLanding","teleporting"].includes(tutorialFlowPhase)) return { index:4,total:7,icon:"◎",title:"USE TELEPORT",detail:"Select the marked landing sector",progress:tutorialFlowPhase === "teleporting" ? 1 : 0,target:1 };
+    if (["attackMonster","attackButton","attackLaunched","searchButton","searchTier","searchGo","searchMonster","searchAttackButton","searchAttackLaunched","levelProgress"].includes(tutorialFlowPhase)) return { index:6,total:7,icon:"⚔",title:"DEFEAT 4 MONSTERS",detail:tutorialKills < 2 ? "Follow the combat tutorial" : "Find and defeat the remaining targets",progress:tutorialKills,target:4 };
+    return null;
+  }
   function isTutorialConstructionWaiting() {
     return tutorialStep === "housesBuilding" || tutorialStep === "crystalsBuilding" || tutorialStep === "barracksBuilding";
   }
@@ -924,6 +936,8 @@ resetArena();
     setTutorialFlowPhase("buildEconomy");
     mapTutorialTargetRef.current = null;
     tutorialSearchMonsterIdRef.current = null;
+    tutorialKillsRef.current = 0;
+    setTutorialKills(0);
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
@@ -1132,8 +1146,17 @@ resetArena();
       if (flow.timer >= 1.8) updateTutorialFlowPhase("teleportButton");
     }
     if (flow.phase === "teleporting" && !teleportEffectRef.current && cooldownRef.current > 0) {
+      const monster = findTutorialMonster();
+      setTutorialMissionComplete({ icon:"✓", title:"OBJECTIVE COMPLETE", detail:"TELEPORT COMPLETE" });
+      if (monster) {
+        mapTutorialTargetRef.current = monster;
+        setMapTutorialTarget({ ...monster });
+        updateMapTutorialPhase("monsterPointerFinal");
+      }
       setEnterCoreVisible(true);
       updateTutorialFlowPhase("enterCity");
+      if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+      tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1100);
     }
     setHud((current) => {
       const nextCooldown = Math.ceil(cooldownRef.current);
@@ -1265,7 +1288,7 @@ resetArena();
       const monster = mapTutorialTargetRef.current || findTutorialMonster();
       const canvas = canvasRef.current;
       const monsterScreen = monster ? worldToScreen(monster.x, monster.y) : null;
-      const requiredZoom = MAX_ZOOM - 0.002;
+      const requiredZoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * 0.82;
       const centeredEnough =
         canvas &&
         monsterScreen &&
@@ -1279,8 +1302,17 @@ resetArena();
     }
     if (guide.phase === "monsterZoomPause") {
       guide.timer += dt;
-      if (guide.timer >= 1) {
-        updateMapTutorialPhase("monsterPointerFinal");
+      if (guide.timer >= 0.7) {
+        mapTutorialSeenRef.current = true;
+        mapTutorialTargetRef.current = null;
+        setMapTutorialTarget(null);
+        updateMapTutorialPhase("off");
+        setTutorialMissionComplete({ icon:"✓", title:"OBJECTIVE COMPLETE", detail:"WORLD CAMERA ONLINE" });
+        if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+        tutorialMissionTimerRef.current = setTimeout(() => {
+          setTutorialMissionComplete(null);
+          updateTutorialFlowPhase("teleportButton");
+        }, 1050);
       }
     }
   }
@@ -1561,7 +1593,18 @@ resetArena();
                     : 14;
 
           stats.crystals += rewardCrystals;
-          const rewardXp = awardMonsterVictoryXp(monster);
+          awardMonsterVictoryXp(monster);
+          if (["attackLaunched","searchAttackLaunched","levelProgress"].includes(tutorialFlowRef.current.phase)) {
+            tutorialKillsRef.current = Math.min(4, tutorialKillsRef.current + 1);
+            setTutorialKills(tutorialKillsRef.current);
+            if (tutorialKillsRef.current >= 4) {
+              setTutorialMissionComplete({ icon:"✓", title:"OBJECTIVE COMPLETE", detail:"4 MONSTERS DEFEATED" });
+              setEnterCoreVisible(true);
+              updateTutorialFlowPhase("citadelUpgrade");
+              if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+              tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1200);
+            }
+          }
 
           world.monsters = world.monsters.filter((item) => item.id !== monster.id);
 
@@ -1704,6 +1747,10 @@ resetArena();
         cityCameraRef.current.zoom = clamp(fitZoom, CITY_MIN_ZOOM, CITY_MAX_ZOOM);
       }
       clampCityCameraToWorld();
+      if (tutorialFlowRef.current.phase === "citadelUpgrade" && building.level >= 2) {
+        setTutorialMissionComplete({ icon:"✓", title:"TRAINING COMPLETE", detail:"CORE FOUNDATION ONLINE" });
+        updateTutorialFlowPhase("done");
+      }
     }
     if (building.type === "House") {
       const oldWorkerBonus = oldLevel * 5;
@@ -2021,6 +2068,9 @@ resetArena();
     setUtilityMenuOpen(false); setMonsterSearchOpen(false);
     if (tutorialFlowRef.current.phase === "enterCity") {
       updateTutorialFlowPhase("cityBarracks");
+    } else if (tutorialFlowRef.current.phase === "citadelUpgrade") {
+      const citadel = getCitadelBuilding();
+      if (citadel) updateSelectedBuilding(citadel);
     }
     updateLandingPreview(null);
     setTutorialThreatCardVisible(false);
@@ -3670,7 +3720,20 @@ resetArena();
                 </div>
               </header>
 
-              {(mapTutorialPhase === "zoomout" || mapTutorialPhase === "monsterZoom") && (
+              {arenaTutorialMission && !tutorialMissionComplete && (
+                <div style={styles.tutorialMissionCard}>
+                  <div style={styles.tutorialMissionIcon}>{arenaTutorialMission.icon}</div>
+                  <div style={styles.tutorialMissionBody}>
+                    <div style={styles.tutorialMissionTop}><span>CORE FOUNDATION · {arenaTutorialMission.index}/{arenaTutorialMission.total}</span><b>{arenaTutorialMission.progress}/{arenaTutorialMission.target}</b></div>
+                    <strong>{arenaTutorialMission.title}</strong><small>{arenaTutorialMission.detail}</small>
+                    <div style={styles.tutorialMissionTrack}><i style={{...styles.tutorialMissionFill,width:`${(arenaTutorialMission.progress/arenaTutorialMission.target)*100}%`}} /></div>
+                  </div>
+                </div>
+              )}
+              {tutorialMissionComplete && screen === "arena" && (
+                <div style={styles.tutorialMissionCompleteToast}><span>{tutorialMissionComplete.icon}</span><div><strong>{tutorialMissionComplete.title}</strong><small>{tutorialMissionComplete.detail}</small></div></div>
+              )}
+              {false && (
                 <div style={styles.mapZoomMissionCard}>
                   <span>{mapTutorialPhase === "zoomout" ? "↘↖" : "↗↙"}</span>
                   <div><small>WORLD CONTROL</small><strong>{mapTutorialPhase === "zoomout" ? "ZOOM OUT TO MAXIMUM" : "ZOOM IN ON THE TARGET"}</strong></div>
