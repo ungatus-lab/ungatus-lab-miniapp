@@ -2971,6 +2971,20 @@ resetArena();
       }
 
       const monster = findMonsterAt(worldPoint);
+      const cameraTutorialLocksMonsters = [
+        "zoomout",
+        "monsterPointer",
+        "monsterZoom",
+        "monsterZoomPause",
+      ].includes(mapTutorialGuideRef.current.phase);
+
+      if (monster && cameraTutorialLocksMonsters) {
+        // The marker is a zoom target during the camera lesson, not a tap target.
+        updateSelectedMonster(null);
+        setTutorialThreatCardVisible(false);
+        setEnterCoreVisible(false);
+        return;
+      }
 
       if (monster) {
         updateSelectedMonster({ ...monster });
