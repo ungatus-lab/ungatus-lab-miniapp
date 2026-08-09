@@ -445,6 +445,14 @@ const trainingIntroTimerRef = useRef(null);
   const [tutorialTeleportPointerReady, setTutorialTeleportPointerReady] = useState(false);
 
   function updateTutorialFlowPhase(phase) {
+    // Reset the previous phase pointer in the same event that changes phase.
+    // Waiting for useEffect allowed the old ready=true value to render for one
+    // frame, which caused the landing highlight to flash before its delay.
+    if (tutorialTeleportPointerTimerRef.current) {
+      clearTimeout(tutorialTeleportPointerTimerRef.current);
+      tutorialTeleportPointerTimerRef.current = null;
+    }
+    setTutorialTeleportPointerReady(false);
     tutorialFlowRef.current.phase = phase;
     tutorialFlowRef.current.timer = 0;
     setTutorialFlowPhase(phase);
