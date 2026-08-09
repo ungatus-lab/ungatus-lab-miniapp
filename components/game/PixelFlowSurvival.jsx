@@ -2939,9 +2939,10 @@ resetArena();
     if (!anchorPreview) return [];
     const type = anchorPreview.type;
     const definition = BUILDINGS[type] || BUILDINGS.Barracks;
-    const target = snapCityPointToGrid(cityScreenToWorld(clientX, clientY), definition.w, definition.h);
-    const stepX = definition.w * CITY_GRID_STEP;
-    const stepY = definition.h * CITY_GRID_STEP;
+    const batchFootprint = devLabRef.current ? { w: anchorPreview.w, h: anchorPreview.h } : { w: definition.w, h: definition.h };
+    const target = snapCityPointToGrid(cityScreenToWorld(clientX, clientY), batchFootprint.w, batchFootprint.h);
+    const stepX = batchFootprint.w * CITY_GRID_STEP;
+    const stepY = batchFootprint.h * CITY_GRID_STEP;
     const step = getTutorialStep();
     if (step === "houses" && type === "House") {
       const cells = [{ x: anchorPreview.x, y: anchorPreview.y }];
@@ -2988,11 +2989,12 @@ resetArena();
       appendOrBacktrack(next);
       current = state.path[state.path.length - 1];
     }
-    return makeValidatedBuildBatch(type, state.path);
+    return makeValidatedBuildBatch(type, state.path, batchFootprint);
   }
 
-  function makeValidatedBuildBatch(type, cells) {
+  function makeValidatedBuildBatch(type, cells, forcedFootprint = null) {
     const definition = BUILDINGS[type] || BUILDINGS.Barracks;
+    const footprint = forcedFootprint || { w: definition.w, h: definition.h };
     const virtualBuildings = [...cityRef.current.buildings];
     const budget = {
       crystals: cityStatsRef.current.crystals,
@@ -3000,8 +3002,8 @@ resetArena();
     };
 
     return cells.map((cell) => {
-      const snapped = snapCityPointToGrid(cell, definition.w, definition.h);
-      const preview = makeBuildPreviewFromGrid(snapped, type);
+      const snapped = snapCityPointToGrid(cell, footprint.w, footprint.h);
+      const preview = makeBuildPreviewFromGrid(snapped, type, footprint);
 
       const geometryValid = canPlaceBuilding(
         { ...preview, cost: 0, workerCost: 0 },
@@ -3208,6 +3210,18 @@ resetArena();
     setSelectedBuildingType(null);
     recalculateCityEconomy();
     setCityStats({ ...stats });
+  }
+
+  function rotateCurrentBuildPreview() {
+    if (!devLabRef.current) return;
+    const anchor = buildPreviewRef.current;
+    if (!anchor || anchor.w === anchor.h) return;
+    const footprint = { w: anchor.h, h: anchor.w };
+    const snapped = snapCityPointToGrid({ x: anchor.x, y: anchor.y }, footprint.w, footprint.h);
+    const rotated = makeBuildPreviewFromGrid(snapped, anchor.type, footprint);
+    updateBuildPreview(rotated);
+    massBuildRef.current.path = [{ x: rotated.x, y: rotated.y }];
+    massBuildRef.current.pathType = rotated.type;
   }
 
   function placeBuilding() {
@@ -4923,9 +4937,10 @@ resetArena();
                         : styles.buildControlPanelLeft),
                     }}
                   >
-                    <button style={styles.cancelButton} onClick={cancelBuildOrMove}>
-                      ×
-                    </button>
+                    <button style={styles.cancelButton} onClick={cancelBuildOrMove}>×</button>
+                    {devLab && buildControlPreview.w !== buildControlPreview.h && (
+                      <button style={styles.buildRotateButton} onClick={rotateCurrentBuildPreview} title="Rotate">↻</button>
+                    )}
                     <div style={styles.buildCostBadge}>
                       {batchSummary.workerCost > 0
                         ? `👥${batchSummary.workerCost}`
@@ -6911,6 +6926,7 @@ const styles = {
     left: 48,
   },
 
+  buildRotateButton: { width:38,height:38,flex:"0 0 38px",border:0,borderRadius:11,background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontSize:20,fontWeight:950 },
   buildCostBadge: {
     minWidth: 42,
     height: 24,
