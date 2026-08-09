@@ -2980,7 +2980,14 @@ resetArena();
           mapTutorialTargetRef.current = null;
           setMapTutorialTarget(null);
           setTutorialThreatCardVisible(true);
-          updateTutorialFlowPhase(searchStage ? "searchAttackButton" : attackStage ? "attackButton" : "inspectMonster");
+          // After the first teleport the monster is shown only to explain why
+          // an army is needed. Do not return to the old teleport tutorial.
+          // Keep the flow on enterCity so the next pointer leads to the city
+          // button and then to construction of the four barracks.
+          const postTeleportInspection = tutorialFlowRef.current.phase === "enterCity";
+          if (!postTeleportInspection) {
+            updateTutorialFlowPhase(searchStage ? "searchAttackButton" : attackStage ? "attackButton" : "inspectMonster");
+          }
           updateMapTutorialPhase("off");
         }
       } else {
