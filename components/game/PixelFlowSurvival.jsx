@@ -306,6 +306,15 @@ function snapCityPointToGrid(point, w = 2, h = 2) {
   };
 }
 
+function getCityFitMinZoom(canvas, extraMargin = 120) {
+  if (!canvas) return CITY_MIN_ZOOM;
+  const usableWidth = Math.max(120, canvas.clientWidth - 24);
+  const usableHeight = Math.max(120, canvas.clientHeight - 250);
+  const fitWidth = usableWidth / (CITY_WIDTH + extraMargin * 2);
+  const fitHeight = usableHeight / (CITY_HEIGHT + extraMargin * 2);
+  return clamp(Math.min(CITY_MIN_ZOOM, fitWidth, fitHeight), 0.035, CITY_MIN_ZOOM);
+}
+
 export default function PixelFlowSurvival({ open, onClose }) {
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -1206,6 +1215,10 @@ resetArena();
     if (playerRef.current) playerRef.current.level = target;
     cityCameraRef.current.x = CITY_WIDTH / 2;
     cityCameraRef.current.y = CITY_HEIGHT / 2;
+    const cityCanvas = canvasRef.current;
+    cityCameraRef.current.zoom = getCityFitMinZoom(cityCanvas, 140);
+    clampCityCameraToWorld();
+    forceBuildPreviewRender();
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
     setHud((current) => ({ ...current, level: target, status: `DEV LEVEL ${target}` }));
     setCityStats({ ...stats });
@@ -2333,7 +2346,10 @@ resetArena();
     setBuildMenuOpen(false);
     cityCameraRef.current.x = CITY_WIDTH / 2;
     cityCameraRef.current.y = CITY_HEIGHT / 2;
-    cityCameraRef.current.zoom = CITY_MIN_ZOOM;
+    cityCameraRef.current.zoom = devLabRef.current
+      ? getCityFitMinZoom(canvasRef.current, 140)
+      : CITY_MIN_ZOOM;
+    clampCityCameraToWorld();
     recalculateCityEconomy();
     setScreen("city");
   }
@@ -2369,7 +2385,9 @@ resetArena();
   function centerCityCamera() {
     cityCameraRef.current.x = CITY_WIDTH / 2;
     cityCameraRef.current.y = CITY_HEIGHT / 2;
-    cityCameraRef.current.zoom = CITY_MIN_ZOOM;
+    cityCameraRef.current.zoom = devLabRef.current
+      ? getCityFitMinZoom(canvasRef.current, 140)
+      : CITY_MIN_ZOOM;
     clampCityCameraToWorld();
     forceBuildPreviewRender();
   }
@@ -3409,7 +3427,7 @@ resetArena();
       if (pointerState.lastPinchDistance > 0) {
         const ratio = distance / pointerState.lastPinchDistance;
         const camera = cityCameraRef.current;
-        camera.zoom = clamp(camera.zoom * ratio, CITY_MIN_ZOOM, CITY_MAX_ZOOM);
+        camera.zoom = clamp(camera.zoom * ratio, devLabRef.current ? getCityFitMinZoom(canvasRef.current, 140) : CITY_MIN_ZOOM, CITY_MAX_ZOOM);
 
         const zoomRange = Math.max(0.0001, CITY_MAX_ZOOM - pointerState.pinchStartZoom);
         const centerProgress = clamp(
@@ -3628,7 +3646,7 @@ resetArena();
   function zoomCityCamera(ratio) {
     const camera = cityCameraRef.current;
 
-    camera.zoom = clamp(camera.zoom * ratio, CITY_MIN_ZOOM, CITY_MAX_ZOOM);
+    camera.zoom = clamp(camera.zoom * ratio, devLabRef.current ? getCityFitMinZoom(canvasRef.current, 140) : CITY_MIN_ZOOM, CITY_MAX_ZOOM);
     clampCityCameraToWorld();
     forceBuildPreviewRender();
   }
