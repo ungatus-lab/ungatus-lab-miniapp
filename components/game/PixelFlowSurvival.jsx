@@ -1400,16 +1400,38 @@ resetArena();
         const nextPool = [];
         const used = new Set();
         pool.sort((a, b) => a.y - b.y || a.x - b.x);
+
+        // Pass 1: reserve and merge every pair that already forms the correct
+        // rectangle on the existing grid. A lonely building is not allowed to
+        // steal one member from such a pair just because it appears first.
+        for (let index = 0; index < pool.length; index += 1) {
+          if (used.has(index)) continue;
+          let exactPartner = -1;
+          for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
+            if (!used.has(candidate) && canMergeOnOccupiedCells(pool[index], pool[candidate], level)) {
+              exactPartner = candidate;
+              break;
+            }
+          }
+          if (exactPartner < 0) continue;
+          used.add(index);
+          used.add(exactPartner);
+          nextPool.push(mergeAutoFitPair(pool[index], pool[exactPartner], level, false));
+        }
+
+        // Pass 2: only true leftovers may be relocated or receive an automatic
+        // twin. Existing correctly aligned pairs above remain exactly where
+        // their occupied cells were before the city territory expanded.
         for (let index = 0; index < pool.length; index += 1) {
           if (used.has(index)) continue;
           const primary = pool[index];
-          let partnerIndex = pickCellAccuratePartner(pool, index, used, level, nextPool);
+          const partnerIndex = pickCellAccuratePartner(pool, index, used, level, nextPool);
           let partner;
           let syntheticTwin = false;
 
           if (partnerIndex >= 0) {
             partner = pool[partnerIndex];
-            if (!canMergeOnOccupiedCells(primary, partner, level)) moved += 1;
+            moved += 1;
             used.add(partnerIndex);
           } else {
             const placement = findSyntheticTwinPlacement(primary, level, nextPool);
