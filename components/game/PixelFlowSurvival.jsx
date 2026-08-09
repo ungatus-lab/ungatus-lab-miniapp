@@ -328,6 +328,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const [tutorialKills, setTutorialKills] = useState(0);
   const tutorialFreeTargetIdsRef = useRef([]);
   const tutorialFreeTargetTimerRef = useRef(null);
+  const levelUpTimerRef = useRef(null);
+  const cityReturnPointerTimerRef = useRef(null);
+  const [levelUpCelebration, setLevelUpCelebration] = useState(null);
+  const [cityReturnPointerReady, setCityReturnPointerReady] = useState(false);
   const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null });
   const mapTutorialGuideRef = useRef({ phase: "off", timer: 0, zoomStart: 0.3 });
 
@@ -505,6 +509,8 @@ resetArena();
       if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
       if (tutorialTeleportPointerTimerRef.current) clearTimeout(tutorialTeleportPointerTimerRef.current);
       if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
+      if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
+      if (cityReturnPointerTimerRef.current) clearTimeout(cityReturnPointerTimerRef.current);
     };
   }, []);
 
@@ -985,6 +991,12 @@ resetArena();
     tutorialFreeTargetIdsRef.current = [];
     if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
     tutorialFreeTargetTimerRef.current = null;
+    if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
+    if (cityReturnPointerTimerRef.current) clearTimeout(cityReturnPointerTimerRef.current);
+    levelUpTimerRef.current = null;
+    cityReturnPointerTimerRef.current = null;
+    setLevelUpCelebration(null);
+    setCityReturnPointerReady(false);
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
@@ -1481,6 +1493,7 @@ resetArena();
   function awardMonsterVictoryXp(monster) {
     const stats = cityStatsRef.current;
     const player = playerRef.current;
+    const startingLevel = stats.level;
     let remainingEnemyUnits = Math.max(0, Number(monster.maxHp || monster.hp || 0));
     let totalAwarded = 0;
     while (remainingEnemyUnits > 0.000001 && stats.level < 100) {
@@ -1499,6 +1512,14 @@ resetArena();
       } else break;
     }
     if (stats.level >= 100) stats.xp = 0;
+    if (stats.level > startingLevel) {
+      setLevelUpCelebration({ from: startingLevel, to: stats.level });
+      if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
+      levelUpTimerRef.current = setTimeout(() => {
+        setLevelUpCelebration(null);
+        levelUpTimerRef.current = null;
+      }, 1650);
+    }
     stats.nextLevelXp = getNextLevelXp(stats.level);
     if (player) { player.level = stats.level; player.score += totalAwarded; }
     setHud((current) => ({ ...current, level: stats.level, score: Math.round(player?.score || current.score), status: `+${totalAwarded.toFixed(2)} XP` }));
@@ -1682,10 +1703,16 @@ resetArena();
             }
             if (tutorialKillsRef.current >= 4) {
               setTutorialMissionComplete({ icon:"✓", title:"OBJECTIVE COMPLETE", detail:"4 MONSTERS DEFEATED" });
-              setEnterCoreVisible(true);
+              setEnterCoreVisible(false);
+              setCityReturnPointerReady(false);
               updateTutorialFlowPhase("citadelUpgrade");
               if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
               tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1200);
+              if (cityReturnPointerTimerRef.current) clearTimeout(cityReturnPointerTimerRef.current);
+              cityReturnPointerTimerRef.current = setTimeout(() => {
+                setCityReturnPointerReady(true);
+                cityReturnPointerTimerRef.current = null;
+              }, 2200);
             }
           }
 
@@ -3570,6 +3597,9 @@ resetArena();
             0%, 100% { box-shadow: 0 0 0 rgba(251,191,36,0); }
             50% { box-shadow: 0 0 24px rgba(251,191,36,0.5); }
           }
+          @keyframes levelUpReveal { 0% { opacity:0; transform:translateX(-50%) scale(.72); } 38% { opacity:1; transform:translateX(-50%) scale(1.08); } 100% { opacity:1; transform:translateX(-50%) scale(1); } }
+          @keyframes levelUpRayLeft { 0% { opacity:0; transform:scaleX(.05); } 45% { opacity:1; } 100% { opacity:0; transform:scaleX(1); } }
+          @keyframes levelUpRayRight { 0% { opacity:0; transform:scaleX(.05); } 45% { opacity:1; } 100% { opacity:0; transform:scaleX(1); } }
 
           @keyframes tutorialFingerDragHouse {
             0%, 12% { transform: translate(0, 0) scale(1); opacity: 0; }
@@ -3834,6 +3864,17 @@ resetArena();
                 </div>
               </header>
 
+              {levelUpCelebration && (
+                <div style={styles.levelUpCelebration}>
+                  <i style={styles.levelUpRayLeft} />
+                  <div style={styles.levelUpBadge}>
+                    <small>CORE LEVEL</small>
+                    <strong>{levelUpCelebration.to}</strong>
+                    <span>LEVEL UP</span>
+                  </div>
+                  <i style={styles.levelUpRayRight} />
+                </div>
+              )}
               {arenaTutorialMission && !tutorialMissionComplete && (
                 <div style={styles.tutorialMissionCard}>
                   <div style={styles.tutorialMissionIcon}>{arenaTutorialMission.icon}</div>
@@ -3922,7 +3963,7 @@ resetArena();
                   </>
                 )}
 
-              {enterCoreVisible && enterScreen && tutorialFlowPhase !== "enterCity" && (
+              {enterCoreVisible && enterScreen && tutorialFlowPhase !== "enterCity" && tutorialFlowPhase !== "citadelUpgrade" && (
                 <div
                   style={{
                     ...styles.enterCoreActions,
@@ -4069,7 +4110,7 @@ resetArena();
                   <div style={styles.macroPointer}>☟︎</div>
                 </div>
               )}
-              {tutorialFlowPhase === "enterCity" && (
+              {(tutorialFlowPhase === "enterCity" || (tutorialFlowPhase === "citadelUpgrade" && cityReturnPointerReady)) && (
                 <div style={styles.tutorialCityPointer}><div style={styles.macroPointer}>☟︎</div></div>
               )}
               {landingPreview && landingScreen && (
@@ -5847,6 +5888,10 @@ const styles = {
   },
 
   tutorialChipGlow: { animation:"chipGlow 1.15s ease-in-out infinite" },
+  levelUpCelebration: { position:"absolute",left:"50%",top:58,zIndex:24,width:"min(520px,94%)",height:78,transform:"translateX(-50%)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none" },
+  levelUpBadge: { position:"relative",zIndex:2,minWidth:116,height:68,padding:"6px 20px",boxSizing:"border-box",borderRadius:22,display:"grid",gridTemplateColumns:"auto auto",gridTemplateRows:"18px 25px 16px",columnGap:8,alignItems:"center",justifyContent:"center",color:"#fff",background:"linear-gradient(135deg,rgba(8,47,73,.98),rgba(30,64,175,.98))",border:"1px solid rgba(253,224,71,.85)",boxShadow:"0 0 34px rgba(56,189,248,.55),0 0 56px rgba(250,204,21,.22)",animation:"levelUpReveal .42s cubic-bezier(.22,.9,.3,1) both" },
+  levelUpRayLeft: { width:"34%",height:3,marginRight:-4,transformOrigin:"right center",background:"linear-gradient(90deg,transparent,#38bdf8,#fde047)",boxShadow:"0 0 16px #38bdf8",animation:"levelUpRayLeft 1.25s ease-out both" },
+  levelUpRayRight: { width:"34%",height:3,marginLeft:-4,transformOrigin:"left center",background:"linear-gradient(90deg,#fde047,#38bdf8,transparent)",boxShadow:"0 0 16px #38bdf8",animation:"levelUpRayRight 1.25s ease-out both" },
   tutorialLevelChipGlow: { animation:"chipGlow 1.05s ease-in-out infinite",color:"#fef08a",borderColor:"#facc15" },
 
   tutorialMissionCard: { position:"absolute",left:10,right:10,top:60,zIndex:7,minHeight:74,padding:9,boxSizing:"border-box",borderRadius:19,display:"grid",gridTemplateColumns:"48px 1fr",gap:9,alignItems:"center",background:"linear-gradient(135deg,rgba(8,47,73,.96),rgba(15,23,42,.97))",border:"1px solid rgba(103,232,249,.48)",boxShadow:"0 16px 42px rgba(0,0,0,.4),0 0 24px rgba(34,211,238,.12)",backdropFilter:"blur(12px)",pointerEvents:"none",animation:"tutorialMissionEnter .34s cubic-bezier(.22,.9,.3,1) both" },
