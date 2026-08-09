@@ -464,6 +464,8 @@ const trainingIntroTimerRef = useRef(null);
   const [tutorialFlowPhase, setTutorialFlowPhase] = useState("buildEconomy");
   const devLabRef = useRef(false);
   const [devLab, setDevLab] = useState(false);
+  const devRebuildTimerRef = useRef(null);
+  const [devRebuildReport, setDevRebuildReport] = useState(null);
   const tutorialTeleportPointerTimerRef = useRef(null);
   const [tutorialTeleportPointerReady, setTutorialTeleportPointerReady] = useState(false);
 
@@ -526,6 +528,7 @@ resetArena();
       if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
       if (tutorialTeleportPointerTimerRef.current) clearTimeout(tutorialTeleportPointerTimerRef.current);
       if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
+      if (devRebuildTimerRef.current) clearTimeout(devRebuildTimerRef.current);
       if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
       if (cityReturnPointerTimerRef.current) clearTimeout(cityReturnPointerTimerRef.current);
       if (citadelPointerTimerRef.current) clearTimeout(citadelPointerTimerRef.current);
@@ -1176,6 +1179,90 @@ resetArena();
     setScreen("city");
   }
 
+  function buildingsTouchForAutoFit(a, b) {
+    const aRight = a.x + a.w * CITY_GRID_STEP;
+    const aBottom = a.y + a.h * CITY_GRID_STEP;
+    const bRight = b.x + b.w * CITY_GRID_STEP;
+    const bBottom = b.y + b.h * CITY_GRID_STEP;
+    const horizontal = (Math.abs(aRight - b.x) < 1 || Math.abs(bRight - a.x) < 1) &&
+      Math.max(a.y, b.y) < Math.min(aBottom, bBottom);
+    const vertical = (Math.abs(aBottom - b.y) < 1 || Math.abs(bBottom - a.y) < 1) &&
+      Math.max(a.x, b.x) < Math.min(aRight, bRight);
+    return horizontal || vertical;
+  }
+
+  function mergeAutoFitPair(primary, partner, targetLevel) {
+    const left = Math.min(primary.x, partner.x);
+    const top = Math.min(primary.y, partner.y);
+    const right = Math.max(primary.x + primary.w * CITY_GRID_STEP, partner.x + partner.w * CITY_GRID_STEP);
+    const bottom = Math.max(primary.y + primary.h * CITY_GRID_STEP, partner.y + partner.h * CITY_GRID_STEP);
+    primary.x = left;
+    primary.y = top;
+    primary.w = Math.max(1, Math.round((right - left) / CITY_GRID_STEP));
+    primary.h = Math.max(1, Math.round((bottom - top) / CITY_GRID_STEP));
+    primary.level = targetLevel;
+    primary.mergedModules = (primary.mergedModules || 1) + (partner.mergedModules || 1);
+    primary.autoFitGeneration = Math.floor((targetLevel - 1) / 5);
+    primary.underConstruction = false;
+    primary.upgrading = false;
+    primary.pendingLevel = null;
+    return primary;
+  }
+
+  function autoFitDeveloperCity(targetLevel) {
+    const source = cityRef.current.buildings;
+    const citadel = source.find((building) => building.type === "Citadel");
+    const result = citadel ? [citadel] : [];
+    const report = [];
+
+    for (const type of ["House", "CrystalPoint", "Barracks"]) {
+      const pool = source
+        .filter((building) => building.type === type)
+        .map((building) => ({ ...building, level: targetLevel, underConstruction: false, upgrading: false, pendingLevel: null }));
+      const used = new Set();
+      let mergedPairs = 0;
+      let keptSingles = 0;
+
+      for (let i = 0; i < pool.length; i += 1) {
+        if (used.has(pool[i].id)) continue;
+        let partnerIndex = -1;
+        for (let j = i + 1; j < pool.length; j += 1) {
+          if (!used.has(pool[j].id) && buildingsTouchForAutoFit(pool[i], pool[j])) {
+            partnerIndex = j;
+            break;
+          }
+        }
+        used.add(pool[i].id);
+        if (partnerIndex >= 0) {
+          used.add(pool[partnerIndex].id);
+          result.push(mergeAutoFitPair(pool[i], pool[partnerIndex], targetLevel));
+          mergedPairs += 1;
+        } else {
+          pool[i].mergedModules = pool[i].mergedModules || 1;
+          pool[i].autoFitGeneration = Math.floor((targetLevel - 1) / 5);
+          result.push(pool[i]);
+          keptSingles += 1;
+        }
+      }
+      if (pool.length > 0) report.push({ type, before: pool.length, complexes: mergedPairs, reserve: keptSingles });
+    }
+
+    cityRef.current = { ...cityRef.current, buildings: result };
+    constructionQueueRef.current = [];
+    updateSelectedBuilding(null);
+    clearGroupSelection();
+    return report;
+  }
+
+  function showDeveloperRebuildReport(targetLevel, report) {
+    setDevRebuildReport({ level: targetLevel, items: report });
+    if (devRebuildTimerRef.current) clearTimeout(devRebuildTimerRef.current);
+    devRebuildTimerRef.current = setTimeout(() => {
+      setDevRebuildReport(null);
+      devRebuildTimerRef.current = null;
+    }, 2400);
+  }
+
   function setDeveloperLevel(nextLevel) {
     if (!devLabRef.current) return;
     const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
@@ -1212,6 +1299,8 @@ resetArena();
     citadel.upgrading = false;
     citadel.underConstruction = false;
     constructionQueueRef.current = constructionQueueRef.current.filter((id) => id !== citadel.id);
+    const rebuildReport = target > stats.level ? autoFitDeveloperCity(target) : [];
+    if (rebuildReport.length > 0) showDeveloperRebuildReport(target, rebuildReport);
     if (playerRef.current) playerRef.current.level = target;
     cityCameraRef.current.x = CITY_WIDTH / 2;
     cityCameraRef.current.y = CITY_HEIGHT / 2;
@@ -2841,7 +2930,9 @@ resetArena();
       newBuildings.push({
         id: `${preview.type}-${Date.now()}-${Math.random()}`,
         type: preview.type,
-        level: 1,
+        level: devLabRef.current ? cityStatsRef.current.level : 1,
+        mergedModules: devLabRef.current ? Math.max(1, 1 + Math.floor((cityStatsRef.current.level - 1) / 5)) : 1,
+        autoFitGeneration: devLabRef.current ? Math.floor((cityStatsRef.current.level - 1) / 5) : 0,
         trainTimer: 0,
         x: preview.x,
         y: preview.y,
@@ -3835,6 +3926,14 @@ resetArena();
         `}
       </style>
 
+      {devLab && devRebuildReport && (screen === "arena" || screen === "city") && (
+        <div style={styles.devRebuildReport}>
+          <strong>AUTO FIT · LEVEL {devRebuildReport.level}</strong>
+          {devRebuildReport.items.map((item) => (
+            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes · {item.reserve} reserve</small>
+          ))}
+        </div>
+      )}
       {devLab && (screen === "arena" || screen === "city") && (
         <div style={styles.devLabPanel}>
           <div style={styles.devLabHeader}><span>DEV LAB</span><b>LV {cityStats.level}</b></div>
@@ -5327,6 +5426,9 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId, groupSelection, u
     } else {
       drawCitadelBuilding(ctx, building, width, height, cx, cy);
     }
+    if (building.type !== "Citadel" && (building.level || 1) > 1) {
+      drawAutoFitEvolution(ctx, building, width, height, cx, cy);
+    }
 
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.font = "900 11px Inter, system-ui, sans-serif";
@@ -5336,6 +5438,68 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId, groupSelection, u
 
     ctx.restore();
   }
+}
+
+function drawAutoFitEvolution(ctx, building, width, height, cx, cy) {
+  const level = building.level || 1;
+  const step = ((level - 1) % 5) + 1;
+  const generation = Math.floor((level - 1) / 5);
+  const modules = building.mergedModules || 1;
+  const colors = building.type === "House"
+    ? ["#86efac", "#15803d"]
+    : building.type === "CrystalPoint"
+      ? ["#67e8f9", "#0e7490"]
+      : ["#fde68a", "#b45309"];
+
+  ctx.save();
+  const centerY = cy - Math.min(18, height * 0.08);
+  const core = Math.max(7, Math.min(width, height) * (0.05 + Math.min(7, generation) * 0.008));
+
+  if (step >= 2 || modules > 1) {
+    ctx.strokeStyle = colors[0];
+    ctx.lineWidth = 4 + Math.min(5, generation);
+    ctx.shadowColor = colors[0];
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(building.x + width * 0.22, centerY);
+    ctx.lineTo(building.x + width * 0.78, centerY);
+    ctx.stroke();
+  }
+
+  if (step >= 3) {
+    const gradient = ctx.createRadialGradient(cx - core * 0.4, centerY - core * 0.5, 2, cx, centerY, core * 1.5);
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(0.35, colors[0]);
+    gradient.addColorStop(1, colors[1]);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(cx, centerY, core * (1 + generation * 0.05), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (step >= 4) {
+    const floors = Math.min(12, 1 + generation + (step === 5 ? 1 : 0));
+    const towerHeight = Math.min(height * 0.42, 20 + floors * 9);
+    const towerWidth = Math.max(13, core * 1.45);
+    ctx.fillStyle = colors[1];
+    roundedRect(ctx, cx - towerWidth / 2, centerY - towerHeight - core, towerWidth, towerHeight, towerWidth * 0.3);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    for (let i = 0; i < floors; i += 1) {
+      ctx.fillRect(cx - towerWidth * 0.27, centerY - core - 7 - i * 8, towerWidth * 0.54, 2.2);
+    }
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(2,6,23,0.82)";
+  roundedRect(ctx, building.x + 9, building.y + 9, 42, 21, 8);
+  ctx.fill();
+  ctx.fillStyle = colors[0];
+  ctx.font = "900 9px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`G${generation + 1} ×${modules}`, building.x + 30, building.y + 19.5);
+  ctx.restore();
 }
 
 function drawGroupSelection(ctx, selection) {
@@ -5814,6 +5978,7 @@ const styles = {
   },
 
   devLabMenuButton: { background:"linear-gradient(135deg,rgba(88,28,135,.92),rgba(14,116,144,.92))",border:"1px solid rgba(103,232,249,.62)",boxShadow:"0 0 28px rgba(34,211,238,.14)" },
+  devRebuildReport: { position:"absolute",left:"50%",top:76,zIndex:46,width:"min(330px,calc(100% - 34px))",transform:"translateX(-50%)",padding:12,borderRadius:18,display:"flex",flexDirection:"column",gap:4,color:"#e0f2fe",background:"linear-gradient(135deg,rgba(30,41,59,.98),rgba(49,46,129,.96))",border:"1px solid rgba(129,140,248,.7)",boxShadow:"0 18px 52px rgba(0,0,0,.52),0 0 30px rgba(99,102,241,.22)",pointerEvents:"none" },
   devLabPanel: { position:"absolute",right:10,top:142,zIndex:45,width:132,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
   devLabHeader: { display:"flex",justifyContent:"space-between",alignItems:"center",color:"#e9d5ff",fontSize:9,fontWeight:950,letterSpacing:".08em" },
   devLabControls: { display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,margin:"7px 0 4px" },
