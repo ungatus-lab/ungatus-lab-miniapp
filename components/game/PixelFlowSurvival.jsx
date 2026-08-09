@@ -1179,78 +1179,133 @@ resetArena();
     setScreen("city");
   }
 
-  function buildingsTouchForAutoFit(a, b) {
-    const aRight = a.x + a.w * CITY_GRID_STEP;
-    const aBottom = a.y + a.h * CITY_GRID_STEP;
-    const bRight = b.x + b.w * CITY_GRID_STEP;
-    const bBottom = b.y + b.h * CITY_GRID_STEP;
-    const horizontal = (Math.abs(aRight - b.x) < 1 || Math.abs(bRight - a.x) < 1) &&
-      Math.max(a.y, b.y) < Math.min(aBottom, bBottom);
-    const vertical = (Math.abs(aBottom - b.y) < 1 || Math.abs(bBottom - a.y) < 1) &&
-      Math.max(a.x, b.x) < Math.min(aRight, bRight);
-    return horizontal || vertical;
+  function getAutoFitFootprint(type, level) {
+    const definition = BUILDINGS[type] || BUILDINGS.House;
+    if (level <= 1) return { w: definition.w, h: definition.h };
+    const generation = Math.max(0, Math.floor((level - 2) / 5));
+    const scale = Math.min(8, Math.pow(2, generation));
+    const step = ((level - 2) % 5 + 5) % 5;
+    if (step === 0) return { w: definition.w * scale * 2, h: definition.h * scale };
+    return { w: definition.w * scale * 2, h: definition.h * scale * 2 };
   }
 
-  function mergeAutoFitPair(primary, partner, targetLevel) {
-    const left = Math.min(primary.x, partner.x);
-    const top = Math.min(primary.y, partner.y);
-    const right = Math.max(primary.x + primary.w * CITY_GRID_STEP, partner.x + partner.w * CITY_GRID_STEP);
-    const bottom = Math.max(primary.y + primary.h * CITY_GRID_STEP, partner.y + partner.h * CITY_GRID_STEP);
-    primary.x = left;
-    primary.y = top;
-    primary.w = Math.max(1, Math.round((right - left) / CITY_GRID_STEP));
-    primary.h = Math.max(1, Math.round((bottom - top) / CITY_GRID_STEP));
+  function isAutoFitMergeLevel(level) {
+    if (level < 2) return false;
+    const step = ((level - 2) % 5 + 5) % 5;
+    return step === 0 || step === 1;
+  }
+
+  function mergeAutoFitPair(primary, partner, targetLevel, syntheticTwin = false) {
+    const footprint = getAutoFitFootprint(primary.type, targetLevel);
     primary.level = targetLevel;
-    primary.mergedModules = (primary.mergedModules || 1) + (partner.mergedModules || 1);
+    primary.w = footprint.w;
+    primary.h = footprint.h;
+    primary.mergedModules = (primary.mergedModules || 1) + (syntheticTwin ? (primary.mergedModules || 1) : (partner?.mergedModules || 1));
     primary.autoFitGeneration = Math.floor((targetLevel - 1) / 5);
     primary.underConstruction = false;
     primary.upgrading = false;
     primary.pendingLevel = null;
+    primary.syntheticTwin = syntheticTwin;
     return primary;
   }
 
-  function autoFitDeveloperCity(targetLevel) {
+  function placeAutoFitBuildings(buildings, type) {
+    const citadel = getCitadelBuilding();
+    const gap = CITY_GRID_STEP;
+    const maxColumns = Math.max(1, Math.floor(CITY_WIDTH / (CITY_GRID_STEP * 3)));
+    const zoneX = type === "CrystalPoint" ? gap : type === "Barracks" ? CITY_WIDTH - gap : CITY_WIDTH / 2;
+    let cursorX = type === "Barracks" ? zoneX : type === "House" ? zoneX : zoneX;
+    let cursorY = gap;
+    let rowHeight = 0;
+    let column = 0;
+
+    for (const building of buildings) {
+      const width = building.w * CITY_GRID_STEP;
+      const height = building.h * CITY_GRID_STEP;
+      if (type === "CrystalPoint") {
+        building.x = gap;
+        building.y = cursorY;
+        cursorY += height + gap;
+      } else if (type === "Barracks") {
+        building.x = Math.max(0, CITY_WIDTH - gap - width);
+        building.y = cursorY;
+        cursorY += height + gap;
+      } else {
+        if (column >= maxColumns || cursorX + width > CITY_WIDTH - gap) {
+          column = 0;
+          cursorX = Math.max(gap, CITY_WIDTH / 2 - width);
+          cursorY += rowHeight + gap;
+          rowHeight = 0;
+        }
+        building.x = clamp(cursorX, 0, CITY_WIDTH - width);
+        building.y = clamp(Math.max(citadel ? citadel.y + citadel.h * CITY_GRID_STEP + gap : gap, cursorY), 0, CITY_HEIGHT - height);
+        cursorX += width + gap;
+        rowHeight = Math.max(rowHeight, height);
+        column += 1;
+      }
+      building.x = clamp(building.x, 0, CITY_WIDTH - width);
+      building.y = clamp(building.y, 0, CITY_HEIGHT - height);
+    }
+  }
+
+  function autoFitDeveloperCity(previousLevel, targetLevel) {
     const source = cityRef.current.buildings;
     const citadel = source.find((building) => building.type === "Citadel");
     const result = citadel ? [citadel] : [];
     const report = [];
 
     for (const type of ["House", "CrystalPoint", "Barracks"]) {
-      const pool = source
+      let pool = source
         .filter((building) => building.type === type)
-        .map((building) => ({ ...building, level: targetLevel, underConstruction: false, upgrading: false, pendingLevel: null }));
-      const used = new Set();
-      let mergedPairs = 0;
-      let keptSingles = 0;
+        .map((building) => ({
+          ...building,
+          level: previousLevel,
+          mergedModules: building.mergedModules || 1,
+          underConstruction: false,
+          upgrading: false,
+          pendingLevel: null,
+        }));
+      let synthetic = 0;
+      let merges = 0;
 
-      for (let i = 0; i < pool.length; i += 1) {
-        if (used.has(pool[i].id)) continue;
-        let partnerIndex = -1;
-        for (let j = i + 1; j < pool.length; j += 1) {
-          if (!used.has(pool[j].id) && buildingsTouchForAutoFit(pool[i], pool[j])) {
-            partnerIndex = j;
-            break;
+      for (let level = previousLevel + 1; level <= targetLevel; level += 1) {
+        if (isAutoFitMergeLevel(level)) {
+          const nextPool = [];
+          pool.sort((a, b) => a.y - b.y || a.x - b.x);
+          for (let i = 0; i < pool.length; i += 2) {
+            const primary = pool[i];
+            const partner = pool[i + 1] || null;
+            if (!partner) synthetic += 1;
+            nextPool.push(mergeAutoFitPair(primary, partner, level, !partner));
+            merges += 1;
           }
-        }
-        used.add(pool[i].id);
-        if (partnerIndex >= 0) {
-          used.add(pool[partnerIndex].id);
-          result.push(mergeAutoFitPair(pool[i], pool[partnerIndex], targetLevel));
-          mergedPairs += 1;
+          pool = nextPool;
         } else {
-          pool[i].mergedModules = pool[i].mergedModules || 1;
-          pool[i].autoFitGeneration = Math.floor((targetLevel - 1) / 5);
-          result.push(pool[i]);
-          keptSingles += 1;
+          const footprint = getAutoFitFootprint(type, level);
+          pool = pool.map((building) => ({
+            ...building,
+            level,
+            w: footprint.w,
+            h: footprint.h,
+            autoFitGeneration: Math.floor((level - 1) / 5),
+          }));
         }
       }
-      if (pool.length > 0) report.push({ type, before: pool.length, complexes: mergedPairs, reserve: keptSingles });
+
+      const footprint = getAutoFitFootprint(type, targetLevel);
+      pool = pool.map((building) => ({ ...building, level: targetLevel, w: footprint.w, h: footprint.h }));
+      placeAutoFitBuildings(pool, type);
+      result.push(...pool);
+      if (source.some((building) => building.type === type)) {
+        report.push({ type, before: source.filter((building) => building.type === type).length, complexes: pool.length, reserve: 0, synthetic });
+      }
     }
 
     cityRef.current = { ...cityRef.current, buildings: result };
     constructionQueueRef.current = [];
     updateSelectedBuilding(null);
     clearGroupSelection();
+    recalculateCityEconomy();
     return report;
   }
 
@@ -1267,8 +1322,9 @@ resetArena();
     if (!devLabRef.current) return;
     const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
     const stats = cityStatsRef.current;
+    const previousLevel = stats.level;
     const citadel = getCitadelBuilding();
-    if (!citadel || target === stats.level) return;
+    if (!citadel || target === previousLevel) return;
 
     if (target > stats.level) {
       const steps = target - stats.level;
@@ -1299,7 +1355,7 @@ resetArena();
     citadel.upgrading = false;
     citadel.underConstruction = false;
     constructionQueueRef.current = constructionQueueRef.current.filter((id) => id !== citadel.id);
-    const rebuildReport = target > stats.level ? autoFitDeveloperCity(target) : [];
+    const rebuildReport = target > previousLevel ? autoFitDeveloperCity(previousLevel, target) : [];
     if (rebuildReport.length > 0) showDeveloperRebuildReport(target, rebuildReport);
     if (playerRef.current) playerRef.current.level = target;
     cityCameraRef.current.x = CITY_WIDTH / 2;
@@ -2927,17 +2983,20 @@ resetArena();
       crystalCost += definition.cost;
       workerCost += definition.workerCost || 0;
       const buildDuration = BUILD_TIME_SECONDS[preview.type] || 3;
+      const currentFootprint = devLabRef.current
+        ? getAutoFitFootprint(preview.type, cityStatsRef.current.level)
+        : { w: preview.w, h: preview.h };
       newBuildings.push({
         id: `${preview.type}-${Date.now()}-${Math.random()}`,
         type: preview.type,
         level: devLabRef.current ? cityStatsRef.current.level : 1,
-        mergedModules: devLabRef.current ? Math.max(1, 1 + Math.floor((cityStatsRef.current.level - 1) / 5)) : 1,
+        mergedModules: devLabRef.current ? Math.pow(2, Math.min(6, Math.max(0, cityStatsRef.current.level - 1))) : 1,
         autoFitGeneration: devLabRef.current ? Math.floor((cityStatsRef.current.level - 1) / 5) : 0,
         trainTimer: 0,
         x: preview.x,
         y: preview.y,
-        w: preview.w,
-        h: preview.h,
+        w: currentFootprint.w,
+        h: currentFootprint.h,
         color: definition.color,
         underConstruction: true,
         buildElapsed: 0,
@@ -3930,7 +3989,7 @@ resetArena();
         <div style={styles.devRebuildReport}>
           <strong>AUTO FIT · LEVEL {devRebuildReport.level}</strong>
           {devRebuildReport.items.map((item) => (
-            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes · {item.reserve} reserve</small>
+            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes{item.synthetic ? ` · +${item.synthetic} auto twins` : ""}</small>
           ))}
         </div>
       )}
