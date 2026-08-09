@@ -1217,13 +1217,6 @@ resetArena();
     };
   }
 
-  function getRequiredMergeAxis(building, level) {
-    const cycleStep = ((level - 2) % 5 + 5) % 5;
-    if (cycleStep === 0) return "horizontal";
-    if (cycleStep === 1) return building.w >= building.h ? "vertical" : "horizontal";
-    return building.w >= building.h ? "vertical" : "horizontal";
-  }
-
   function canMergeOnOccupiedCells(a, b, level) {
     if (a.w !== b.w || a.h !== b.h) return false;
     const ar = getBuildingRect(a);
@@ -1231,11 +1224,19 @@ resetArena();
     const union = getRectUnion(a, b);
     const horizontalTouch = (Math.abs(ar.right - br.left) < 1 || Math.abs(br.right - ar.left) < 1) && ar.top === br.top && ar.bottom === br.bottom;
     const verticalTouch = (Math.abs(ar.bottom - br.top) < 1 || Math.abs(br.bottom - ar.top) < 1) && ar.left === br.left && ar.right === br.right;
-    const requiredAxis = getRequiredMergeAxis(a, level);
-    const correctDirection = requiredAxis === "horizontal" ? horizontalTouch : verticalTouch;
     const occupiedArea = a.w * a.h + b.w * b.h;
     const unionArea = ((union.right - union.left) / CITY_GRID_STEP) * ((union.bottom - union.top) / CITY_GRID_STEP);
-    return correctDirection && Math.abs(occupiedArea - unionArea) < 0.001;
+    if (Math.abs(occupiedArea - unionArea) >= 0.001) return false;
+
+    // Level 2 preserves the successful v81 behavior: any genuinely adjacent
+    // pair merges in the direction in which the original cells already stand.
+    if (level === 2) return horizontalTouch || verticalTouch;
+
+    // From level 3 onward two strips must join across their long side:
+    // vertical + vertical => side by side; horizontal + horizontal => stacked.
+    if (a.h > a.w) return horizontalTouch;
+    if (a.w > a.h) return verticalTouch;
+    return horizontalTouch || verticalTouch;
   }
 
   function rectIsFree(x, y, w, h, ignoredIds = new Set()) {
@@ -1251,31 +1252,76 @@ resetArena();
   }
 
   function getTwinCandidates(building, level) {
-    const requiredAxis = getRequiredMergeAxis(building, level);
-    if (requiredAxis === "horizontal") {
+    if (level === 2) {
+      return [
+        { x: building.x + building.w * CITY_GRID_STEP, y: building.y },
+        { x: building.x - building.w * CITY_GRID_STEP, y: building.y },
+        { x: building.x, y: building.y + building.h * CITY_GRID_STEP },
+        { x: building.x, y: building.y - building.h * CITY_GRID_STEP },
+      ];
+    }
+    if (building.h > building.w) {
       return [
         { x: building.x + building.w * CITY_GRID_STEP, y: building.y },
         { x: building.x - building.w * CITY_GRID_STEP, y: building.y },
       ];
     }
+    if (building.w > building.h) {
+      return [
+        { x: building.x, y: building.y + building.h * CITY_GRID_STEP },
+        { x: building.x, y: building.y - building.h * CITY_GRID_STEP },
+      ];
+    }
     return [
+      { x: building.x + building.w * CITY_GRID_STEP, y: building.y },
+      { x: building.x - building.w * CITY_GRID_STEP, y: building.y },
       { x: building.x, y: building.y + building.h * CITY_GRID_STEP },
       { x: building.x, y: building.y - building.h * CITY_GRID_STEP },
     ];
   }
 
-  function findSyntheticTwinPlacement(building, level) {
-    const ignored = new Set([building.id]);
-    return getTwinCandidates(building, level).find((candidate) =>
-      rectIsFree(candidate.x, candidate.y, building.w, building.h, ignored)
-    ) || null;
+  function makeTwinAt(building, placement, level) {
+    return {
+      ...building,
+      id: `${building.id}-auto-twin-${level}`,
+      x: placement.x,
+      y: placement.y,
+    };
   }
 
-  function movePartnerNextToPrimary(primary, partner, level) {
+  function findSyntheticTwinPlacement(building, level, completedPairs = []) {
+    const ignored = new Set([building.id]);
+    const candidates = getTwinCandidates(building, level).filter((candidate) =>
+      rectIsFree(candidate.x, candidate.y, building.w, building.h, ignored)
+    );
+
+    // For an odd level-1 remainder, prefer the missing cell that makes the new
+    // double align with an already produced double and therefore form a clean
+    // square on level 3. This handles the tutorial L-shaped three-house layout.
+    if (level === 2 && completedPairs.length > 0) {
+      const futureReady = candidates.find((candidate) => {
+        const twin = makeTwinAt(building, candidate, level);
+        const merged = mergeAutoFitPair({ ...building }, twin, level, true);
+        return completedPairs.some((pair) => canMergeOnOccupiedCells(pair, merged, level + 1));
+      });
+      if (futureReady) return futureReady;
+    }
+    return candidates[0] || null;
+  }
+
+  function movePartnerNextToPrimary(primary, partner, level, completedPairs = []) {
     const ignored = new Set([primary.id, partner.id]);
-    const placement = getTwinCandidates(primary, level).find((candidate) =>
+    const candidates = getTwinCandidates(primary, level).filter((candidate) =>
       rectIsFree(candidate.x, candidate.y, primary.w, primary.h, ignored)
     );
+    let placement = candidates[0] || null;
+    if (level === 2 && completedPairs.length > 0) {
+      placement = candidates.find((candidate) => {
+        const moved = { ...partner, x: candidate.x, y: candidate.y, w: primary.w, h: primary.h };
+        const merged = mergeAutoFitPair({ ...primary }, moved, level, false);
+        return completedPairs.some((pair) => canMergeOnOccupiedCells(pair, merged, level + 1));
+      }) || placement;
+    }
     if (!placement) return false;
     partner.x = placement.x;
     partner.y = placement.y;
@@ -1300,7 +1346,7 @@ resetArena();
     return primary;
   }
 
-  function pickCellAccuratePartner(pool, index, used, level) {
+  function pickCellAccuratePartner(pool, index, used, level, completedPairs) {
     for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
       if (!used.has(candidate) && canMergeOnOccupiedCells(pool[index], pool[candidate], level)) return candidate;
     }
@@ -1314,7 +1360,7 @@ resetArena();
         nearestDistance = distance;
       }
     }
-    if (nearest >= 0 && movePartnerNextToPrimary(pool[index], pool[nearest], level)) return nearest;
+    if (nearest >= 0 && movePartnerNextToPrimary(pool[index], pool[nearest], level, completedPairs)) return nearest;
     return -1;
   }
 
@@ -1337,9 +1383,6 @@ resetArena();
         }));
       let synthetic = 0;
       let moved = 0;
-      let autoBuildCrystalCost = 0;
-      let autoBuildWorkerCost = 0;
-      let reconstructionCrystalCost = 0;
 
       for (let level = previousLevel + 1; level <= targetLevel; level += 1) {
         if (!isAutoFitMergeLevel(level)) {
@@ -1353,7 +1396,7 @@ resetArena();
         for (let index = 0; index < pool.length; index += 1) {
           if (used.has(index)) continue;
           const primary = pool[index];
-          let partnerIndex = pickCellAccuratePartner(pool, index, used, level);
+          let partnerIndex = pickCellAccuratePartner(pool, index, used, level, nextPool);
           let partner;
           let syntheticTwin = false;
 
@@ -1362,7 +1405,7 @@ resetArena();
             if (!canMergeOnOccupiedCells(primary, partner, level)) moved += 1;
             used.add(partnerIndex);
           } else {
-            const placement = findSyntheticTwinPlacement(primary, level);
+            const placement = findSyntheticTwinPlacement(primary, level, nextPool);
             if (!placement) {
               primary.level = level;
               nextPool.push(primary);
@@ -1376,35 +1419,18 @@ resetArena();
               y: placement.y,
             };
             synthetic += 1;
-            const definition = BUILDINGS[type] || BUILDINGS.House;
-            autoBuildCrystalCost += definition.cost || 0;
-            autoBuildWorkerCost += definition.workerCost || 0;
             syntheticTwin = true;
           }
 
           used.add(index);
-          const definition = BUILDINGS[type] || BUILDINGS.House;
-          reconstructionCrystalCost += (definition.cost || 0) * Math.max(1, getLevelUpgradeMultiplier(level));
           nextPool.push(mergeAutoFitPair(primary, partner, level, syntheticTwin));
         }
         pool = nextPool;
       }
 
-      const stats = cityStatsRef.current;
-      stats.crystals = Math.max(0, stats.crystals - autoBuildCrystalCost - reconstructionCrystalCost);
-      stats.workers = Math.max(0, stats.workers - autoBuildWorkerCost);
       result.push(...pool);
       if (source.some((building) => building.type === type)) {
-        report.push({
-          type,
-          before: source.filter((building) => building.type === type).length,
-          complexes: pool.length,
-          reserve: 0,
-          synthetic,
-          moved,
-          crystalCost: autoBuildCrystalCost + reconstructionCrystalCost,
-          workerCost: autoBuildWorkerCost,
-        });
+        report.push({ type, before: source.filter((building) => building.type === type).length, complexes: pool.length, reserve: 0, synthetic, moved });
       }
     }
 
@@ -4096,7 +4122,7 @@ resetArena();
         <div style={styles.devRebuildReport}>
           <strong>AUTO FIT · LEVEL {devRebuildReport.level}</strong>
           {devRebuildReport.items.map((item) => (
-            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes{item.synthetic ? ` · +${item.synthetic} auto twins` : ""}{item.moved ? ` · ${item.moved} relocated` : ""}{item.crystalCost ? ` · 💎${item.crystalCost}` : ""}{item.workerCost ? ` · 👥${item.workerCost}` : ""}</small>
+            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes{item.synthetic ? ` · +${item.synthetic} auto twins` : ""}{item.moved ? ` · ${item.moved} relocated` : ""}</small>
           ))}
         </div>
       )}
