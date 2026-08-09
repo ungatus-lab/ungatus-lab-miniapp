@@ -871,6 +871,7 @@ resetArena();
   function shouldShowBuildTutorialArrow() {
     return (
       cityTutorialReady &&
+      !tutorialMissionComplete &&
       screen === "city" &&
       (tutorialStep === "houses" || tutorialStep === "crystals" || tutorialStep === "barracks") &&
       !isTutorialConstructionWaiting() &&
@@ -893,6 +894,7 @@ resetArena();
 
   function shouldShowMapTutorialArrow() {
     return (
+      !tutorialMissionComplete &&
       screen === "city" &&
       (tutorialStep === "map" || tutorialStep === "mapAfterBarracks") &&
       !buildMenuOpen &&
@@ -1345,6 +1347,7 @@ resetArena();
             const labels = { House: "HOUSING ONLINE", CrystalPoint: "CRYSTAL NETWORK ONLINE", Barracks: "DEFENSE GRID ONLINE" };
             setTutorialMissionComplete({ icon: "✓", title: "OBJECTIVE COMPLETE", detail: labels[completedType] });
             if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+            setBuildMenuTutorialReady(false);
             tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1250);
           }
 
