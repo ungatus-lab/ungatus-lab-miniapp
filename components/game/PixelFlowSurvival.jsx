@@ -441,6 +441,8 @@ const trainingIntroTimerRef = useRef(null);
   const [mapTutorialTarget, setMapTutorialTarget] = useState(null);
   const [tutorialThreatCardVisible, setTutorialThreatCardVisible] = useState(false);
   const [tutorialFlowPhase, setTutorialFlowPhase] = useState("buildEconomy");
+  const tutorialTeleportPointerTimerRef = useRef(null);
+  const [tutorialTeleportPointerReady, setTutorialTeleportPointerReady] = useState(false);
 
   function updateTutorialFlowPhase(phase) {
     tutorialFlowRef.current.phase = phase;
@@ -491,8 +493,35 @@ resetArena();
       if (groupGestureRef.current.timer) clearTimeout(groupGestureRef.current.timer);
       if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
       if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
+      if (tutorialTeleportPointerTimerRef.current) clearTimeout(tutorialTeleportPointerTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (tutorialTeleportPointerTimerRef.current) {
+      clearTimeout(tutorialTeleportPointerTimerRef.current);
+      tutorialTeleportPointerTimerRef.current = null;
+    }
+
+    const delayedPointerPhases = ["teleportButton", "selectLanding", "confirmLanding"];
+    if (!delayedPointerPhases.includes(tutorialFlowPhase)) {
+      setTutorialTeleportPointerReady(false);
+      return;
+    }
+
+    setTutorialTeleportPointerReady(false);
+    tutorialTeleportPointerTimerRef.current = setTimeout(() => {
+      setTutorialTeleportPointerReady(true);
+      tutorialTeleportPointerTimerRef.current = null;
+    }, 1000);
+
+    return () => {
+      if (tutorialTeleportPointerTimerRef.current) {
+        clearTimeout(tutorialTeleportPointerTimerRef.current);
+        tutorialTeleportPointerTimerRef.current = null;
+      }
+    };
+  }, [tutorialFlowPhase]);
 
   useEffect(() => {
     if (!open) return;
@@ -3950,10 +3979,10 @@ resetArena();
                   <div style={styles.macroPointerUp}>☝︎</div>
                 </div>
               )}
-              {tutorialFlowPhase === "teleportButton" && (
+              {tutorialFlowPhase === "teleportButton" && tutorialTeleportPointerReady && (
                 <div style={styles.tutorialTeleportPointer}><div style={styles.macroPointer}>☟︎</div></div>
               )}
-              {tutorialFlowPhase === "selectLanding" && tutorialLandingTargetScreen && (
+              {tutorialFlowPhase === "selectLanding" && tutorialTeleportPointerReady && tutorialLandingTargetScreen && (
                 <>
                   <div
                     style={{
@@ -3975,7 +4004,7 @@ resetArena();
                   </div>
                 </>
               )}
-              {tutorialFlowPhase === "confirmLanding" && landingScreen && (
+              {tutorialFlowPhase === "confirmLanding" && tutorialTeleportPointerReady && landingScreen && (
                 <div
                   style={{
                     ...styles.tutorialConfirmPointer,
