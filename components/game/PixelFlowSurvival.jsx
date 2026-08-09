@@ -2103,6 +2103,13 @@ resetArena();
   function enterCity() {
     setUtilityMenuOpen(false); setMonsterSearchOpen(false);
     if (tutorialFlowRef.current.phase === "enterCity") {
+      // Give the city screen one calm second before pointing at construction.
+      if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
+      setCityTutorialReady(false);
+      cityTutorialTimerRef.current = setTimeout(() => {
+        setCityTutorialReady(true);
+        cityTutorialTimerRef.current = null;
+      }, 1000);
       updateTutorialFlowPhase("cityBarracks");
     } else if (tutorialFlowRef.current.phase === "citadelUpgrade") {
       const citadel = getCitadelBuilding();
