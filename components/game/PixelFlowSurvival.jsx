@@ -326,6 +326,8 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const tutorialSearchMonsterIdRef = useRef(null);
   const tutorialKillsRef = useRef(0);
   const [tutorialKills, setTutorialKills] = useState(0);
+  const tutorialFreeTargetIdsRef = useRef([]);
+  const tutorialFreeTargetTimerRef = useRef(null);
   const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null });
   const mapTutorialGuideRef = useRef({ phase: "off", timer: 0, zoomStart: 0.3 });
 
@@ -502,6 +504,7 @@ resetArena();
       if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
       if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
       if (tutorialTeleportPointerTimerRef.current) clearTimeout(tutorialTeleportPointerTimerRef.current);
+      if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
     };
   }, []);
 
@@ -979,6 +982,9 @@ resetArena();
     tutorialSearchMonsterIdRef.current = null;
     tutorialKillsRef.current = 0;
     setTutorialKills(0);
+    tutorialFreeTargetIdsRef.current = [];
+    if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
+    tutorialFreeTargetTimerRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
@@ -1641,6 +1647,39 @@ resetArena();
           if (["attackLaunched","searchAttackLaunched","levelProgress"].includes(tutorialFlowRef.current.phase)) {
             tutorialKillsRef.current = Math.min(4, tutorialKillsRef.current + 1);
             setTutorialKills(tutorialKillsRef.current);
+            if (tutorialKillsRef.current === 2) {
+              const player = playerRef.current;
+              const weakTargets = world.monsters
+                .filter((item) => item.id !== monster.id && item.armor === 1 && item.hp > 0)
+                .sort((a, b) => {
+                  if (!player) return a.hp - b.hp;
+                  return Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y);
+                })
+                .slice(0, 3);
+              tutorialFreeTargetIdsRef.current = weakTargets.map((item) => item.id);
+              setTutorialMissionComplete({
+                icon: "⚔",
+                title: "INDEPENDENT HUNT",
+                detail: "FIND AND DEFEAT 2 MORE MONSTERS",
+              });
+              if (player) {
+                mapTutorialZoomRef.current = {
+                  active: true,
+                  targetZoom: MIN_ZOOM,
+                  mode: "freeOverview",
+                  targetX: player.x,
+                  targetY: player.y,
+                };
+                updateMapTutorialPhase("freeOverviewZoom");
+              }
+              if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+              tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1800);
+              if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
+              tutorialFreeTargetTimerRef.current = setTimeout(() => {
+                tutorialFreeTargetIdsRef.current = [];
+                tutorialFreeTargetTimerRef.current = null;
+              }, 4200);
+            }
             if (tutorialKillsRef.current >= 4) {
               setTutorialMissionComplete({ icon:"✓", title:"OBJECTIVE COMPLETE", detail:"4 MONSTERS DEFEATED" });
               setEnterCoreVisible(true);
@@ -1839,7 +1878,7 @@ resetArena();
     drawOutsideWorldShadow(ctx);
     drawWorldGrid(ctx);
     drawWorldBorder(ctx);
-    drawMonsters(ctx, world.monsters, selectedMonsterRef.current?.id);
+    drawMonsters(ctx, world.monsters, selectedMonsterRef.current?.id, tutorialFreeTargetIdsRef.current);
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
@@ -4554,12 +4593,27 @@ function drawWorldBorder(ctx) {
   ctx.restore();
 }
 
-function drawMonsters(ctx, monsters, selectedMonsterId) {
+function drawMonsters(ctx, monsters, selectedMonsterId, tutorialFreeTargetIds = []) {
   const now = Date.now();
+  const highlightedTargets = new Set(tutorialFreeTargetIds);
 
   for (const monster of monsters) {
     const selected = selectedMonsterId === monster.id;
+    const tutorialHighlighted = highlightedTargets.has(monster.id);
     const pulse = 1 + Math.sin(now / 480 + monster.pulse) * 0.035;
+
+    if (tutorialHighlighted) {
+      const guidePulse = 1 + Math.sin(now / 180) * 0.12;
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(134,239,172,0.95)";
+      ctx.lineWidth = 7;
+      ctx.shadowColor = "#22c55e";
+      ctx.shadowBlur = 24;
+      ctx.arc(monster.x, monster.y, (monster.r + 22) * guidePulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
 
     if (selected) {
       ctx.beginPath();
