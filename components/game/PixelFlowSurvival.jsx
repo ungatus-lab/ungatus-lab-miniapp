@@ -414,6 +414,7 @@ export default function PixelFlowSurvival({ open, onClose }) {
 const trainingIntroTimerRef = useRef(null);
   const cityTutorialTimerRef = useRef(null);
   const tutorialMissionTimerRef = useRef(null);
+  const postTeleportCityTimerRef = useRef(null);
   const [tutorialMissionComplete, setTutorialMissionComplete] = useState(null);
   const [profile, setProfile] = useState(initialProfile);
   const [landingPreview, setLandingPreviewState] = useState(null);
@@ -489,6 +490,7 @@ resetArena();
       if (buildCardReturnTimerRef.current) clearTimeout(buildCardReturnTimerRef.current);
       if (groupGestureRef.current.timer) clearTimeout(groupGestureRef.current.timer);
       if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
+      if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
     };
   }, []);
 
@@ -944,6 +946,8 @@ resetArena();
     setMapTutorialTarget(null);
     setTutorialThreatCardVisible(false);
     setTutorialMissionComplete(null);
+    if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
+    postTeleportCityTimerRef.current = null;
     setUtilityMenuOpen(false);
     setMonsterSearchOpen(false);
     monsterSearchIndexRef.current = { tier: 1, index: -1 };
@@ -1153,8 +1157,8 @@ resetArena();
         setMapTutorialTarget({ ...monster });
         updateMapTutorialPhase("monsterPointerFinal");
       }
-      setEnterCoreVisible(true);
-      updateTutorialFlowPhase("enterCity");
+      setEnterCoreVisible(false);
+      updateTutorialFlowPhase("inspectAfterTeleport");
       if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
       tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1100);
     }
@@ -2984,8 +2988,15 @@ resetArena();
           // an army is needed. Do not return to the old teleport tutorial.
           // Keep the flow on enterCity so the next pointer leads to the city
           // button and then to construction of the four barracks.
-          const postTeleportInspection = tutorialFlowRef.current.phase === "enterCity";
-          if (!postTeleportInspection) {
+          const postTeleportInspection = tutorialFlowRef.current.phase === "inspectAfterTeleport";
+          if (postTeleportInspection) {
+            if (postTeleportCityTimerRef.current) clearTimeout(postTeleportCityTimerRef.current);
+            postTeleportCityTimerRef.current = setTimeout(() => {
+              setEnterCoreVisible(true);
+              updateTutorialFlowPhase("enterCity");
+              postTeleportCityTimerRef.current = null;
+            }, 1000);
+          } else {
             updateTutorialFlowPhase(searchStage ? "searchAttackButton" : attackStage ? "attackButton" : "inspectMonster");
           }
           updateMapTutorialPhase("off");
