@@ -42,7 +42,9 @@ const BUILD_TIME_SECONDS = {
   House: 2,
   CrystalPoint: 3,
   Barracks: 5,
+  Citadel: 8,
 };
+const UPGRADE_TIME_MULTIPLIER = 1.45;
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -332,6 +334,10 @@ export default function PixelFlowSurvival({ open, onClose }) {
   const cityReturnPointerTimerRef = useRef(null);
   const [levelUpCelebration, setLevelUpCelebration] = useState(null);
   const [cityReturnPointerReady, setCityReturnPointerReady] = useState(false);
+  const citadelPointerTimerRef = useRef(null);
+  const citadelUpgradePointerTimerRef = useRef(null);
+  const [citadelPointerReady, setCitadelPointerReady] = useState(false);
+  const [citadelUpgradePointerReady, setCitadelUpgradePointerReady] = useState(false);
   const mapTutorialZoomRef = useRef({ active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null });
   const mapTutorialGuideRef = useRef({ phase: "off", timer: 0, zoomStart: 0.3 });
 
@@ -511,6 +517,8 @@ resetArena();
       if (tutorialFreeTargetTimerRef.current) clearTimeout(tutorialFreeTargetTimerRef.current);
       if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
       if (cityReturnPointerTimerRef.current) clearTimeout(cityReturnPointerTimerRef.current);
+      if (citadelPointerTimerRef.current) clearTimeout(citadelPointerTimerRef.current);
+      if (citadelUpgradePointerTimerRef.current) clearTimeout(citadelUpgradePointerTimerRef.current);
     };
   }, []);
 
@@ -539,6 +547,23 @@ resetArena();
       }
     };
   }, [tutorialFlowPhase]);
+
+  useEffect(() => {
+    if (citadelUpgradePointerTimerRef.current) {
+      clearTimeout(citadelUpgradePointerTimerRef.current);
+      citadelUpgradePointerTimerRef.current = null;
+    }
+    setCitadelUpgradePointerReady(false);
+    if (tutorialFlowPhase === "citadelUpgrade" && selectedBuilding?.type === "Citadel") {
+      citadelUpgradePointerTimerRef.current = setTimeout(() => {
+        setCitadelUpgradePointerReady(true);
+        citadelUpgradePointerTimerRef.current = null;
+      }, 1000);
+    }
+    return () => {
+      if (citadelUpgradePointerTimerRef.current) clearTimeout(citadelUpgradePointerTimerRef.current);
+    };
+  }, [tutorialFlowPhase, selectedBuilding?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -639,6 +664,13 @@ resetArena();
     tutorialFlowPhase === "selectLanding" && tutorialLandingTargetRef.current
       ? worldToScreen(tutorialLandingTargetRef.current.x, tutorialLandingTargetRef.current.y)
       : null;
+  const citadelBuildingForTutorial = getCitadelBuilding();
+  const citadelTutorialScreen = citadelBuildingForTutorial
+    ? cityWorldToScreen(
+        citadelBuildingForTutorial.x + (citadelBuildingForTutorial.w * CITY_GRID_STEP) / 2,
+        citadelBuildingForTutorial.y + (citadelBuildingForTutorial.h * CITY_GRID_STEP) / 2
+      )
+    : null;
   const tutorialStep = getTutorialStep();
   const tutorialMission = getTutorialMission(tutorialStep);
   const tutorialMissionProgress = tutorialMission
@@ -997,6 +1029,12 @@ resetArena();
     cityReturnPointerTimerRef.current = null;
     setLevelUpCelebration(null);
     setCityReturnPointerReady(false);
+    setCitadelPointerReady(false);
+    setCitadelUpgradePointerReady(false);
+    if (citadelPointerTimerRef.current) clearTimeout(citadelPointerTimerRef.current);
+    if (citadelUpgradePointerTimerRef.current) clearTimeout(citadelUpgradePointerTimerRef.current);
+    citadelPointerTimerRef.current = null;
+    citadelUpgradePointerTimerRef.current = null;
     mapTutorialZoomRef.current = { active: false, targetZoom: 0.3, mode: "tutorialMonster", targetX: null, targetY: null };
     mapTutorialGuideRef.current = { phase: "off", timer: 0, zoomStart: 0.3 };
     updateMapTutorialPhase("off");
@@ -1395,10 +1433,12 @@ resetArena();
         if (building.buildElapsed >= building.buildDuration) {
           building.underConstruction = false;
           constructionQueueRef.current.shift();
+          const wasUpgrade = Boolean(building.upgrading);
+          if (wasUpgrade) completeBuildingUpgrade(building);
           const completedType = building.type;
           const completedCount = buildings.filter((item) => item.type === completedType && !item.underConstruction).length;
           const completedTarget = completedType === "House" ? TUTORIAL_HOUSE_TARGET : completedType === "CrystalPoint" ? TUTORIAL_CRYSTAL_TARGET : completedType === "Barracks" ? TUTORIAL_BARRACKS_TARGET : 0;
-          if (completedTarget > 0 && completedCount >= completedTarget && !tutorialMissionComplete) {
+          if (!wasUpgrade && completedTarget > 0 && completedCount >= completedTarget && !tutorialMissionComplete) {
             const labels = { House: "HOUSING ONLINE", CrystalPoint: "CRYSTAL NETWORK ONLINE", Barracks: "DEFENSE GRID ONLINE" };
             setTutorialMissionComplete({ icon: "✓", title: "OBJECTIVE COMPLETE", detail: labels[completedType] });
             if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
@@ -1793,7 +1833,7 @@ resetArena();
 
   function getUpgradeCostLabel(building) {
     if (!building) return "";
-    if (building.type === "Citadel") return `EXPAND +${CITY_MODULE_SIZE}×${CITY_MODULE_SIZE}`;
+    if (building.type === "Citadel") return `LEVEL UP`;
 
     const crystalCost = getUpgradeCrystalCost(building);
     const workerCost = getUpgradeWorkerCost(building);
@@ -1803,7 +1843,7 @@ resetArena();
   }
 
   function canUpgradeBuilding(building) {
-    if (!building) return false;
+    if (!building || building.underConstruction) return false;
     const currentLevel = building.level || 1;
     const nextLevel = currentLevel + 1;
     if (currentLevel >= MAX_BUILDING_LEVEL) return false;
@@ -1820,24 +1860,13 @@ resetArena();
     return true;
   }
 
-  function upgradeSelectedBuilding() {
-    const selected = selectedBuildingRef.current;
-    if (!selected) return;
-
-    const building = cityRef.current.buildings.find((item) => item.id === selected.id);
-    if (!building) return;
-    if (!canUpgradeBuilding(building)) return;
-
+  function completeBuildingUpgrade(building) {
     const stats = cityStatsRef.current;
-
-    const crystalCost = getUpgradeCrystalCost(building);
-    const workerCost = getUpgradeWorkerCost(building);
-
-    stats.crystals = Math.max(0, stats.crystals - crystalCost);
-    stats.workers = Math.max(0, stats.workers - workerCost);
-
     const oldLevel = building.level || 1;
-    building.level = oldLevel + 1;
+    building.level = building.pendingLevel || oldLevel + 1;
+    building.pendingLevel = null;
+    building.upgrading = false;
+
     if (building.type === "Citadel") {
       const shift = CITY_EXPANSION_PER_SIDE;
       for (const cityBuilding of cityRef.current.buildings) {
@@ -1850,10 +1879,7 @@ resetArena();
       cityCameraRef.current.y = CITY_HEIGHT / 2;
       const canvas = canvasRef.current;
       if (canvas) {
-        const fitZoom = Math.min(
-          (canvas.clientWidth - 34) / CITY_WIDTH,
-          (canvas.clientHeight - 154) / CITY_HEIGHT
-        );
+        const fitZoom = Math.min((canvas.clientWidth - 34) / CITY_WIDTH, (canvas.clientHeight - 154) / CITY_HEIGHT);
         cityCameraRef.current.zoom = clamp(fitZoom, CITY_MIN_ZOOM, CITY_MAX_ZOOM);
       }
       clampCityCameraToWorld();
@@ -1862,22 +1888,36 @@ resetArena();
         updateTutorialFlowPhase("done");
       }
     }
+
     if (building.type === "House") {
-      const oldWorkerBonus = oldLevel * 5;
-      const newWorkerBonus = building.level * 5;
-      const oldGuardBonus = oldLevel * 25;
-      const newGuardBonus = building.level * 25;
-
-      const workerGain = newWorkerBonus - oldWorkerBonus;
-      const guardGain = newGuardBonus - oldGuardBonus;
-
+      const workerGain = building.level * 5 - oldLevel * 5;
+      const guardGain = building.level * 25 - oldLevel * 25;
       stats.workerCap += workerGain;
       stats.workers += workerGain;
       stats.guardCap += guardGain;
     }
+  }
 
+  function upgradeSelectedBuilding() {
+    const selected = selectedBuildingRef.current;
+    if (!selected) return;
+    const building = cityRef.current.buildings.find((item) => item.id === selected.id);
+    if (!building || !canUpgradeBuilding(building)) return;
+
+    const stats = cityStatsRef.current;
+    stats.crystals = Math.max(0, stats.crystals - getUpgradeCrystalCost(building));
+    stats.workers = Math.max(0, stats.workers - getUpgradeWorkerCost(building));
+
+    building.pendingLevel = (building.level || 1) + 1;
+    building.upgrading = true;
+    building.underConstruction = true;
+    building.buildElapsed = 0;
+    building.buildDuration = Math.max(3, (BUILD_TIME_SECONDS[building.type] || 3) * UPGRADE_TIME_MULTIPLIER);
+    if (!constructionQueueRef.current.includes(building.id)) constructionQueueRef.current.push(building.id);
+
+    updateSelectedBuilding(null);
+    setCitadelUpgradePointerReady(false);
     recalculateCityEconomy();
-    updateSelectedBuilding(building);
     setCityStats({ ...stats });
   }
 
@@ -2186,8 +2226,13 @@ resetArena();
       }, 1000);
       updateTutorialFlowPhase("cityBarracks");
     } else if (tutorialFlowRef.current.phase === "citadelUpgrade") {
-      const citadel = getCitadelBuilding();
-      if (citadel) updateSelectedBuilding(citadel);
+      updateSelectedBuilding(null);
+      setCitadelPointerReady(false);
+      if (citadelPointerTimerRef.current) clearTimeout(citadelPointerTimerRef.current);
+      citadelPointerTimerRef.current = setTimeout(() => {
+        setCitadelPointerReady(true);
+        citadelPointerTimerRef.current = null;
+      }, 1000);
     }
     updateLandingPreview(null);
     setTutorialThreatCardVisible(false);
@@ -3597,7 +3642,7 @@ resetArena();
             0%, 100% { box-shadow: 0 0 0 rgba(251,191,36,0); }
             50% { box-shadow: 0 0 24px rgba(251,191,36,0.5); }
           }
-          @keyframes levelUpReveal { 0% { opacity:0; transform:translateX(-50%) scale(.72); } 38% { opacity:1; transform:translateX(-50%) scale(1.08); } 100% { opacity:1; transform:translateX(-50%) scale(1); } }
+          @keyframes levelUpReveal { 0% { opacity:0; transform:scale(.72); } 38% { opacity:1; transform:scale(1.08); } 100% { opacity:1; transform:scale(1); } }
           @keyframes levelUpRayLeft { 0% { opacity:0; transform:scaleX(.05); } 45% { opacity:1; } 100% { opacity:0; transform:scaleX(1); } }
           @keyframes levelUpRayRight { 0% { opacity:0; transform:scaleX(.05); } 45% { opacity:1; } 100% { opacity:0; transform:scaleX(1); } }
 
@@ -3867,11 +3912,7 @@ resetArena();
               {levelUpCelebration && (
                 <div style={styles.levelUpCelebration}>
                   <i style={styles.levelUpRayLeft} />
-                  <div style={styles.levelUpBadge}>
-                    <small>CORE LEVEL</small>
-                    <strong>{levelUpCelebration.to}</strong>
-                    <span>LEVEL UP</span>
-                  </div>
+                  <div style={styles.levelUpText}>LEVEL UP <b>{levelUpCelebration.to}</b></div>
                   <i style={styles.levelUpRayRight} />
                 </div>
               )}
@@ -4451,6 +4492,11 @@ resetArena();
                   )}
                 </div>
               )}
+              {tutorialFlowPhase === "citadelUpgrade" && citadelPointerReady && !selectedBuilding && citadelTutorialScreen && (
+                <div style={{...styles.tutorialCitadelPointer,left:citadelTutorialScreen.x,top:citadelTutorialScreen.y}}>
+                  <div style={styles.macroPointer}>☟︎</div>
+                </div>
+              )}
               {groupSelection.active && groupSelection.ids.length > 0 && (
                 <div style={{...styles.buildingPanel,...styles.groupBuildingPanel}}>
                   <button style={styles.panelClose} onClick={clearGroupSelection}>×</button>
@@ -4476,7 +4522,7 @@ resetArena();
               {!groupSelection.active && selectedBuilding && (
                 <div
                   key={`${selectedBuilding.id}-${buildingPanelVersion}`}
-                  style={styles.buildingPanel}
+                  style={{...styles.buildingPanel,...(selectedBuilding.type === "Citadel" ? styles.citadelBuildingPanel : {})}}
                 >
                   <div style={styles.buildingPanelAccent} />
                   <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)}>
@@ -4506,11 +4552,20 @@ resetArena();
                     </small>
                   </div>
 
+                  {selectedBuilding.type === "Citadel" && (
+                    <div style={styles.citadelUpgradeBenefits}>
+                      <span>NEW TERRITORY RING <b>+2×2</b></span>
+                      <span>UNLOCK PREVIEW <b>TECHNOLOGY CENTER</b></span>
+                    </div>
+                  )}
                   <div style={styles.buildingActionGroup}>
                     {selectedBuilding.type === "Citadel" ? (
                       <>
                         <div style={styles.citadelLevelGate}>★ {cityStats.level} / {Math.min(MAX_BUILDING_LEVEL, (selectedBuilding.level || 1) + 1)}</div>
-                        <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade Citadel and expand territory">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
+                        <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled), position:"relative" }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Level up Citadel">
+                          ⇧ {getUpgradeCostLabel(selectedBuilding)}
+                          {tutorialFlowPhase === "citadelUpgrade" && citadelUpgradePointerReady && <span style={styles.upgradeButtonTutorialPointer}>☟︎</span>}
+                        </button>
                         <div style={styles.citadelLevelGate}>MAX {cityStats.level}</div>
                       </>
                     ) : (
@@ -5888,8 +5943,8 @@ const styles = {
   },
 
   tutorialChipGlow: { animation:"chipGlow 1.15s ease-in-out infinite" },
-  levelUpCelebration: { position:"absolute",left:"50%",top:58,zIndex:24,width:"min(520px,94%)",height:78,transform:"translateX(-50%)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none" },
-  levelUpBadge: { position:"relative",zIndex:2,minWidth:116,height:68,padding:"6px 20px",boxSizing:"border-box",borderRadius:22,display:"grid",gridTemplateColumns:"auto auto",gridTemplateRows:"18px 25px 16px",columnGap:8,alignItems:"center",justifyContent:"center",color:"#fff",background:"linear-gradient(135deg,rgba(8,47,73,.98),rgba(30,64,175,.98))",border:"1px solid rgba(253,224,71,.85)",boxShadow:"0 0 34px rgba(56,189,248,.55),0 0 56px rgba(250,204,21,.22)",animation:"levelUpReveal .42s cubic-bezier(.22,.9,.3,1) both" },
+  levelUpCelebration: { position:"absolute",left:"50%",top:16,zIndex:40,width:"min(620px,96%)",height:54,transform:"translateX(-50%)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none" },
+  levelUpText: { position:"relative",zIndex:2,padding:"0 16px",color:"#fff7b2",fontSize:20,fontWeight:950,letterSpacing:".16em",whiteSpace:"nowrap",textShadow:"0 0 8px #fff,0 0 18px #facc15,0 0 34px #f59e0b",animation:"levelUpReveal .42s cubic-bezier(.22,.9,.3,1) both" },
   levelUpRayLeft: { width:"34%",height:3,marginRight:-4,transformOrigin:"right center",background:"linear-gradient(90deg,transparent,#38bdf8,#fde047)",boxShadow:"0 0 16px #38bdf8",animation:"levelUpRayLeft 1.25s ease-out both" },
   levelUpRayRight: { width:"34%",height:3,marginLeft:-4,transformOrigin:"left center",background:"linear-gradient(90deg,#fde047,#38bdf8,transparent)",boxShadow:"0 0 16px #38bdf8",animation:"levelUpRayRight 1.25s ease-out both" },
   tutorialLevelChipGlow: { animation:"chipGlow 1.05s ease-in-out infinite",color:"#fef08a",borderColor:"#facc15" },
@@ -6534,6 +6589,10 @@ const styles = {
     animation: "buildingPanelAccentSweep 360ms ease-out both",
   },
 
+  tutorialCitadelPointer: { position:"absolute",zIndex:16,width:64,height:74,transform:"translate(-50%,-96%)",display:"grid",placeItems:"center",pointerEvents:"none" },
+  citadelBuildingPanel: { minHeight:150,gridTemplateRows:"46px 30px 44px",gridTemplateAreas:`"close icon info" "benefits benefits benefits" "actions actions actions"` },
+  citadelUpgradeBenefits: { gridArea:"benefits",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,padding:"2px 4px",fontSize:8,fontWeight:900,color:"#bae6fd" },
+  upgradeButtonTutorialPointer: { position:"absolute",left:"50%",top:-54,transform:"translateX(-50%)",fontSize:34,color:"#fff",filter:"drop-shadow(0 0 8px #facc15)",pointerEvents:"none" },
   groupBuildingPanel: { border: "1px solid rgba(34,211,238,0.62)", boxShadow: "0 18px 54px rgba(0,0,0,.5), 0 0 24px rgba(34,211,238,.18)" },
   groupPanelIcon: { color: "#67e8f9", background: "rgba(34,211,238,.13)", border: "1px solid rgba(103,232,249,.35)" },
   groupDialogBackdrop: { position:"absolute",inset:0,zIndex:30,display:"grid",placeItems:"center",padding:22,background:"rgba(2,6,23,.72)",backdropFilter:"blur(8px)" },
