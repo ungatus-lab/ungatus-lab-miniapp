@@ -453,6 +453,8 @@ const trainingIntroTimerRef = useRef(null);
   const [mapTutorialTarget, setMapTutorialTarget] = useState(null);
   const [tutorialThreatCardVisible, setTutorialThreatCardVisible] = useState(false);
   const [tutorialFlowPhase, setTutorialFlowPhase] = useState("buildEconomy");
+  const devLabRef = useRef(false);
+  const [devLab, setDevLab] = useState(false);
   const tutorialTeleportPointerTimerRef = useRef(null);
   const [tutorialTeleportPointerReady, setTutorialTeleportPointerReady] = useState(false);
 
@@ -1140,7 +1142,94 @@ resetArena();
     setCityStats({ ...cityStatsRef.current });
   }
 
+  function startDeveloperLab() {
+    resetArena();
+    devLabRef.current = true;
+    setDevLab(true);
+    tutorialFlowRef.current = { phase: "done", timer: 0 };
+    setTutorialFlowPhase("done");
+    mapTutorialSeenRef.current = true;
+    updateMapTutorialPhase("off");
+    setTrainingIntroPhase("off");
+    setCityTutorialReady(false);
+    setBuildMenuTutorialReady(false);
+    setTutorialMissionComplete(null);
+    setTutorialThreatCardVisible(false);
+
+    const stats = cityStatsRef.current;
+    stats.crystals = 5000;
+    stats.workers = stats.workerCap;
+    stats.guardsByLevel = { 1: 85 };
+    stats.guardCap = Math.max(stats.guardCap, 100);
+    stats.nextLevelXp = getNextLevelXp(stats.level);
+    setCityStats({ ...stats });
+    setHud({ level: stats.level, score: 0, cooldown: 0, teleportMode: false, status: "DEV LAB" });
+    setScreen("city");
+  }
+
+  function setDeveloperLevel(nextLevel) {
+    if (!devLabRef.current) return;
+    const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
+    const stats = cityStatsRef.current;
+    const citadel = getCitadelBuilding();
+    if (!citadel || target === stats.level) return;
+
+    if (target > stats.level) {
+      const steps = target - stats.level;
+      const shift = CITY_EXPANSION_PER_SIDE * steps;
+      for (const building of cityRef.current.buildings) {
+        building.x += shift;
+        building.y += shift;
+      }
+      CITY_WIDTH += shift * 2;
+      CITY_HEIGHT += shift * 2;
+    } else {
+      const desiredSize = CITY_LEVEL_ONE_SIZE + (target - 1) * CITY_EXPANSION_PER_SIDE * 2;
+      const shrinkEachSide = Math.max(0, (CITY_WIDTH - desiredSize) / 2);
+      for (const building of cityRef.current.buildings) {
+        building.x = clamp(building.x - shrinkEachSide, 0, desiredSize - building.w * CITY_GRID_STEP);
+        building.y = clamp(building.y - shrinkEachSide, 0, desiredSize - building.h * CITY_GRID_STEP);
+      }
+      CITY_WIDTH = desiredSize;
+      CITY_HEIGHT = desiredSize;
+    }
+
+    stats.level = target;
+    stats.xp = 0;
+    stats.nextLevelXp = getNextLevelXp(target);
+    stats.guardCap = Math.max(stats.guardCap, 20 + target * 5);
+    citadel.level = target;
+    citadel.pendingLevel = null;
+    citadel.upgrading = false;
+    citadel.underConstruction = false;
+    constructionQueueRef.current = constructionQueueRef.current.filter((id) => id !== citadel.id);
+    if (playerRef.current) playerRef.current.level = target;
+    cityCameraRef.current.x = CITY_WIDTH / 2;
+    cityCameraRef.current.y = CITY_HEIGHT / 2;
+    cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
+    setHud((current) => ({ ...current, level: target, status: `DEV LEVEL ${target}` }));
+    setCityStats({ ...stats });
+  }
+
+  function addDeveloperResources() {
+    if (!devLabRef.current) return;
+    const stats = cityStatsRef.current;
+    stats.crystals += 10000;
+    stats.workers = stats.workerCap;
+    stats.guardsByLevel[stats.level] = (stats.guardsByLevel[stats.level] || 0) + 100;
+    stats.guardCap = Math.max(stats.guardCap, getTotalGuardsFromStats(stats));
+    setCityStats({ ...stats });
+  }
+
+  function exitDeveloperLab() {
+    devLabRef.current = false;
+    setDevLab(false);
+    setScreen("menu");
+  }
+
   function beginTrainingStageOne() {
+    devLabRef.current = false;
+    setDevLab(false);
     if (trainingIntroTimerRef.current) clearTimeout(trainingIntroTimerRef.current);
     if (cityTutorialTimerRef.current) clearTimeout(cityTutorialTimerRef.current);
     setTrainingIntroPhase("boot");
@@ -3728,6 +3817,19 @@ resetArena();
         `}
       </style>
 
+      {devLab && (screen === "arena" || screen === "city") && (
+        <div style={styles.devLabPanel}>
+          <div style={styles.devLabHeader}><span>DEV LAB</span><b>LV {cityStats.level}</b></div>
+          <div style={styles.devLabControls}>
+            <button onClick={() => setDeveloperLevel(cityStats.level - 1)} disabled={cityStats.level <= 1}>−</button>
+            <button onClick={() => setDeveloperLevel(cityStats.level + 1)} disabled={cityStats.level >= MAX_BUILDING_LEVEL}>＋</button>
+            <button onClick={addDeveloperResources}>∞</button>
+            <button onClick={exitDeveloperLab}>×</button>
+          </div>
+          <small>{CITY_WIDTH / CITY_GRID_STEP}×{CITY_HEIGHT / CITY_GRID_STEP} CITY</small>
+        </div>
+      )}
+
       {screen === "menu" && (
         <section style={styles.menuScreen}>
           <div style={styles.menuCard}>
@@ -3755,8 +3857,8 @@ resetArena();
               <button style={{ ...styles.menuActionButton, ...styles.menuActionLocked }} disabled>
                 <span style={styles.menuActionIcon}>⌘</span><strong>DEPLOYMENT</strong><small>LOCKED</small>
               </button>
-              <button style={{ ...styles.menuActionButton, ...styles.menuActionLocked }} disabled>
-                <span style={styles.menuActionIcon}>▦</span><strong>PROJECTS</strong><small>COMING SOON</small>
+              <button style={{ ...styles.menuActionButton, ...styles.devLabMenuButton }} onClick={startDeveloperLab}>
+                <span style={styles.menuActionIcon}>▦</span><strong>DEV LAB</strong><small>FREE TEST SERVER</small>
               </button>
             </div>
             <button style={styles.secondaryButton} onClick={onClose}>EXIT</button>
@@ -3916,7 +4018,7 @@ resetArena();
                   <i style={styles.levelUpRayRight} />
                 </div>
               )}
-              {arenaTutorialMission && !tutorialMissionComplete && (
+              {!devLab && arenaTutorialMission && !tutorialMissionComplete && (
                 <div style={styles.tutorialMissionCard}>
                   <div style={styles.tutorialMissionIcon}>{arenaTutorialMission.icon}</div>
                   <div style={styles.tutorialMissionBody}>
@@ -3926,7 +4028,7 @@ resetArena();
                   </div>
                 </div>
               )}
-              {tutorialMissionComplete && screen === "arena" && (
+              {!devLab && tutorialMissionComplete && screen === "arena" && (
                 <div style={styles.tutorialMissionCompleteToast}><span>{tutorialMissionComplete.icon}</span><div><strong>{tutorialMissionComplete.title}</strong><small>{tutorialMissionComplete.detail}</small></div></div>
               )}
               {false && (
@@ -4236,7 +4338,7 @@ resetArena();
                 </div>
               </header>
 
-              {tutorialMission && cityTutorialReady && !tutorialMissionComplete && (
+              {!devLab && tutorialMission && cityTutorialReady && !tutorialMissionComplete && (
                 <div style={styles.tutorialMissionCard}>
                   <div style={styles.tutorialMissionIcon}>{tutorialMission.icon}</div>
                   <div style={styles.tutorialMissionBody}>
@@ -4247,7 +4349,7 @@ resetArena();
                   </div>
                 </div>
               )}
-              {tutorialMissionComplete && (
+              {!devLab && tutorialMissionComplete && (
                 <div style={styles.tutorialMissionCompleteToast}>
                   <span>{tutorialMissionComplete.icon}</span><div><strong>{tutorialMissionComplete.title}</strong><small>{tutorialMissionComplete.detail}</small></div>
                 </div>
@@ -5693,6 +5795,10 @@ const styles = {
       "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
 
+  devLabMenuButton: { background:"linear-gradient(135deg,rgba(88,28,135,.92),rgba(14,116,144,.92))",border:"1px solid rgba(103,232,249,.62)",boxShadow:"0 0 28px rgba(34,211,238,.14)" },
+  devLabPanel: { position:"absolute",right:10,top:142,zIndex:45,width:132,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
+  devLabHeader: { display:"flex",justifyContent:"space-between",alignItems:"center",color:"#e9d5ff",fontSize:9,fontWeight:950,letterSpacing:".08em" },
+  devLabControls: { display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,margin:"7px 0 4px" },
   menuScreen: {
     minHeight: "100vh",
     padding: 18,
