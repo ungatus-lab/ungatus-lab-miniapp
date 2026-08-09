@@ -1181,71 +1181,127 @@ resetArena();
 
   function getAutoFitFootprint(type, level) {
     const definition = BUILDINGS[type] || BUILDINGS.House;
-    if (level <= 1) return { w: definition.w, h: definition.h };
-    const generation = Math.max(0, Math.floor((level - 2) / 5));
-    const scale = Math.min(8, Math.pow(2, generation));
-    const step = ((level - 2) % 5 + 5) % 5;
-    if (step === 0) return { w: definition.w * scale * 2, h: definition.h * scale };
-    return { w: definition.w * scale * 2, h: definition.h * scale * 2 };
+    let w = definition.w;
+    let h = definition.h;
+    for (let current = 2; current <= level; current += 1) {
+      const cycleStep = ((current - 2) % 5 + 5) % 5;
+      if (cycleStep === 0) w *= 2;
+      if (cycleStep === 1) h *= 2;
+    }
+    return { w, h };
   }
 
   function isAutoFitMergeLevel(level) {
     if (level < 2) return false;
-    const step = ((level - 2) % 5 + 5) % 5;
-    return step === 0 || step === 1;
+    const cycleStep = ((level - 2) % 5 + 5) % 5;
+    return cycleStep === 0 || cycleStep === 1;
+  }
+
+  function getBuildingRect(building) {
+    return {
+      left: building.x,
+      top: building.y,
+      right: building.x + building.w * CITY_GRID_STEP,
+      bottom: building.y + building.h * CITY_GRID_STEP,
+    };
+  }
+
+  function getRectUnion(a, b) {
+    const ar = getBuildingRect(a);
+    const br = getBuildingRect(b);
+    return {
+      left: Math.min(ar.left, br.left),
+      top: Math.min(ar.top, br.top),
+      right: Math.max(ar.right, br.right),
+      bottom: Math.max(ar.bottom, br.bottom),
+    };
+  }
+
+  function canMergeOnOccupiedCells(a, b) {
+    const ar = getBuildingRect(a);
+    const br = getBuildingRect(b);
+    const union = getRectUnion(a, b);
+    const horizontalTouch = (Math.abs(ar.right - br.left) < 1 || Math.abs(br.right - ar.left) < 1) && ar.top === br.top && ar.bottom === br.bottom;
+    const verticalTouch = (Math.abs(ar.bottom - br.top) < 1 || Math.abs(br.bottom - ar.top) < 1) && ar.left === br.left && ar.right === br.right;
+    const occupiedArea = a.w * a.h + b.w * b.h;
+    const unionArea = ((union.right - union.left) / CITY_GRID_STEP) * ((union.bottom - union.top) / CITY_GRID_STEP);
+    return (horizontalTouch || verticalTouch) && Math.abs(occupiedArea - unionArea) < 0.001;
+  }
+
+  function rectIsFree(x, y, w, h, ignoredIds = new Set()) {
+    const right = x + w * CITY_GRID_STEP;
+    const bottom = y + h * CITY_GRID_STEP;
+    if (x < 0 || y < 0 || right > CITY_WIDTH || bottom > CITY_HEIGHT) return false;
+    return !cityRef.current.buildings.some((other) => {
+      if (ignoredIds.has(other.id)) return false;
+      const otherRight = other.x + other.w * CITY_GRID_STEP;
+      const otherBottom = other.y + other.h * CITY_GRID_STEP;
+      return !(right <= other.x || x >= otherRight || bottom <= other.y || y >= otherBottom);
+    });
+  }
+
+  function findSyntheticTwinPlacement(building, level) {
+    const cycleStep = ((level - 2) % 5 + 5) % 5;
+    const preferHorizontal = cycleStep === 0;
+    const candidates = preferHorizontal
+      ? [
+          { x: building.x + building.w * CITY_GRID_STEP, y: building.y },
+          { x: building.x - building.w * CITY_GRID_STEP, y: building.y },
+          { x: building.x, y: building.y + building.h * CITY_GRID_STEP },
+          { x: building.x, y: building.y - building.h * CITY_GRID_STEP },
+        ]
+      : [
+          { x: building.x, y: building.y + building.h * CITY_GRID_STEP },
+          { x: building.x, y: building.y - building.h * CITY_GRID_STEP },
+          { x: building.x + building.w * CITY_GRID_STEP, y: building.y },
+          { x: building.x - building.w * CITY_GRID_STEP, y: building.y },
+        ];
+    const ignored = new Set([building.id]);
+    return candidates.find((candidate) => rectIsFree(candidate.x, candidate.y, building.w, building.h, ignored)) || null;
+  }
+
+  function movePartnerNextToPrimary(primary, partner, level) {
+    const placement = findSyntheticTwinPlacement(primary, level);
+    if (!placement) return false;
+    partner.x = placement.x;
+    partner.y = placement.y;
+    partner.w = primary.w;
+    partner.h = primary.h;
+    return true;
   }
 
   function mergeAutoFitPair(primary, partner, targetLevel, syntheticTwin = false) {
-    const footprint = getAutoFitFootprint(primary.type, targetLevel);
+    const union = getRectUnion(primary, partner);
+    primary.x = union.left;
+    primary.y = union.top;
+    primary.w = Math.round((union.right - union.left) / CITY_GRID_STEP);
+    primary.h = Math.round((union.bottom - union.top) / CITY_GRID_STEP);
     primary.level = targetLevel;
-    primary.w = footprint.w;
-    primary.h = footprint.h;
-    primary.mergedModules = (primary.mergedModules || 1) + (syntheticTwin ? (primary.mergedModules || 1) : (partner?.mergedModules || 1));
+    primary.mergedModules = (primary.mergedModules || 1) + (partner.mergedModules || 1);
     primary.autoFitGeneration = Math.floor((targetLevel - 1) / 5);
+    primary.syntheticTwin = syntheticTwin;
     primary.underConstruction = false;
     primary.upgrading = false;
     primary.pendingLevel = null;
-    primary.syntheticTwin = syntheticTwin;
     return primary;
   }
 
-  function placeAutoFitBuildings(buildings, type) {
-    const citadel = getCitadelBuilding();
-    const gap = CITY_GRID_STEP;
-    const maxColumns = Math.max(1, Math.floor(CITY_WIDTH / (CITY_GRID_STEP * 3)));
-    const zoneX = type === "CrystalPoint" ? gap : type === "Barracks" ? CITY_WIDTH - gap : CITY_WIDTH / 2;
-    let cursorX = type === "Barracks" ? zoneX : type === "House" ? zoneX : zoneX;
-    let cursorY = gap;
-    let rowHeight = 0;
-    let column = 0;
-
-    for (const building of buildings) {
-      const width = building.w * CITY_GRID_STEP;
-      const height = building.h * CITY_GRID_STEP;
-      if (type === "CrystalPoint") {
-        building.x = gap;
-        building.y = cursorY;
-        cursorY += height + gap;
-      } else if (type === "Barracks") {
-        building.x = Math.max(0, CITY_WIDTH - gap - width);
-        building.y = cursorY;
-        cursorY += height + gap;
-      } else {
-        if (column >= maxColumns || cursorX + width > CITY_WIDTH - gap) {
-          column = 0;
-          cursorX = Math.max(gap, CITY_WIDTH / 2 - width);
-          cursorY += rowHeight + gap;
-          rowHeight = 0;
-        }
-        building.x = clamp(cursorX, 0, CITY_WIDTH - width);
-        building.y = clamp(Math.max(citadel ? citadel.y + citadel.h * CITY_GRID_STEP + gap : gap, cursorY), 0, CITY_HEIGHT - height);
-        cursorX += width + gap;
-        rowHeight = Math.max(rowHeight, height);
-        column += 1;
-      }
-      building.x = clamp(building.x, 0, CITY_WIDTH - width);
-      building.y = clamp(building.y, 0, CITY_HEIGHT - height);
+  function pickCellAccuratePartner(pool, index, used, level) {
+    for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
+      if (!used.has(candidate) && canMergeOnOccupiedCells(pool[index], pool[candidate])) return candidate;
     }
+    let nearest = -1;
+    let nearestDistance = Infinity;
+    for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
+      if (used.has(candidate)) continue;
+      const distance = Math.hypot(pool[index].x - pool[candidate].x, pool[index].y - pool[candidate].y);
+      if (distance < nearestDistance) {
+        nearest = candidate;
+        nearestDistance = distance;
+      }
+    }
+    if (nearest >= 0 && movePartnerNextToPrimary(pool[index], pool[nearest], level)) return nearest;
+    return -1;
   }
 
   function autoFitDeveloperCity(previousLevel, targetLevel) {
@@ -1266,38 +1322,55 @@ resetArena();
           pendingLevel: null,
         }));
       let synthetic = 0;
-      let merges = 0;
+      let moved = 0;
 
       for (let level = previousLevel + 1; level <= targetLevel; level += 1) {
-        if (isAutoFitMergeLevel(level)) {
-          const nextPool = [];
-          pool.sort((a, b) => a.y - b.y || a.x - b.x);
-          for (let i = 0; i < pool.length; i += 2) {
-            const primary = pool[i];
-            const partner = pool[i + 1] || null;
-            if (!partner) synthetic += 1;
-            nextPool.push(mergeAutoFitPair(primary, partner, level, !partner));
-            merges += 1;
-          }
-          pool = nextPool;
-        } else {
-          const footprint = getAutoFitFootprint(type, level);
-          pool = pool.map((building) => ({
-            ...building,
-            level,
-            w: footprint.w,
-            h: footprint.h,
-            autoFitGeneration: Math.floor((level - 1) / 5),
-          }));
+        if (!isAutoFitMergeLevel(level)) {
+          pool = pool.map((building) => ({ ...building, level, autoFitGeneration: Math.floor((level - 1) / 5) }));
+          continue;
         }
+
+        const nextPool = [];
+        const used = new Set();
+        pool.sort((a, b) => a.y - b.y || a.x - b.x);
+        for (let index = 0; index < pool.length; index += 1) {
+          if (used.has(index)) continue;
+          const primary = pool[index];
+          let partnerIndex = pickCellAccuratePartner(pool, index, used, level);
+          let partner;
+          let syntheticTwin = false;
+
+          if (partnerIndex >= 0) {
+            partner = pool[partnerIndex];
+            if (!canMergeOnOccupiedCells(primary, partner)) moved += 1;
+            used.add(partnerIndex);
+          } else {
+            const placement = findSyntheticTwinPlacement(primary, level);
+            if (!placement) {
+              primary.level = level;
+              nextPool.push(primary);
+              used.add(index);
+              continue;
+            }
+            partner = {
+              ...primary,
+              id: `${primary.id}-auto-twin-${level}`,
+              x: placement.x,
+              y: placement.y,
+            };
+            synthetic += 1;
+            syntheticTwin = true;
+          }
+
+          used.add(index);
+          nextPool.push(mergeAutoFitPair(primary, partner, level, syntheticTwin));
+        }
+        pool = nextPool;
       }
 
-      const footprint = getAutoFitFootprint(type, targetLevel);
-      pool = pool.map((building) => ({ ...building, level: targetLevel, w: footprint.w, h: footprint.h }));
-      placeAutoFitBuildings(pool, type);
       result.push(...pool);
       if (source.some((building) => building.type === type)) {
-        report.push({ type, before: source.filter((building) => building.type === type).length, complexes: pool.length, reserve: 0, synthetic });
+        report.push({ type, before: source.filter((building) => building.type === type).length, complexes: pool.length, reserve: 0, synthetic, moved });
       }
     }
 
@@ -3989,7 +4062,7 @@ resetArena();
         <div style={styles.devRebuildReport}>
           <strong>AUTO FIT · LEVEL {devRebuildReport.level}</strong>
           {devRebuildReport.items.map((item) => (
-            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes{item.synthetic ? ` · +${item.synthetic} auto twins` : ""}</small>
+            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes{item.synthetic ? ` · +${item.synthetic} auto twins` : ""}{item.moved ? ` · ${item.moved} relocated` : ""}</small>
           ))}
         </div>
       )}
