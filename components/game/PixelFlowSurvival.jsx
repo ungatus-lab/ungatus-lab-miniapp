@@ -2135,15 +2135,11 @@ resetArena();
     setBuildMenuOpen((current) => {
       const nextOpen = !current;
       if (nextOpen) {
-        if (isTutorialBuildStep()) {
+        setBuildMenuTutorialReady(false);
+        buildMenuTutorialTimerRef.current = setTimeout(() => {
           setBuildMenuTutorialReady(true);
-        } else {
-          setBuildMenuTutorialReady(false);
-          buildMenuTutorialTimerRef.current = setTimeout(() => {
-            setBuildMenuTutorialReady(true);
-            buildMenuTutorialTimerRef.current = null;
-          }, 1000);
-        }
+          buildMenuTutorialTimerRef.current = null;
+        }, 1000);
       } else {
         setBuildMenuTutorialReady(false);
       }
