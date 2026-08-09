@@ -920,6 +920,7 @@ resetArena();
   }
 
   function getTutorialStep() {
+    if (devLabRef.current) return "done";
     const houseCount = getCityBuildingCount("House");
     const crystalCount = getCityBuildingCount("CrystalPoint");
     const barracksCount = getCityBuildingCount("Barracks");
@@ -961,6 +962,7 @@ resetArena();
   }
 
   function shouldShowBuildTutorialArrow() {
+    if (devLabRef.current) return false;
     return (
       cityTutorialReady &&
       !tutorialMissionComplete &&
@@ -974,17 +976,21 @@ resetArena();
   }
 
   function shouldShowCrystalMenuHint() {
+    if (devLabRef.current) return false;
     return buildMenuTutorialReady && screen === "city" && buildMenuOpen && tutorialStep === "crystals" && !isTutorialConstructionWaiting();
   }
 
   function shouldShowHouseMenuHint() {
+    if (devLabRef.current) return false;
     return buildMenuTutorialReady && screen === "city" && buildMenuOpen && tutorialStep === "houses" && !isTutorialConstructionWaiting();
   }
   function shouldShowBarracksMenuHint() {
+    if (devLabRef.current) return false;
     return buildMenuTutorialReady && screen === "city" && buildMenuOpen && tutorialStep === "barracks" && !isTutorialConstructionWaiting();
   }
 
   function shouldShowMapTutorialArrow() {
+    if (devLabRef.current) return false;
     return (
       !tutorialMissionComplete &&
       screen === "city" &&
@@ -1165,6 +1171,7 @@ resetArena();
     setTrainingIntroPhase("off");
     setCityTutorialReady(false);
     setBuildMenuTutorialReady(false);
+    tutorialConstructionRef.current = { housesCommitted: true, crystalsCommitted: true, barracksCommitted: true };
     setTutorialMissionComplete(null);
     setTutorialThreatCardVisible(false);
 
@@ -2376,6 +2383,7 @@ resetArena();
   }
 
   function getTutorialDemoPreviews(activePreviews) {
+    if (devLabRef.current) return [];
     if (!buildPreviewRef.current) return [];
     if ((activePreviews || []).length > 1) return [];
 
@@ -2679,10 +2687,12 @@ resetArena();
       const nextOpen = !current;
       if (nextOpen) {
         setBuildMenuTutorialReady(false);
-        buildMenuTutorialTimerRef.current = setTimeout(() => {
-          setBuildMenuTutorialReady(true);
-          buildMenuTutorialTimerRef.current = null;
-        }, 1000);
+        if (!devLabRef.current) {
+          buildMenuTutorialTimerRef.current = setTimeout(() => {
+            setBuildMenuTutorialReady(true);
+            buildMenuTutorialTimerRef.current = null;
+          }, 1000);
+        }
       } else {
         setBuildMenuTutorialReady(false);
       }
@@ -2695,12 +2705,15 @@ resetArena();
   }
 
   function isTutorialBuildStep() {
+    if (devLabRef.current) return false;
     return tutorialStep === "houses" || tutorialStep === "crystals" || tutorialStep === "barracks";
   }
   function isTutorialBuildingAllowed(type) {
+    if (devLabRef.current) return true;
     return !isTutorialBuildStep() || tutorialDragType === type;
   }
   function isPointInsideTutorialDropTarget(type, clientX, clientY) {
+    if (devLabRef.current) return true;
     const definition = BUILDINGS[type];
     if (!definition) return false;
     const point = cityScreenToWorld(clientX, clientY);
