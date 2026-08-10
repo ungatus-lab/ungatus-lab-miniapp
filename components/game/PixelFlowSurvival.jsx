@@ -1187,7 +1187,7 @@ resetArena();
   }
 
   function getCitadelFootprint(level) {
-    return 4 + Math.floor(Math.max(0, level - 1) / 5) * 2;
+    return 4 + Math.floor(Math.max(0, level - 1) / 5) * 4;
   }
 
   function rectanglesOverlap(a, b) {
@@ -1234,23 +1234,68 @@ resetArena();
   function resizeCitadelForLevel(citadel, targetLevel) {
     const targetSize = getCitadelFootprint(targetLevel);
     if (!citadel || (citadel.w === targetSize && citadel.h === targetSize)) return [];
+
     const centerX = citadel.x + citadel.w * CITY_GRID_STEP / 2;
     const centerY = citadel.y + citadel.h * CITY_GRID_STEP / 2;
-    citadel.w = targetSize;
-    citadel.h = targetSize;
-    citadel.x = centerX - targetSize * CITY_GRID_STEP / 2;
-    citadel.y = centerY - targetSize * CITY_GRID_STEP / 2;
-    citadel.citadelGeneration = Math.floor(Math.max(0, targetLevel - 1) / 5);
-
+    const nextCitadel = {
+      ...citadel,
+      w: targetSize,
+      h: targetSize,
+      x: centerX - targetSize * CITY_GRID_STEP / 2,
+      y: centerY - targetSize * CITY_GRID_STEP / 2,
+    };
+    const collisions = cityRef.current.buildings
+      .filter((building) => building.id !== citadel.id && rectanglesOverlap(building, nextCitadel))
+      .sort((left, right) => (right.w * right.h) - (left.w * left.h));
+    const collisionIds = new Set(collisions.map((building) => building.id));
+    const fixed = cityRef.current.buildings.filter((building) =>
+      building.id !== citadel.id && !collisionIds.has(building.id)
+    );
+    const placed = [];
     const moved = [];
-    const collisions = cityRef.current.buildings.filter((building) => building.id !== citadel.id && rectanglesOverlap(building, citadel));
+    const cityCellsX = Math.floor(CITY_WIDTH / CITY_GRID_STEP);
+    const cityCellsY = Math.floor(CITY_HEIGHT / CITY_GRID_STEP);
+
     for (const building of collisions) {
-      const destination = findNearestFreeCitySlot(building, citadel);
-      if (!destination) continue;
-      moved.push({ id: building.id, fromX: building.x, fromY: building.y, toX: destination.x, toY: destination.y });
-      building.x = destination.x;
-      building.y = destination.y;
+      const originGX = Math.round(building.x / CITY_GRID_STEP);
+      const originGY = Math.round(building.y / CITY_GRID_STEP);
+      const maxRadius = Math.max(cityCellsX, cityCellsY);
+      let destination = null;
+
+      for (let radius = 0; radius <= maxRadius && !destination; radius += 1) {
+        const candidates = [];
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          candidates.push({ gx: originGX + dx, gy: originGY - radius });
+          candidates.push({ gx: originGX + dx, gy: originGY + radius });
+        }
+        for (let dy = -radius + 1; dy < radius; dy += 1) {
+          candidates.push({ gx: originGX - radius, gy: originGY + dy });
+          candidates.push({ gx: originGX + radius, gy: originGY + dy });
+        }
+        for (const candidate of candidates) {
+          if (candidate.gx < 0 || candidate.gy < 0 || candidate.gx + building.w > cityCellsX || candidate.gy + building.h > cityCellsY) continue;
+          const preview = { ...building, x: candidate.gx * CITY_GRID_STEP, y: candidate.gy * CITY_GRID_STEP };
+          if (rectanglesOverlap(preview, nextCitadel)) continue;
+          if (fixed.some((item) => rectanglesOverlap(preview, item))) continue;
+          if (placed.some((item) => rectanglesOverlap(preview, item))) continue;
+          destination = preview;
+          break;
+        }
+      }
+
+      if (destination) {
+        moved.push({ id: building.id, fromX: building.x, fromY: building.y, toX: destination.x, toY: destination.y });
+        building.x = destination.x;
+        building.y = destination.y;
+        placed.push(building);
+      }
     }
+
+    citadel.w = nextCitadel.w;
+    citadel.h = nextCitadel.h;
+    citadel.x = nextCitadel.x;
+    citadel.y = nextCitadel.y;
+    citadel.citadelGeneration = Math.floor(Math.max(0, targetLevel - 1) / 5);
     return moved;
   }
 
@@ -1421,6 +1466,34 @@ resetArena();
     return primary;
   }
 
+  function findFreePairPlacement(primary, partner, level) {
+    const ignoredIds = new Set([primary.id, partner.id]);
+    const occupied = cityRef.current.buildings.filter((item) => !ignoredIds.has(item.id));
+    const cityCellsX = Math.floor(CITY_WIDTH / CITY_GRID_STEP);
+    const cityCellsY = Math.floor(CITY_HEIGHT / CITY_GRID_STEP);
+    const originGX = Math.round(primary.x / CITY_GRID_STEP);
+    const originGY = Math.round(primary.y / CITY_GRID_STEP);
+
+    for (let radius = 0; radius <= Math.max(cityCellsX, cityCellsY); radius += 1) {
+      for (let gy = Math.max(0, originGY - radius); gy <= Math.min(cityCellsY - primary.h, originGY + radius); gy += 1) {
+        for (let gx = Math.max(0, originGX - radius); gx <= Math.min(cityCellsX - primary.w, originGX + radius); gx += 1) {
+          if (Math.max(Math.abs(gx - originGX), Math.abs(gy - originGY)) !== radius) continue;
+          const base = { ...primary, x: gx * CITY_GRID_STEP, y: gy * CITY_GRID_STEP };
+          for (const twin of getTwinCandidates(base, level)) {
+            const candidatePartner = { ...partner, x: twin.x, y: twin.y, w: primary.w, h: primary.h };
+            const bothInside = candidatePartner.x >= 0 && candidatePartner.y >= 0 &&
+              candidatePartner.x + candidatePartner.w * CITY_GRID_STEP <= CITY_WIDTH &&
+              candidatePartner.y + candidatePartner.h * CITY_GRID_STEP <= CITY_HEIGHT;
+            if (!bothInside) continue;
+            if (occupied.some((item) => rectanglesOverlap(base, item) || rectanglesOverlap(candidatePartner, item))) continue;
+            return { primary: base, partner: candidatePartner };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   function pickCellAccuratePartner(pool, index, used, level, completedPairs) {
     for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
       if (!used.has(candidate) && canMergeOnOccupiedCells(pool[index], pool[candidate], level)) return candidate;
@@ -1502,6 +1575,28 @@ resetArena();
             moved += 1;
             used.add(partnerIndex);
           } else {
+            let remotePartnerIndex = -1;
+            for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
+              if (!used.has(candidate)) { remotePartnerIndex = candidate; break; }
+            }
+            if (remotePartnerIndex >= 0) {
+              const layout = findFreePairPlacement(primary, pool[remotePartnerIndex], level);
+              if (layout) {
+                primary.x = layout.primary.x;
+                primary.y = layout.primary.y;
+                partner = pool[remotePartnerIndex];
+                partner.x = layout.partner.x;
+                partner.y = layout.partner.y;
+                partner.w = primary.w;
+                partner.h = primary.h;
+                used.add(remotePartnerIndex);
+                used.add(index);
+                moved += 2;
+                nextPool.push(mergeAutoFitPair(primary, partner, level, false));
+                continue;
+              }
+            }
+
             const placement = findSyntheticTwinPlacement(primary, level, nextPool);
             if (!placement) {
               primary.level = level;
@@ -5792,133 +5887,104 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId, groupSelection, u
       drawAutoFitEvolution(ctx, building, width, height, cx, cy);
     }
 
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "900 11px Inter, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`L${building.level || 1}`, building.x + width - 22, building.y + 22);
-
     ctx.restore();
   }
+}
+
+function drawEvolutionNode(ctx, x, y, radius, depth, colors, pulse, branch = 0) {
+  if (radius < 2.4) return;
+  if (depth > 0) {
+    const offset = radius * 1.85;
+    const childRadius = radius * 0.43;
+    const childDepth = depth - 1;
+    for (const [dx, dy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+      const childX = x + dx * offset;
+      const childY = y + dy * offset * 0.72;
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(255,255,255,${0.16 + depth * 0.055})`;
+      ctx.lineWidth = Math.max(1, radius * 0.11);
+      ctx.moveTo(x, y);
+      ctx.lineTo(childX, childY);
+      ctx.stroke();
+      drawEvolutionNode(ctx, childX, childY, childRadius, childDepth, colors, pulse, branch + 1);
+    }
+  }
+
+  const gradient = ctx.createRadialGradient(x - radius * 0.32, y - radius * 0.42, 1, x, y, radius);
+  gradient.addColorStop(0, "#ffffff");
+  gradient.addColorStop(0.32, colors[0]);
+  gradient.addColorStop(0.72, colors[1]);
+  gradient.addColorStop(1, colors[2]);
+  ctx.beginPath();
+  ctx.fillStyle = gradient;
+  ctx.shadowColor = colors[0];
+  ctx.shadowBlur = Math.max(5, radius * 0.8);
+  ctx.arc(x, y, radius * pulse, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawAutoFitEvolution(ctx, building, width, height, cx, cy) {
   const level = building.level || 1;
   const cycleStep = ((level - 1) % 5) + 1;
   const generation = Math.floor((level - 1) / 5);
-  const modules = building.mergedModules || 1;
   const colors = building.type === "House"
-    ? ["#bbf7d0", "#22c55e", "#14532d"]
+    ? ["#dcfce7", "#22c55e", "#14532d"]
     : building.type === "CrystalPoint"
-      ? ["#cffafe", "#22d3ee", "#155e75"]
-      : ["#fef3c7", "#f59e0b", "#92400e"];
+      ? ["#ecfeff", "#22d3ee", "#155e75"]
+      : ["#fff7d6", "#f59e0b", "#92400e"];
   const now = Date.now() / 1000;
   const minSide = Math.min(width, height);
   const centerY = cy - Math.min(18, height * 0.075);
+  const pulse = 1 + Math.sin(now * 2.1 + generation) * 0.035;
+  const depth = Math.min(3, generation + (cycleStep >= 3 ? 1 : 0));
+  const mainRadius = Math.max(7, minSide * (0.075 + Math.min(6, generation) * 0.007));
 
   ctx.save();
 
-  // Every completed generation remains visible as a nested ring. New levels
-  // add architecture instead of resetting the level-5 silhouette.
-  for (let ring = 0; ring <= generation; ring += 1) {
-    const isCurrent = ring === generation;
-    const ringScale = 1 - (generation - ring) * 0.115;
-    const rx = Math.max(13, width * (0.20 + ring * 0.018) * ringScale);
-    const ry = Math.max(9, height * (0.14 + ring * 0.012) * ringScale);
+  // Inherited orbital shells remain visible across generations.
+  for (let shell = 0; shell <= generation; shell += 1) {
+    const scale = 1 + shell * 0.18;
     ctx.beginPath();
-    ctx.strokeStyle = isCurrent ? colors[0] : `rgba(255,255,255,${0.16 + ring * 0.025})`;
-    ctx.lineWidth = Math.max(2, 5 - (generation - ring) * 0.45);
+    ctx.strokeStyle = shell === generation ? colors[0] : `rgba(255,255,255,${0.13 + shell * 0.035})`;
+    ctx.lineWidth = Math.max(1.5, 4 - shell * 0.22);
     ctx.shadowColor = colors[1];
-    ctx.shadowBlur = isCurrent ? 15 : 5;
-    ctx.ellipse(cx, centerY, rx, ry, now * (ring % 2 ? -0.035 : 0.035), 0, Math.PI * 2);
+    ctx.shadowBlur = shell === generation ? 13 : 4;
+    ctx.ellipse(cx, centerY, minSide * 0.20 * scale, minSide * 0.12 * scale, now * (shell % 2 ? -0.045 : 0.045), 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  const cornerRadius = Math.max(5, minSide * 0.035);
-  const cornerInsetX = width * 0.25;
-  const cornerInsetY = height * 0.23;
-  if (cycleStep >= 3 || generation > 0) {
-    for (const sx of [-1, 1]) {
-      for (const sy of [-1, 1]) {
-        const px = cx + sx * cornerInsetX;
-        const py = centerY + sy * cornerInsetY;
-        ctx.beginPath();
-        ctx.fillStyle = colors[1];
-        ctx.shadowColor = colors[0];
-        ctx.shadowBlur = 12 + generation;
-        ctx.arc(px, py, cornerRadius * (1 + Math.min(5, generation) * 0.08), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.strokeStyle = `rgba(255,255,255,${0.32 + Math.min(0.35, generation * 0.035)})`;
-        ctx.lineWidth = 2;
-        ctx.moveTo(px, py);
-        ctx.lineTo(cx, centerY);
-        ctx.stroke();
-      }
-    }
-  }
+  drawEvolutionNode(ctx, cx, centerY, mainRadius, depth, colors, pulse);
 
-  // Matryoshka core: each generation keeps the previous core and grows a new
-  // brighter nucleus from inside it.
-  const coreLayers = Math.max(1, generation + 1);
-  for (let layer = 0; layer < coreLayers; layer += 1) {
-    const outerToInner = coreLayers - 1 - layer;
-    const radius = Math.max(7, minSide * (0.105 - outerToInner * 0.012));
-    const lift = layer * Math.min(7, minSide * 0.015);
-    const gradient = ctx.createRadialGradient(cx - radius * 0.35, centerY - lift - radius * 0.45, 1, cx, centerY - lift, radius * 1.2);
-    gradient.addColorStop(0, "#ffffff");
-    gradient.addColorStop(0.30, colors[0]);
-    gradient.addColorStop(0.70, colors[1]);
-    gradient.addColorStop(1, colors[2]);
-    ctx.beginPath();
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = colors[0];
-    ctx.shadowBlur = 13 + layer * 3;
-    ctx.arc(cx, centerY - lift, radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Steps 4 and 5 complete the current generation vertically. Previous
-  // generations always retain at least their completed tower underneath.
-  const completedFloors = generation * 2;
-  const currentFloors = cycleStep >= 4 ? 1 + (cycleStep === 5 ? 1 : 0) : 0;
-  const floors = Math.min(18, completedFloors + currentFloors);
+  // Steps 4 and 5 grow the current central structure while all recursive
+  // children from earlier generations remain in place.
+  const inheritedFloors = generation * 2;
+  const newFloors = cycleStep >= 4 ? 1 + (cycleStep === 5 ? 1 : 0) : 0;
+  const floors = Math.min(18, inheritedFloors + newFloors);
   if (floors > 0) {
-    const towerWidth = Math.max(14, minSide * (0.10 + Math.min(8, generation) * 0.008));
-    const towerHeight = Math.min(height * 0.46, 20 + floors * 8);
+    const towerWidth = Math.max(12, mainRadius * 1.4);
+    const towerHeight = Math.min(height * 0.43, 16 + floors * 7);
     ctx.fillStyle = colors[2];
     ctx.shadowColor = colors[1];
-    ctx.shadowBlur = 18;
-    roundedRect(ctx, cx - towerWidth / 2, centerY - towerHeight - minSide * 0.08, towerWidth, towerHeight, towerWidth * 0.32);
+    ctx.shadowBlur = 16;
+    roundedRect(ctx, cx - towerWidth / 2, centerY - towerHeight - mainRadius * 0.55, towerWidth, towerHeight, towerWidth * 0.28);
     ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.86)";
     for (let floor = 0; floor < floors; floor += 1) {
-      ctx.fillRect(cx - towerWidth * 0.28, centerY - minSide * 0.08 - 7 - floor * 8, towerWidth * 0.56, 2.2);
+      ctx.fillRect(cx - towerWidth * 0.27, centerY - mainRadius * 0.55 - 6 - floor * 7, towerWidth * 0.54, 2);
     }
   }
 
-  // Level 2/7/12... keeps the recognizable a-A-a bridge while the inherited
-  // center remains visible.
+  // Pair levels retain the clear a-A-a bridge while inheriting prior detail.
   if (cycleStep === 2) {
     ctx.strokeStyle = colors[0];
     ctx.lineWidth = 5 + Math.min(5, generation);
     ctx.shadowColor = colors[1];
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.moveTo(building.x + width * 0.16, centerY);
-    ctx.lineTo(building.x + width * 0.84, centerY);
+    ctx.moveTo(building.x + width * 0.13, centerY);
+    ctx.lineTo(building.x + width * 0.87, centerY);
     ctx.stroke();
   }
-
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(2,6,23,0.82)";
-  roundedRect(ctx, building.x + 9, building.y + 9, 48, 21, 8);
-  ctx.fill();
-  ctx.fillStyle = colors[0];
-  ctx.font = "900 9px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(`G${generation + 1} · L${level}`, building.x + 33, building.y + 19.5);
   ctx.restore();
 }
 
@@ -6420,7 +6486,7 @@ const styles = {
 
   devLabMenuButton: { background:"linear-gradient(135deg,rgba(88,28,135,.92),rgba(14,116,144,.92))",border:"1px solid rgba(103,232,249,.62)",boxShadow:"0 0 28px rgba(34,211,238,.14)" },
   devRebuildReport: { position:"absolute",left:"50%",top:76,zIndex:46,width:"min(330px,calc(100% - 34px))",transform:"translateX(-50%)",padding:12,borderRadius:18,display:"flex",flexDirection:"column",gap:4,color:"#e0f2fe",background:"linear-gradient(135deg,rgba(30,41,59,.98),rgba(49,46,129,.96))",border:"1px solid rgba(129,140,248,.7)",boxShadow:"0 18px 52px rgba(0,0,0,.52),0 0 30px rgba(99,102,241,.22)",pointerEvents:"none" },
-  devLabPanel: { position:"absolute",right:10,top:142,zIndex:45,width:132,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
+  devLabPanel: { position:"absolute",right:10,top:78,zIndex:45,width:132,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
   devLabHeader: { display:"flex",justifyContent:"space-between",alignItems:"center",color:"#e9d5ff",fontSize:9,fontWeight:950,letterSpacing:".08em" },
   devLabControls: { display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,margin:"7px 0 4px" },
   menuScreen: {
