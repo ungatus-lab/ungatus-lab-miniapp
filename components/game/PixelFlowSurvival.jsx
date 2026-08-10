@@ -1186,6 +1186,74 @@ resetArena();
     setScreen("city");
   }
 
+  function getCitadelFootprint(level) {
+    return 4 + Math.floor(Math.max(0, level - 1) / 5) * 2;
+  }
+
+  function rectanglesOverlap(a, b) {
+    return !(
+      a.x + a.w * CITY_GRID_STEP <= b.x ||
+      a.x >= b.x + b.w * CITY_GRID_STEP ||
+      a.y + a.h * CITY_GRID_STEP <= b.y ||
+      a.y >= b.y + b.h * CITY_GRID_STEP
+    );
+  }
+
+  function findNearestFreeCitySlot(building, blockedBuilding) {
+    const originalGridX = Math.round(building.x / CITY_GRID_STEP);
+    const originalGridY = Math.round(building.y / CITY_GRID_STEP);
+    const maxGridX = Math.max(0, Math.floor(CITY_WIDTH / CITY_GRID_STEP) - building.w);
+    const maxGridY = Math.max(0, Math.floor(CITY_HEIGHT / CITY_GRID_STEP) - building.h);
+    const occupied = cityRef.current.buildings.filter((item) => item.id !== building.id && item.id !== blockedBuilding.id);
+
+    for (let radius = 0; radius <= Math.max(maxGridX, maxGridY); radius += 1) {
+      const candidates = [];
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        candidates.push({ gx: originalGridX + dx, gy: originalGridY - radius });
+        candidates.push({ gx: originalGridX + dx, gy: originalGridY + radius });
+      }
+      for (let dy = -radius + 1; dy < radius; dy += 1) {
+        candidates.push({ gx: originalGridX - radius, gy: originalGridY + dy });
+        candidates.push({ gx: originalGridX + radius, gy: originalGridY + dy });
+      }
+      for (const candidate of candidates) {
+        if (candidate.gx < 0 || candidate.gy < 0 || candidate.gx > maxGridX || candidate.gy > maxGridY) continue;
+        const preview = {
+          ...building,
+          x: candidate.gx * CITY_GRID_STEP,
+          y: candidate.gy * CITY_GRID_STEP,
+        };
+        if (rectanglesOverlap(preview, blockedBuilding)) continue;
+        if (occupied.some((item) => rectanglesOverlap(preview, item))) continue;
+        return { x: preview.x, y: preview.y };
+      }
+    }
+    return null;
+  }
+
+  function resizeCitadelForLevel(citadel, targetLevel) {
+    const targetSize = getCitadelFootprint(targetLevel);
+    if (!citadel || (citadel.w === targetSize && citadel.h === targetSize)) return [];
+    const centerX = citadel.x + citadel.w * CITY_GRID_STEP / 2;
+    const centerY = citadel.y + citadel.h * CITY_GRID_STEP / 2;
+    citadel.w = targetSize;
+    citadel.h = targetSize;
+    citadel.x = centerX - targetSize * CITY_GRID_STEP / 2;
+    citadel.y = centerY - targetSize * CITY_GRID_STEP / 2;
+    citadel.citadelGeneration = Math.floor(Math.max(0, targetLevel - 1) / 5);
+
+    const moved = [];
+    const collisions = cityRef.current.buildings.filter((building) => building.id !== citadel.id && rectanglesOverlap(building, citadel));
+    for (const building of collisions) {
+      const destination = findNearestFreeCitySlot(building, citadel);
+      if (!destination) continue;
+      moved.push({ id: building.id, fromX: building.x, fromY: building.y, toX: destination.x, toY: destination.y });
+      building.x = destination.x;
+      building.y = destination.y;
+    }
+    return moved;
+  }
+
   function getAutoFitFootprint(type, level) {
     const definition = BUILDINGS[type] || BUILDINGS.House;
     let w = definition.w;
@@ -1508,6 +1576,8 @@ resetArena();
       CITY_HEIGHT = desiredSize;
     }
 
+    const citadelMoves = resizeCitadelForLevel(citadel, target);
+
     stats.level = target;
     stats.xp = 0;
     stats.nextLevelXp = getNextLevelXp(target);
@@ -1518,6 +1588,9 @@ resetArena();
     citadel.underConstruction = false;
     constructionQueueRef.current = constructionQueueRef.current.filter((id) => id !== citadel.id);
     const rebuildReport = target > previousLevel ? autoFitDeveloperCity(previousLevel, target) : [];
+    if (citadelMoves.length > 0) {
+      rebuildReport.unshift({ type: "Citadel ring", before: citadelMoves.length, complexes: citadelMoves.length, reserve: 0, synthetic: 0, moved: citadelMoves.length });
+    }
     if (rebuildReport.length > 0) showDeveloperRebuildReport(target, rebuildReport);
     if (playerRef.current) playerRef.current.level = target;
     cityCameraRef.current.x = CITY_WIDTH / 2;
@@ -5731,63 +5804,121 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId, groupSelection, u
 
 function drawAutoFitEvolution(ctx, building, width, height, cx, cy) {
   const level = building.level || 1;
-  const step = ((level - 1) % 5) + 1;
+  const cycleStep = ((level - 1) % 5) + 1;
   const generation = Math.floor((level - 1) / 5);
   const modules = building.mergedModules || 1;
   const colors = building.type === "House"
-    ? ["#86efac", "#15803d"]
+    ? ["#bbf7d0", "#22c55e", "#14532d"]
     : building.type === "CrystalPoint"
-      ? ["#67e8f9", "#0e7490"]
-      : ["#fde68a", "#b45309"];
+      ? ["#cffafe", "#22d3ee", "#155e75"]
+      : ["#fef3c7", "#f59e0b", "#92400e"];
+  const now = Date.now() / 1000;
+  const minSide = Math.min(width, height);
+  const centerY = cy - Math.min(18, height * 0.075);
 
   ctx.save();
-  const centerY = cy - Math.min(18, height * 0.08);
-  const core = Math.max(7, Math.min(width, height) * (0.05 + Math.min(7, generation) * 0.008));
 
-  if (step >= 2 || modules > 1) {
-    ctx.strokeStyle = colors[0];
-    ctx.lineWidth = 4 + Math.min(5, generation);
-    ctx.shadowColor = colors[0];
-    ctx.shadowBlur = 16;
+  // Every completed generation remains visible as a nested ring. New levels
+  // add architecture instead of resetting the level-5 silhouette.
+  for (let ring = 0; ring <= generation; ring += 1) {
+    const isCurrent = ring === generation;
+    const ringScale = 1 - (generation - ring) * 0.115;
+    const rx = Math.max(13, width * (0.20 + ring * 0.018) * ringScale);
+    const ry = Math.max(9, height * (0.14 + ring * 0.012) * ringScale);
     ctx.beginPath();
-    ctx.moveTo(building.x + width * 0.22, centerY);
-    ctx.lineTo(building.x + width * 0.78, centerY);
+    ctx.strokeStyle = isCurrent ? colors[0] : `rgba(255,255,255,${0.16 + ring * 0.025})`;
+    ctx.lineWidth = Math.max(2, 5 - (generation - ring) * 0.45);
+    ctx.shadowColor = colors[1];
+    ctx.shadowBlur = isCurrent ? 15 : 5;
+    ctx.ellipse(cx, centerY, rx, ry, now * (ring % 2 ? -0.035 : 0.035), 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  if (step >= 3) {
-    const gradient = ctx.createRadialGradient(cx - core * 0.4, centerY - core * 0.5, 2, cx, centerY, core * 1.5);
+  const cornerRadius = Math.max(5, minSide * 0.035);
+  const cornerInsetX = width * 0.25;
+  const cornerInsetY = height * 0.23;
+  if (cycleStep >= 3 || generation > 0) {
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const px = cx + sx * cornerInsetX;
+        const py = centerY + sy * cornerInsetY;
+        ctx.beginPath();
+        ctx.fillStyle = colors[1];
+        ctx.shadowColor = colors[0];
+        ctx.shadowBlur = 12 + generation;
+        ctx.arc(px, py, cornerRadius * (1 + Math.min(5, generation) * 0.08), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(255,255,255,${0.32 + Math.min(0.35, generation * 0.035)})`;
+        ctx.lineWidth = 2;
+        ctx.moveTo(px, py);
+        ctx.lineTo(cx, centerY);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Matryoshka core: each generation keeps the previous core and grows a new
+  // brighter nucleus from inside it.
+  const coreLayers = Math.max(1, generation + 1);
+  for (let layer = 0; layer < coreLayers; layer += 1) {
+    const outerToInner = coreLayers - 1 - layer;
+    const radius = Math.max(7, minSide * (0.105 - outerToInner * 0.012));
+    const lift = layer * Math.min(7, minSide * 0.015);
+    const gradient = ctx.createRadialGradient(cx - radius * 0.35, centerY - lift - radius * 0.45, 1, cx, centerY - lift, radius * 1.2);
     gradient.addColorStop(0, "#ffffff");
-    gradient.addColorStop(0.35, colors[0]);
-    gradient.addColorStop(1, colors[1]);
-    ctx.fillStyle = gradient;
+    gradient.addColorStop(0.30, colors[0]);
+    gradient.addColorStop(0.70, colors[1]);
+    gradient.addColorStop(1, colors[2]);
     ctx.beginPath();
-    ctx.arc(cx, centerY, core * (1 + generation * 0.05), 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.shadowColor = colors[0];
+    ctx.shadowBlur = 13 + layer * 3;
+    ctx.arc(cx, centerY - lift, radius, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  if (step >= 4) {
-    const floors = Math.min(12, 1 + generation + (step === 5 ? 1 : 0));
-    const towerHeight = Math.min(height * 0.42, 20 + floors * 9);
-    const towerWidth = Math.max(13, core * 1.45);
-    ctx.fillStyle = colors[1];
-    roundedRect(ctx, cx - towerWidth / 2, centerY - towerHeight - core, towerWidth, towerHeight, towerWidth * 0.3);
+  // Steps 4 and 5 complete the current generation vertically. Previous
+  // generations always retain at least their completed tower underneath.
+  const completedFloors = generation * 2;
+  const currentFloors = cycleStep >= 4 ? 1 + (cycleStep === 5 ? 1 : 0) : 0;
+  const floors = Math.min(18, completedFloors + currentFloors);
+  if (floors > 0) {
+    const towerWidth = Math.max(14, minSide * (0.10 + Math.min(8, generation) * 0.008));
+    const towerHeight = Math.min(height * 0.46, 20 + floors * 8);
+    ctx.fillStyle = colors[2];
+    ctx.shadowColor = colors[1];
+    ctx.shadowBlur = 18;
+    roundedRect(ctx, cx - towerWidth / 2, centerY - towerHeight - minSide * 0.08, towerWidth, towerHeight, towerWidth * 0.32);
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.88)";
-    for (let i = 0; i < floors; i += 1) {
-      ctx.fillRect(cx - towerWidth * 0.27, centerY - core - 7 - i * 8, towerWidth * 0.54, 2.2);
+    ctx.fillStyle = "rgba(255,255,255,0.86)";
+    for (let floor = 0; floor < floors; floor += 1) {
+      ctx.fillRect(cx - towerWidth * 0.28, centerY - minSide * 0.08 - 7 - floor * 8, towerWidth * 0.56, 2.2);
     }
+  }
+
+  // Level 2/7/12... keeps the recognizable a-A-a bridge while the inherited
+  // center remains visible.
+  if (cycleStep === 2) {
+    ctx.strokeStyle = colors[0];
+    ctx.lineWidth = 5 + Math.min(5, generation);
+    ctx.shadowColor = colors[1];
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(building.x + width * 0.16, centerY);
+    ctx.lineTo(building.x + width * 0.84, centerY);
+    ctx.stroke();
   }
 
   ctx.shadowBlur = 0;
   ctx.fillStyle = "rgba(2,6,23,0.82)";
-  roundedRect(ctx, building.x + 9, building.y + 9, 42, 21, 8);
+  roundedRect(ctx, building.x + 9, building.y + 9, 48, 21, 8);
   ctx.fill();
   ctx.fillStyle = colors[0];
   ctx.font = "900 9px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(`G${generation + 1} ×${modules}`, building.x + 30, building.y + 19.5);
+  ctx.fillText(`G${generation + 1} · L${level}`, building.x + 33, building.y + 19.5);
   ctx.restore();
 }
 
@@ -5898,6 +6029,27 @@ function drawCitadelBuilding(ctx, building, width, height, cx, cy) {
   ctx.fill();
   ctx.shadowBlur = 0;
   ctx.restore();
+
+  const citadelGeneration = Math.floor(Math.max(0, level - 1) / 5);
+  if (citadelGeneration > 0) {
+    for (let ring = 1; ring <= citadelGeneration; ring += 1) {
+      const pad = Math.min(width, height) * (0.06 + ring * 0.025);
+      ctx.save();
+      ctx.strokeStyle = `rgba(167,139,250,${Math.min(0.82, 0.30 + ring * 0.07)})`;
+      ctx.lineWidth = 3 + Math.min(5, ring);
+      ctx.shadowColor = "#8b5cf6";
+      ctx.shadowBlur = 12 + ring * 2;
+      roundedRect(ctx, building.x + pad, building.y + pad, width - pad * 2, height - pad * 2, Math.max(18, 36 - ring * 2));
+      ctx.stroke();
+      ctx.restore();
+    }
+    const spireCount = Math.min(8, 4 + citadelGeneration);
+    for (let i = 0; i < spireCount; i += 1) {
+      const angle = (i / spireCount) * Math.PI * 2 + now * 0.08;
+      const distance = bodyRadius * (1.02 + Math.min(0.45, citadelGeneration * 0.06));
+      drawSatellite(ctx, cx + Math.cos(angle) * distance, cy - 3 + Math.sin(angle) * distance * 0.58, i % 2 ? "#a78bfa" : "#67e8f9");
+    }
+  }
 
   const visibleWorkers = Math.min(5, Math.max(0, cityStatsWorkerVisual(building)));
   for (let i = 0; i < visibleWorkers; i += 1) {
