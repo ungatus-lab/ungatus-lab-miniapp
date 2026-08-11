@@ -25,6 +25,7 @@ const CITY_LEVEL_ONE_SIZE = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
 let CITY_WIDTH = CITY_LEVEL_ONE_SIZE;
 let CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
 const CITY_EXPANSION_PER_SIDE = CITY_MODULE_SIZE * CITY_GRID_STEP;
+const CITY_DECADE_TEMPLATE_CELLS = [8, 12, 16, 20, 24, 24, 26, 28, 30, 32];
 const CITY_OUTSIDE_PADDING = 900;
 const CITY_MIN_ZOOM = 0.32;
 const CITY_MAX_ZOOM = 1.1;
@@ -72,6 +73,72 @@ const BUILDINGS = {
     color: "#f59e0b",
   },
 };
+
+function getBuildingModuleCount(level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  const generation = Math.floor((safeLevel - 1) / 5);
+  const cycleStep = ((safeLevel - 1) % 5) + 1;
+  const stageModules = cycleStep === 1 ? 1 : cycleStep === 2 ? 2 : 4;
+  return Math.pow(4, generation) * stageModules;
+}
+
+function getBuildingOutputScale(level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  let output = 1;
+  let enhancementBase = 1;
+
+  for (let current = 2; current <= safeLevel; current += 1) {
+    const cycleStep = ((current - 2) % 5 + 5) % 5;
+    const isMergeLevel = cycleStep === 0 || cycleStep === 1;
+    if (isMergeLevel) {
+      output *= 2;
+      enhancementBase = output;
+    } else if (current >= 4) {
+      output += enhancementBase * 0.25;
+    }
+  }
+  return output;
+}
+
+function getBuildingEfficiency(level) {
+  const modules = getBuildingModuleCount(level);
+  return getBuildingOutputScale(level) / Math.max(1, modules);
+}
+
+function getBuildingEconomy(type, level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  const definition = BUILDINGS[type] || BUILDINGS.House;
+  const modules = getBuildingModuleCount(safeLevel);
+  const outputScale = getBuildingOutputScale(safeLevel);
+  const efficiency = outputScale / Math.max(1, modules);
+  const crystalCost = type === "CrystalPoint" ? 0 : Math.ceil((definition.cost || 0) * outputScale);
+  const workerCost = type === "CrystalPoint" ? Math.ceil((definition.workerCost || 0) * outputScale) : 0;
+  const buildTime = Math.max(1, (BUILD_TIME_SECONDS[type] || 3) * Math.sqrt(modules) * (1 + (safeLevel - 1) * 0.035));
+  return {
+    level: safeLevel,
+    modules,
+    outputScale,
+    efficiency,
+    crystalCost,
+    workerCost,
+    buildTime,
+    workerCapacity: type === "House" ? Math.round(5 * outputScale) : 0,
+    guardCapacity: type === "House" ? Math.round(25 * outputScale) : 0,
+    crystalRate: type === "CrystalPoint" ? outputScale : 0,
+    barracksBatch: type === "Barracks" ? outputScale : 0,
+  };
+}
+
+function getUpgradeEconomy(type, currentLevel) {
+  const current = getBuildingEconomy(type, currentLevel);
+  const target = getBuildingEconomy(type, current.level + 1);
+  return {
+    target,
+    crystalCost: type === "CrystalPoint" ? 0 : Math.max(1, Math.ceil((target.crystalCost - current.crystalCost) + target.crystalCost * 0.15)),
+    workerCost: type === "CrystalPoint" ? Math.max(1, Math.ceil((target.workerCost - current.workerCost) + target.workerCost * 0.15)) : 0,
+    upgradeTime: Math.max(1, target.buildTime * 0.70),
+  };
+}
 
 const initialProfile = {
   operatorTier: 1,
@@ -276,6 +343,25 @@ function createWorld() {
   };
 }
 
+function getCityDecade(level) {
+  return Math.floor(Math.max(0, level - 1) / 10);
+}
+
+function getCityGeneration(level) {
+  return Math.floor(Math.max(0, level - 1) / 5);
+}
+
+function getCityCellsForLevel(level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  const decade = getCityDecade(safeLevel);
+  const decadeStep = (safeLevel - 1) % 10;
+  return CITY_DECADE_TEMPLATE_CELLS[decadeStep] * Math.pow(4, decade);
+}
+
+function getCitySizeForLevel(level) {
+  return getCityCellsForLevel(level) * CITY_GRID_STEP;
+}
+
 function createCityState() {
   const citadelSize = 4;
   const citadelX = CITY_WIDTH / 2 - (citadelSize * CITY_GRID_STEP) / 2;
@@ -308,11 +394,15 @@ function snapCityPointToGrid(point, w = 2, h = 2) {
 
 function getCityFitMinZoom(canvas, extraMargin = 120) {
   if (!canvas) return CITY_MIN_ZOOM;
-  const usableWidth = Math.max(120, canvas.clientWidth - 24);
-  const usableHeight = Math.max(120, canvas.clientHeight - 250);
-  const fitWidth = usableWidth / (CITY_WIDTH + extraMargin * 2);
-  const fitHeight = usableHeight / (CITY_HEIGHT + extraMargin * 2);
-  return clamp(Math.min(CITY_MIN_ZOOM, fitWidth, fitHeight), 0.035, CITY_MIN_ZOOM);
+  const sideChrome = 24;
+  const topSafeArea = 190;
+  const bottomSafeArea = 190;
+  const territoryMarginFactor = 1.2;
+  const usableWidth = Math.max(120, canvas.clientWidth - sideChrome);
+  const usableHeight = Math.max(120, canvas.clientHeight - topSafeArea - bottomSafeArea);
+  const fitWidth = usableWidth / ((CITY_WIDTH + extraMargin * 2) * territoryMarginFactor);
+  const fitHeight = usableHeight / ((CITY_HEIGHT + extraMargin * 2) * territoryMarginFactor);
+  return clamp(Math.min(CITY_MIN_ZOOM, fitWidth, fitHeight), 0.00000005, CITY_MIN_ZOOM);
 }
 
 export default function PixelFlowSurvival({ open, onClose }) {
@@ -1187,7 +1277,7 @@ resetArena();
   }
 
   function getCitadelFootprint(level) {
-    return 4 + Math.floor(Math.max(0, level - 1) / 5) * 4;
+    return 4 * Math.pow(2, getCityGeneration(level));
   }
 
   function rectanglesOverlap(a, b) {
@@ -1517,6 +1607,42 @@ resetArena();
     const citadel = source.find((building) => building.type === "Citadel");
     const result = citadel ? [citadel] : [];
     const report = [];
+    const processedTypes = new Set();
+
+    const allOtherBuildings = (activeType) => source.filter((building) =>
+      building.type !== "Citadel" && building.type !== activeType && !processedTypes.has(building.type)
+    );
+
+    const findVirtualPairLayout = (primary, partner, level, occupied) => {
+      const cityCellsX = Math.floor(CITY_WIDTH / CITY_GRID_STEP);
+      const cityCellsY = Math.floor(CITY_HEIGHT / CITY_GRID_STEP);
+      const originGX = Math.max(0, Math.round(primary.x / CITY_GRID_STEP));
+      const originGY = Math.max(0, Math.round(primary.y / CITY_GRID_STEP));
+      const maxRadius = Math.max(cityCellsX, cityCellsY);
+      for (let radius = 0; radius <= maxRadius; radius += 1) {
+        const minGX = Math.max(0, originGX - radius);
+        const maxGX = Math.min(cityCellsX - primary.w, originGX + radius);
+        const minGY = Math.max(0, originGY - radius);
+        const maxGY = Math.min(cityCellsY - primary.h, originGY + radius);
+        for (let gy = minGY; gy <= maxGY; gy += 1) {
+          for (let gx = minGX; gx <= maxGX; gx += 1) {
+            if (Math.max(Math.abs(gx - originGX), Math.abs(gy - originGY)) !== radius) continue;
+            const first = { ...primary, x: gx * CITY_GRID_STEP, y: gy * CITY_GRID_STEP };
+            for (const twinPosition of getTwinCandidates(first, level)) {
+              const second = { ...partner, x: twinPosition.x, y: twinPosition.y, w: first.w, h: first.h };
+              const inside = second.x >= 0 && second.y >= 0 &&
+                second.x + second.w * CITY_GRID_STEP <= CITY_WIDTH &&
+                second.y + second.h * CITY_GRID_STEP <= CITY_HEIGHT;
+              if (!inside) continue;
+              if (citadel && (rectanglesOverlap(first, citadel) || rectanglesOverlap(second, citadel))) continue;
+              if (occupied.some((item) => rectanglesOverlap(first, item) || rectanglesOverlap(second, item))) continue;
+              return { first, second };
+            }
+          }
+        }
+      }
+      return null;
+    };
 
     for (const type of ["House", "CrystalPoint", "Barracks"]) {
       let pool = source
@@ -1529,100 +1655,81 @@ resetArena();
           upgrading: false,
           pendingLevel: null,
         }));
+      const beforeCount = pool.length;
       let synthetic = 0;
       let moved = 0;
 
       for (let level = previousLevel + 1; level <= targetLevel; level += 1) {
         if (!isAutoFitMergeLevel(level)) {
-          pool = pool.map((building) => ({ ...building, level, autoFitGeneration: Math.floor((level - 1) / 5) }));
+          pool = pool.map((building) => ({ ...building, level, autoFitGeneration: getCityGeneration(level) }));
           continue;
         }
 
         const nextPool = [];
         const used = new Set();
-        pool.sort((a, b) => a.y - b.y || a.x - b.x);
+        const fixedOccupancy = [
+          ...(citadel ? [citadel] : []),
+          ...result.filter((building) => building.type !== type && building.type !== "Citadel"),
+          ...allOtherBuildings(type),
+        ];
+        pool.sort((left, right) => left.y - right.y || left.x - right.x);
 
-        // Pass 1: reserve and merge every pair that already forms the correct
-        // rectangle on the existing grid. A lonely building is not allowed to
-        // steal one member from such a pair just because it appears first.
+        // First lock every valid adjacent pair of this building type.
         for (let index = 0; index < pool.length; index += 1) {
           if (used.has(index)) continue;
-          let exactPartner = -1;
           for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
-            if (!used.has(candidate) && canMergeOnOccupiedCells(pool[index], pool[candidate], level)) {
-              exactPartner = candidate;
-              break;
-            }
+            if (used.has(candidate)) continue;
+            if (!canMergeOnOccupiedCells(pool[index], pool[candidate], level)) continue;
+            used.add(index);
+            used.add(candidate);
+            nextPool.push(mergeAutoFitPair(pool[index], pool[candidate], level, false));
+            break;
           }
-          if (exactPartner < 0) continue;
-          used.add(index);
-          used.add(exactPartner);
-          nextPool.push(mergeAutoFitPair(pool[index], pool[exactPartner], level, false));
         }
 
-        // Pass 2: only true leftovers may be relocated or receive an automatic
-        // twin. Existing correctly aligned pairs above remain exactly where
-        // their occupied cells were before the city territory expanded.
-        for (let index = 0; index < pool.length; index += 1) {
-          if (used.has(index)) continue;
-          const primary = pool[index];
-          const partnerIndex = pickCellAccuratePartner(pool, index, used, level, nextPool);
-          let partner;
+        // Then pair every remaining object, independently for each type.
+        const leftovers = pool.filter((_, index) => !used.has(index));
+        for (let index = 0; index < leftovers.length; index += 2) {
+          const primary = leftovers[index];
+          let partner = leftovers[index + 1] || null;
           let syntheticTwin = false;
-
-          if (partnerIndex >= 0) {
-            partner = pool[partnerIndex];
-            moved += 1;
-            used.add(partnerIndex);
-          } else {
-            let remotePartnerIndex = -1;
-            for (let candidate = index + 1; candidate < pool.length; candidate += 1) {
-              if (!used.has(candidate)) { remotePartnerIndex = candidate; break; }
-            }
-            if (remotePartnerIndex >= 0) {
-              const layout = findFreePairPlacement(primary, pool[remotePartnerIndex], level);
-              if (layout) {
-                primary.x = layout.primary.x;
-                primary.y = layout.primary.y;
-                partner = pool[remotePartnerIndex];
-                partner.x = layout.partner.x;
-                partner.y = layout.partner.y;
-                partner.w = primary.w;
-                partner.h = primary.h;
-                used.add(remotePartnerIndex);
-                used.add(index);
-                moved += 2;
-                nextPool.push(mergeAutoFitPair(primary, partner, level, false));
-                continue;
-              }
-            }
-
-            const placement = findSyntheticTwinPlacement(primary, level, nextPool);
-            if (!placement) {
-              primary.level = level;
-              nextPool.push(primary);
-              used.add(index);
-              continue;
-            }
+          if (!partner) {
             partner = {
               ...primary,
-              id: `${primary.id}-auto-twin-${level}`,
-              x: placement.x,
-              y: placement.y,
+              id: `${primary.id}-auto-twin-${level}-${type}`,
             };
             synthetic += 1;
             syntheticTwin = true;
           }
-
-          used.add(index);
-          nextPool.push(mergeAutoFitPair(primary, partner, level, syntheticTwin));
+          const occupied = [...fixedOccupancy, ...nextPool];
+          const layout = findVirtualPairLayout(primary, partner, level, occupied);
+          if (!layout) {
+            // The world formula guarantees capacity; keep a diagnostic debt only
+            // if a future custom building blocks every mathematically valid slot.
+            primary.level = level;
+            primary.reconstructionDebt = true;
+            nextPool.push(primary);
+            continue;
+          }
+          if (layout.first.x !== primary.x || layout.first.y !== primary.y ||
+              layout.second.x !== partner.x || layout.second.y !== partner.y) moved += syntheticTwin ? 1 : 2;
+          primary.x = layout.first.x;
+          primary.y = layout.first.y;
+          partner.x = layout.second.x;
+          partner.y = layout.second.y;
+          partner.w = primary.w;
+          partner.h = primary.h;
+          const merged = mergeAutoFitPair(primary, partner, level, syntheticTwin);
+          merged.reconstructionDebt = false;
+          nextPool.push(merged);
         }
         pool = nextPool;
       }
 
       result.push(...pool);
-      if (source.some((building) => building.type === type)) {
-        report.push({ type, before: source.filter((building) => building.type === type).length, complexes: pool.length, reserve: 0, synthetic, moved });
+      processedTypes.add(type);
+      if (beforeCount > 0) {
+        report.push({ type, before: beforeCount, complexes: pool.length, reserve: 0, synthetic, moved });
       }
     }
 
@@ -1643,6 +1750,18 @@ resetArena();
     }, 2400);
   }
 
+  function resizeDeveloperCityWorld(targetLevel) {
+    const desiredSize = getCitySizeForLevel(targetLevel);
+    const delta = desiredSize - CITY_WIDTH;
+    const shift = delta / 2;
+    for (const building of cityRef.current.buildings) {
+      building.x += shift;
+      building.y += shift;
+    }
+    CITY_WIDTH = desiredSize;
+    CITY_HEIGHT = desiredSize;
+  }
+
   function setDeveloperLevel(nextLevel) {
     if (!devLabRef.current) return;
     const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
@@ -1651,25 +1770,7 @@ resetArena();
     const citadel = getCitadelBuilding();
     if (!citadel || target === previousLevel) return;
 
-    if (target > stats.level) {
-      const steps = target - stats.level;
-      const shift = CITY_EXPANSION_PER_SIDE * steps;
-      for (const building of cityRef.current.buildings) {
-        building.x += shift;
-        building.y += shift;
-      }
-      CITY_WIDTH += shift * 2;
-      CITY_HEIGHT += shift * 2;
-    } else {
-      const desiredSize = CITY_LEVEL_ONE_SIZE + (target - 1) * CITY_EXPANSION_PER_SIDE * 2;
-      const shrinkEachSide = Math.max(0, (CITY_WIDTH - desiredSize) / 2);
-      for (const building of cityRef.current.buildings) {
-        building.x = clamp(building.x - shrinkEachSide, 0, desiredSize - building.w * CITY_GRID_STEP);
-        building.y = clamp(building.y - shrinkEachSide, 0, desiredSize - building.h * CITY_GRID_STEP);
-      }
-      CITY_WIDTH = desiredSize;
-      CITY_HEIGHT = desiredSize;
-    }
+    resizeDeveloperCityWorld(target);
 
     const citadelMoves = resizeCitadelForLevel(citadel, target);
 
@@ -2024,10 +2125,10 @@ resetArena();
           }
 
           if (building.type === "House") {
-            stats.workerCap += 5;
-            stats.workers += 5;
-            stats.guardCap += 25;
+            const economy = getBuildingEconomy("House", building.level || 1);
+            stats.workers = Math.min(stats.workerCap + economy.workerCapacity, stats.workers + economy.workerCapacity);
           }
+          recalculateCityEconomy();
         }
       }
     }
@@ -2037,10 +2138,8 @@ resetArena();
     }
 
     stats.crystalRate = buildings
-      .filter(
-        (building) => building.type === "CrystalPoint" && !building.underConstruction
-      )
-      .reduce((sum, building) => sum + (building.level || 1), 0);
+      .filter((building) => building.type === "CrystalPoint" && !building.underConstruction)
+      .reduce((sum, building) => sum + getBuildingEconomy("CrystalPoint", building.level || 1).crystalRate, 0);
 
     stats.crystals += stats.crystalRate * dt;
 
@@ -2059,18 +2158,23 @@ resetArena();
         continue;
       }
 
-      const productionTime = Math.pow(1.5, buildingLevel - 1);
+      const barracksEconomy = getBuildingEconomy("Barracks", buildingLevel);
+      const productionTime = 1;
       building.trainTimer = (building.trainTimer || 0) + dt;
 
-      if (
-        building.trainTimer >= productionTime &&
-        getTotalOwnedGuards(stats, marchesRef.current) < stats.guardCap &&
-        stats.crystals >= GUARD_CRYSTAL_COST
-      ) {
-        building.trainTimer = 0;
-        stats.crystals -= GUARD_CRYSTAL_COST;
-        stats.guardsByLevel[buildingLevel] =
-          (stats.guardsByLevel[buildingLevel] || 0) + 1;
+      if (building.trainTimer >= productionTime) {
+        building.trainTimer -= productionTime;
+        const exactBatch = barracksEconomy.barracksBatch + (building.trainCarry || 0);
+        const requestedBatch = Math.max(1, Math.floor(exactBatch));
+        building.trainCarry = exactBatch - requestedBatch;
+        const availableCapacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
+        const affordableBatch = Math.floor(stats.crystals / GUARD_CRYSTAL_COST);
+        const producedBatch = Math.min(requestedBatch, availableCapacity, affordableBatch);
+        if (producedBatch > 0) {
+          stats.crystals -= producedBatch * GUARD_CRYSTAL_COST;
+          stats.guardsByLevel[buildingLevel] =
+            (stats.guardsByLevel[buildingLevel] || 0) + producedBatch;
+        }
       }
     }
 
@@ -2089,11 +2193,23 @@ resetArena();
       stats.crystals = 0;
     }
 
-    stats.crystalRate = cityRef.current.buildings
-      .filter(
-        (building) => building.type === "CrystalPoint" && !building.underConstruction
-      )
-      .reduce((sum, building) => sum + (building.level || 1), 0);
+    const completedBuildings = cityRef.current.buildings.filter((building) => !building.underConstruction);
+    stats.crystalRate = completedBuildings
+      .filter((building) => building.type === "CrystalPoint")
+      .reduce((sum, building) => sum + getBuildingEconomy("CrystalPoint", building.level || 1).crystalRate, 0);
+
+    const houseEconomy = completedBuildings
+      .filter((building) => building.type === "House")
+      .reduce((totals, building) => {
+        const economy = getBuildingEconomy("House", building.level || 1);
+        totals.workers += economy.workerCapacity;
+        totals.guards += economy.guardCapacity;
+        return totals;
+      }, { workers: 0, guards: 0 });
+    stats.workerCap = 5 + houseEconomy.workers;
+    stats.workers = Math.min(stats.workers, stats.workerCap);
+    const levelGuardBonus = Math.max(0, stats.level - 1) * 5 + (stats.level >= 5 ? 10 : 0) + (stats.level >= 10 ? 25 : 0) + (stats.level >= 20 ? 50 : 0);
+    stats.guardCap = 10 + houseEconomy.guards + levelGuardBonus;
 
     setCityStats({ ...stats });
   }
@@ -2376,36 +2492,17 @@ resetArena();
   }
 
   function getLevelUpgradeMultiplier(nextLevel) {
-    return nextLevel * (nextLevel - 1);
+    return getBuildingEfficiency(nextLevel);
   }
 
   function getUpgradeCrystalCost(building) {
-    if (!building) return 0;
-    if (building.type === "Citadel") return 0;
-
-    const currentLevel = building.level || 1;
-    const nextLevel = currentLevel + 1;
-
-    if (building.type === "CrystalPoint") return 0;
-
-    const definition = BUILDINGS[building.type];
-    const baseCost = definition?.cost || 0;
-
-    return baseCost * getLevelUpgradeMultiplier(nextLevel);
+    if (!building || building.type === "Citadel") return 0;
+    return getUpgradeEconomy(building.type, building.level || 1).crystalCost;
   }
 
   function getUpgradeWorkerCost(building) {
-    if (!building) return 0;
-    if (building.type === "Citadel") return 0;
-
-    const currentLevel = building.level || 1;
-    const nextLevel = currentLevel + 1;
-
-    if (building.type === "CrystalPoint") {
-      return BUILDINGS.CrystalPoint.workerCost * getLevelUpgradeMultiplier(nextLevel);
-    }
-
-    return 0;
+    if (!building || building.type === "Citadel") return 0;
+    return getUpgradeEconomy(building.type, building.level || 1).workerCost;
   }
 
   function getUpgradeCostLabel(building) {
@@ -2445,13 +2542,14 @@ resetArena();
     building.upgrading = false;
 
     if (building.type === "Citadel") {
-      const shift = CITY_EXPANSION_PER_SIDE;
+      const desiredSize = getCitySizeForLevel(building.level);
+      const shift = (desiredSize - CITY_WIDTH) / 2;
       for (const cityBuilding of cityRef.current.buildings) {
         cityBuilding.x += shift;
         cityBuilding.y += shift;
       }
-      CITY_WIDTH += shift * 2;
-      CITY_HEIGHT += shift * 2;
+      CITY_WIDTH = desiredSize;
+      CITY_HEIGHT = desiredSize;
       cityCameraRef.current.x = CITY_WIDTH / 2;
       cityCameraRef.current.y = CITY_HEIGHT / 2;
       const canvas = canvasRef.current;
@@ -2467,12 +2565,11 @@ resetArena();
     }
 
     if (building.type === "House") {
-      const workerGain = building.level * 5 - oldLevel * 5;
-      const guardGain = building.level * 25 - oldLevel * 25;
-      stats.workerCap += workerGain;
-      stats.workers += workerGain;
-      stats.guardCap += guardGain;
+      const before = getBuildingEconomy("House", oldLevel);
+      const after = getBuildingEconomy("House", building.level);
+      stats.workers += Math.max(0, after.workerCapacity - before.workerCapacity);
     }
+    recalculateCityEconomy();
   }
 
   function upgradeSelectedBuilding() {
@@ -2489,7 +2586,7 @@ resetArena();
     building.upgrading = true;
     building.underConstruction = true;
     building.buildElapsed = 0;
-    building.buildDuration = Math.max(3, (BUILD_TIME_SECONDS[building.type] || 3) * UPGRADE_TIME_MULTIPLIER);
+    building.buildDuration = getUpgradeEconomy(building.type, building.level || 1).upgradeTime;
     if (!constructionQueueRef.current.includes(building.id)) constructionQueueRef.current.push(building.id);
 
     updateSelectedBuilding(null);
@@ -2550,7 +2647,7 @@ resetArena();
     applyCityTransform(ctx, width, height, camera);
 
     drawCityOutsideShadow(ctx);
-    drawCityGrid(ctx);
+    drawCityGrid(ctx, cityStatsRef.current.level);
     drawCityBorder(ctx);
     globalThis.__macroSwarmCityStatsVisual = cityStatsRef.current;
     const upgradePlan = groupDialogRef.current?.type === "upgrade" ? groupDialogRef.current.plan : null;
@@ -3052,7 +3149,7 @@ resetArena();
 
   function getCurrentBuildFootprints(type) {
     const definition = BUILDINGS[type] || BUILDINGS.Barracks;
-    if (!devLabRef.current || cityStatsRef.current.level <= 1) {
+    if (cityStatsRef.current.level <= 1) {
       return [{ w: definition.w, h: definition.h }];
     }
     const footprint = getAutoFitFootprint(type, cityStatsRef.current.level);
@@ -3063,14 +3160,16 @@ resetArena();
 
   function makeBuildPreviewWithFootprint(snapped, type, footprint) {
     const definition = BUILDINGS[type] || BUILDINGS.Barracks;
+    const buildLevel = cityStatsRef.current.level;
+    const economy = getBuildingEconomy(type, buildLevel);
     const preview = {
       type: definition.type,
       x: snapped.x,
       y: snapped.y,
       w: footprint.w,
       h: footprint.h,
-      cost: definition.cost,
-      workerCost: definition.workerCost || 0,
+      cost: economy.crystalCost,
+      workerCost: economy.workerCost,
       valid: true,
       affordable: true,
     };
@@ -3364,17 +3463,20 @@ resetArena();
 
     for (const preview of validPreviews) {
       const definition = BUILDINGS[preview.type] || BUILDINGS.Barracks;
-      crystalCost += definition.cost;
-      workerCost += definition.workerCost || 0;
-      const buildDuration = BUILD_TIME_SECONDS[preview.type] || 3;
+      const buildLevel = cityStatsRef.current.level;
+      const economy = getBuildingEconomy(preview.type, buildLevel);
+      crystalCost += economy.crystalCost;
+      workerCost += economy.workerCost;
+      const buildDuration = economy.buildTime;
       const currentFootprint = { w: preview.w, h: preview.h };
       newBuildings.push({
         id: `${preview.type}-${Date.now()}-${Math.random()}`,
         type: preview.type,
-        level: devLabRef.current ? cityStatsRef.current.level : 1,
-        mergedModules: devLabRef.current ? Math.pow(2, Math.min(6, Math.max(0, cityStatsRef.current.level - 1))) : 1,
+        level: buildLevel,
+        mergedModules: economy.modules,
         autoFitGeneration: devLabRef.current ? Math.floor((cityStatsRef.current.level - 1) / 5) : 0,
         trainTimer: 0,
+        trainCarry: 0,
         x: preview.x,
         y: preview.y,
         w: currentFootprint.w,
@@ -4250,6 +4352,42 @@ resetArena();
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
+  function getDeveloperLabPanelStyle() {
+    const canvas = canvasRef.current;
+    if (!canvas || screen !== "city") return styles.devLabPanel;
+
+    const panelWidth = 148;
+    const panelHeight = 126;
+    const edge = 10;
+    const safeTop = 74;
+    const safeBottom = 168;
+    const camera = cityCameraRef.current;
+    const mapWidth = CITY_WIDTH * camera.zoom;
+    const mapHeight = CITY_HEIGHT * camera.zoom;
+    const mapLeft = canvas.clientWidth / 2 - mapWidth / 2;
+    const mapRight = canvas.clientWidth / 2 + mapWidth / 2;
+    const mapTop = canvas.clientHeight / 2 - mapHeight / 2;
+    const mapBottom = canvas.clientHeight / 2 + mapHeight / 2;
+    const rightGap = canvas.clientWidth - mapRight;
+    const leftGap = mapLeft;
+    const topGap = mapTop - safeTop;
+    const bottomGap = canvas.clientHeight - safeBottom - mapBottom;
+
+    if (rightGap >= panelWidth + edge * 2) {
+      return { ...styles.devLabPanel, left: Math.min(canvas.clientWidth - panelWidth - edge, mapRight + edge), right: "auto", top: Math.max(safeTop, mapTop) };
+    }
+    if (leftGap >= panelWidth + edge * 2) {
+      return { ...styles.devLabPanel, left: Math.max(edge, mapLeft - panelWidth - edge), right: "auto", top: Math.max(safeTop, mapTop) };
+    }
+    if (topGap >= panelHeight + edge) {
+      return { ...styles.devLabPanel, left: canvas.clientWidth - panelWidth - edge, right: "auto", top: Math.max(safeTop, mapTop - panelHeight - edge) };
+    }
+    if (bottomGap >= panelHeight + edge) {
+      return { ...styles.devLabPanel, left: canvas.clientWidth - panelWidth - edge, right: "auto", top: mapBottom + edge };
+    }
+    return { ...styles.devLabPanel, left: canvas.clientWidth - panelWidth - edge, right: "auto", top: safeTop };
+  }
+
   return (
     <div style={styles.overlay}>
       <style>
@@ -4388,7 +4526,7 @@ resetArena();
         </div>
       )}
       {devLab && (screen === "arena" || screen === "city") && (
-        <div style={styles.devLabPanel}>
+        <div style={getDeveloperLabPanelStyle()}>
           <div style={styles.devLabHeader}><span>DEV LAB</span><b>LV {cityStats.level}</b></div>
           <div style={styles.devLabControls}>
             <button onClick={() => setDeveloperLevel(cityStats.level - 1)} disabled={cityStats.level <= 1}>−</button>
@@ -5800,31 +5938,34 @@ function drawCityOutsideShadow(ctx) {
   ctx.restore();
 }
 
-function drawCityGrid(ctx) {
-  ctx.lineWidth = 1;
+function drawCityGrid(ctx, level = 1) {
+  const generation = getCityGeneration(level);
+  const oldestVisible = Math.max(0, generation - 3);
 
-  for (let x = 0; x <= CITY_WIDTH; x += CITY_GRID_STEP) {
-    const major = x % (CITY_GRID_STEP * 2) === 0;
+  for (let gridGeneration = oldestVisible; gridGeneration <= generation; gridGeneration += 1) {
+    const age = generation - gridGeneration;
+    const visibility = Math.max(0, 1 - age * 0.25);
+    if (visibility <= 0) continue;
+    const cellScale = Math.pow(2, gridGeneration);
+    const step = CITY_GRID_STEP * cellScale;
+    const alpha = (gridGeneration === generation ? 0.22 : 0.10) * visibility;
+    const lineWidth = Math.max(1, 1 + (gridGeneration === generation ? 1.2 : 0));
 
-    ctx.beginPath();
-    ctx.strokeStyle = major
-      ? "rgba(103,232,249,0.18)"
-      : "rgba(103,232,249,0.075)";
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, CITY_HEIGHT);
-    ctx.stroke();
-  }
-
-  for (let y = 0; y <= CITY_HEIGHT; y += CITY_GRID_STEP) {
-    const major = y % (CITY_GRID_STEP * 2) === 0;
-
-    ctx.beginPath();
-    ctx.strokeStyle = major
-      ? "rgba(103,232,249,0.18)"
-      : "rgba(103,232,249,0.075)";
-    ctx.moveTo(0, y);
-    ctx.lineTo(CITY_WIDTH, y);
-    ctx.stroke();
+    ctx.lineWidth = lineWidth;
+    for (let x = 0; x <= CITY_WIDTH; x += step) {
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(103,232,249,${alpha})`;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CITY_HEIGHT);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= CITY_HEIGHT; y += step) {
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(103,232,249,${alpha})`;
+      ctx.moveTo(0, y);
+      ctx.lineTo(CITY_WIDTH, y);
+      ctx.stroke();
+    }
   }
 }
 
@@ -6486,7 +6627,7 @@ const styles = {
 
   devLabMenuButton: { background:"linear-gradient(135deg,rgba(88,28,135,.92),rgba(14,116,144,.92))",border:"1px solid rgba(103,232,249,.62)",boxShadow:"0 0 28px rgba(34,211,238,.14)" },
   devRebuildReport: { position:"absolute",left:"50%",top:76,zIndex:46,width:"min(330px,calc(100% - 34px))",transform:"translateX(-50%)",padding:12,borderRadius:18,display:"flex",flexDirection:"column",gap:4,color:"#e0f2fe",background:"linear-gradient(135deg,rgba(30,41,59,.98),rgba(49,46,129,.96))",border:"1px solid rgba(129,140,248,.7)",boxShadow:"0 18px 52px rgba(0,0,0,.52),0 0 30px rgba(99,102,241,.22)",pointerEvents:"none" },
-  devLabPanel: { position:"absolute",right:10,top:78,zIndex:45,width:132,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
+  devLabPanel: { position:"absolute",right:10,top:78,zIndex:45,width:148,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
   devLabHeader: { display:"flex",justifyContent:"space-between",alignItems:"center",color:"#e9d5ff",fontSize:9,fontWeight:950,letterSpacing:".08em" },
   devLabControls: { display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,margin:"7px 0 4px" },
   menuScreen: {
