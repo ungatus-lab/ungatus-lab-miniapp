@@ -383,16 +383,22 @@ function snapCityPointToGrid(point, w = 2, h = 2) {
   };
 }
 
-function getCityFitMinZoom(canvas, extraMargin = 120) {
+function getCityViewportMetrics(canvas) {
+  const top = 190;
+  const bottom = 190;
+  const left = 24;
+  const right = 24;
+  const width = Math.max(120, canvas.clientWidth - left - right);
+  const height = Math.max(120, canvas.clientHeight - top - bottom);
+  return { top, bottom, left, right, width, height, centerX: left + width / 2, centerY: top + height / 2 };
+}
+
+function getCityFitMinZoom(canvas, extraMargin = 180) {
   if (!canvas) return CITY_MIN_ZOOM;
-  const sideChrome = 24;
-  const topSafeArea = 190;
-  const bottomSafeArea = 190;
-  const territoryMarginFactor = 1.2;
-  const usableWidth = Math.max(120, canvas.clientWidth - sideChrome);
-  const usableHeight = Math.max(120, canvas.clientHeight - topSafeArea - bottomSafeArea);
-  const fitWidth = usableWidth / ((CITY_WIDTH + extraMargin * 2) * territoryMarginFactor);
-  const fitHeight = usableHeight / ((CITY_HEIGHT + extraMargin * 2) * territoryMarginFactor);
+  const viewport = getCityViewportMetrics(canvas);
+  const territoryMarginFactor = 1.24;
+  const fitWidth = viewport.width / ((CITY_WIDTH + extraMargin * 2) * territoryMarginFactor);
+  const fitHeight = viewport.height / ((CITY_HEIGHT + extraMargin * 2) * territoryMarginFactor);
   return clamp(Math.min(CITY_MIN_ZOOM, fitWidth, fitHeight), 0.00000005, CITY_MIN_ZOOM);
 }
 
@@ -545,6 +551,8 @@ const trainingIntroTimerRef = useRef(null);
   const [tutorialFlowPhase, setTutorialFlowPhase] = useState("buildEconomy");
   const devLabRef = useRef(false);
   const [devLab, setDevLab] = useState(false);
+  const [devLabPanelPosition, setDevLabPanelPosition] = useState(null);
+  const devLabPanelDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0 });
   const devRebuildTimerRef = useRef(null);
   const [devRebuildReport, setDevRebuildReport] = useState(null);
   const tutorialTeleportPointerTimerRef = useRef(null);
@@ -2722,7 +2730,9 @@ resetArena();
   }
 
   function applyCityTransform(ctx, width, height, camera) {
-    ctx.translate(width / 2, height / 2);
+    const canvas = canvasRef.current;
+    const viewport = canvas ? getCityViewportMetrics(canvas) : { centerX: width / 2, centerY: height / 2 };
+    ctx.translate(viewport.centerX, viewport.centerY);
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-camera.x, -camera.y);
   }
@@ -4259,8 +4269,9 @@ resetArena();
     const rect = canvas.getBoundingClientRect();
     const screenX = clientX - rect.left;
     const screenY = clientY - rect.top;
-    const worldX = (screenX - canvas.clientWidth / 2) / camera.zoom + camera.x;
-    const worldY = (screenY - canvas.clientHeight / 2) / camera.zoom + camera.y;
+    const viewport = getCityViewportMetrics(canvas);
+    const worldX = (screenX - viewport.centerX) / camera.zoom + camera.x;
+    const worldY = (screenY - viewport.centerY) / camera.zoom + camera.y;
 
     camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
     camera.x = worldX - (screenX - canvas.clientWidth / 2) / camera.zoom;
@@ -4344,19 +4355,44 @@ resetArena();
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
+  function beginDeveloperLabPanelDrag(event) {
+    const rect = event.currentTarget.parentElement.getBoundingClientRect();
+    devLabPanelDragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveDeveloperLabPanelDrag(event) {
+    const drag = devLabPanelDragRef.current;
+    const canvas = canvasRef.current;
+    if (!canvas || drag.pointerId !== event.pointerId) return;
+    const panelWidth = 148, panelHeight = 126, edge = 6;
+    setDevLabPanelPosition({
+      left: clamp(event.clientX - drag.offsetX, edge, canvas.clientWidth - panelWidth - edge),
+      top: clamp(event.clientY - drag.offsetY, edge, canvas.clientHeight - panelHeight - edge),
+    });
+  }
+
+  function endDeveloperLabPanelDrag(event) {
+    if (devLabPanelDragRef.current.pointerId !== event.pointerId) return;
+    devLabPanelDragRef.current.pointerId = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }
+
   function getDeveloperLabPanelStyle() {
     const canvas = canvasRef.current;
+    if (devLabPanelPosition) return { ...styles.devLabPanel, left: devLabPanelPosition.left, top: devLabPanelPosition.top, right: "auto" };
     if (!canvas || screen !== "city") return styles.devLabPanel;
 
     const panelWidth = 148;
     const panelHeight = 126;
     const edge = 10;
-    const safeTop = 150;
-    const safeBottom = 168;
+    const viewport = getCityViewportMetrics(canvas);
+    const safeTop = viewport.top;
+    const safeBottom = viewport.bottom;
     const camera = cityCameraRef.current;
     const mapWidth = CITY_WIDTH * camera.zoom;
     const mapHeight = CITY_HEIGHT * camera.zoom;
-    const viewportCenterY = safeTop + (canvas.clientHeight - safeTop - safeBottom) / 2;
+    const viewportCenterY = viewport.centerY;
     const mapLeft = canvas.clientWidth / 2 - mapWidth / 2;
     const mapRight = canvas.clientWidth / 2 + mapWidth / 2;
     const mapTop = viewportCenterY - mapHeight / 2;
@@ -4516,7 +4552,7 @@ resetArena();
       )}
       {devLab && (screen === "arena" || screen === "city") && (
         <div style={getDeveloperLabPanelStyle()}>
-          <div style={styles.devLabHeader}><span>DEV LAB</span><b>LV {cityStats.level}</b></div>
+          <div style={styles.devLabHeader} onPointerDown={beginDeveloperLabPanelDrag} onPointerMove={moveDeveloperLabPanelDrag} onPointerUp={endDeveloperLabPanelDrag} onPointerCancel={endDeveloperLabPanelDrag} onDoubleClick={() => setDevLabPanelPosition(null)} title="Drag panel · double tap to auto-place"><span>⠿ DEV LAB</span><b>LV {cityStats.level}</b></div>
           <div style={styles.devLabControls}>
             <button onClick={() => setDeveloperLevel(cityStats.level - 1)} disabled={cityStats.level <= 1}>−</button>
             <button onClick={() => setDeveloperLevel(cityStats.level + 1)} disabled={cityStats.level >= MAX_BUILDING_LEVEL}>＋</button>
