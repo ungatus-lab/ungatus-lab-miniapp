@@ -555,6 +555,7 @@ const trainingIntroTimerRef = useRef(null);
   const devLabPanelDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0 });
   const devRebuildTimerRef = useRef(null);
   const [devRebuildReport, setDevRebuildReport] = useState(null);
+  const [cityGridReportOpen, setCityGridReportOpen] = useState(false);
   const tutorialTeleportPointerTimerRef = useRef(null);
   const [tutorialTeleportPointerReady, setTutorialTeleportPointerReady] = useState(false);
 
@@ -1400,6 +1401,76 @@ resetArena();
       if (cycleStep === 1) h *= 2;
     }
     return { w, h };
+  }
+
+  function getExpectedBuildingFootprint(type, level) {
+    if (type === "Citadel") {
+      const size = getCitadelFootprint(level);
+      return { w: size, h: size };
+    }
+    return getAutoFitFootprint(type, level);
+  }
+
+  function getCityGridReport() {
+    const level = Math.max(1, Math.round(cityStats.level || 1));
+    const theoreticalSide = getCityCellsForLevel(level);
+    const actualWidth = Math.round(CITY_WIDTH / CITY_GRID_STEP);
+    const actualHeight = Math.round(CITY_HEIGHT / CITY_GRID_STEP);
+    const buildingTypes = ["Citadel", "Barracks", "CrystalPoint", "House"];
+    const labels = {
+      Citadel: "CITADEL",
+      Barracks: "BARRACKS",
+      CrystalPoint: "CRYSTAL MINE",
+      House: "HOUSE",
+    };
+    const buildings = buildingTypes.map((type) => {
+      const matching = cityRef.current.buildings.filter((building) => building.type === type);
+      const expectedFootprint = getExpectedBuildingFootprint(type, level);
+      const theoreticalCells = matching.length * expectedFootprint.w * expectedFootprint.h;
+      const actualCells = matching.reduce((sum, building) => sum + building.w * building.h, 0);
+      const actualSizes = [...new Set(matching.map((building) => `${building.w}×${building.h}`))];
+      return {
+        type,
+        label: labels[type],
+        count: matching.length,
+        theoreticalCells,
+        actualCells,
+        theoreticalSize: `${expectedFootprint.w}×${expectedFootprint.h}`,
+        actualSize: actualSizes.length ? actualSizes.join(", ") : "—",
+        ok: theoreticalCells === actualCells,
+      };
+    });
+    const gridLayers = [];
+    const newestGeneration = getCityGeneration(level);
+    for (let generation = 0; generation <= newestGeneration; generation += 1) {
+      const startLevel = 1 + generation * 5;
+      const age = Math.max(0, level - startLevel);
+      const fade = Math.min(100, age * 5);
+      const visibility = Math.max(0, 100 - fade);
+      const stepCells = Math.pow(2, generation);
+      const baseAlpha = generation === newestGeneration ? 0.22 : 0.13;
+      gridLayers.push({
+        generation,
+        startLevel,
+        stepCells,
+        cellsX: Math.ceil(actualWidth / stepCells),
+        cellsY: Math.ceil(actualHeight / stepCells),
+        fade,
+        visibility,
+        alpha: Math.round(baseAlpha * (visibility / 100) * 1000) / 10,
+        newest: generation === newestGeneration,
+      });
+    }
+    return {
+      level,
+      theoreticalSide,
+      theoreticalCells: theoreticalSide * theoreticalSide,
+      actualWidth,
+      actualHeight,
+      actualCells: actualWidth * actualHeight,
+      buildings,
+      gridLayers,
+    };
   }
 
   function isAutoFitMergeLevel(level) {
@@ -4546,6 +4617,24 @@ resetArena();
             0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.18); }
             50% { box-shadow: 0 0 0 6px rgba(239,68,68,0.34); }
           }
+          .city-grid-report-unused { display: none; }
+          [aria-label="City grid diagnostics"] > div:first-child > div { display:flex; flex-direction:column; gap:3px; }
+          [aria-label="City grid diagnostics"] > div:first-child > div small { color:#c4b5fd; font-size:8px; font-weight:950; letter-spacing:.1em; }
+          [aria-label="City grid diagnostics"] > div:first-child > div strong { font-size:14px; }
+          [aria-label="City grid diagnostics"] > div:first-child > button { width:34px; height:34px; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(30,41,59,.82); color:#fff; font-size:20px; cursor:pointer; }
+          [aria-label="City grid diagnostics"] > div:nth-child(2) > div { min-width:0; padding:9px; border-radius:13px; border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.72); display:flex; flex-direction:column; gap:2px; }
+          [aria-label="City grid diagnostics"] > div:nth-child(2) small { color:rgba(203,213,225,.58); font-size:7px; font-weight:950; }
+          [aria-label="City grid diagnostics"] > div:nth-child(2) strong { font-size:16px; }
+          [aria-label="City grid diagnostics"] > div:nth-child(2) span { color:rgba(226,232,240,.72); font-size:8px; }
+          [aria-label="City grid diagnostics"] table th, [aria-label="City grid diagnostics"] table td { padding:8px; border-bottom:1px solid rgba(148,163,184,.12); }
+          [aria-label="City grid diagnostics"] table th { color:#94a3b8; font-size:8px; }
+          [aria-label="City grid diagnostics"] table th:first-child, [aria-label="City grid diagnostics"] table td:first-child { text-align:left; }
+          [aria-label="City grid diagnostics"] table td:first-child small { display:block; margin-top:2px; color:#64748b; font-size:8px; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(5) > div > div:first-child { display:flex; flex-direction:column; gap:2px; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(5) > div > div:not(:first-child) { display:flex; flex-direction:column; gap:2px; text-align:right; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(5) small { color:#64748b; font-size:7px; }
+          @media (max-width: 520px) { [aria-label="City grid diagnostics"] > div:nth-of-type(5) > div { grid-template-columns:minmax(125px,1.4fr) repeat(3,minmax(54px,.7fr)) !important; gap:4px !important; padding:7px 6px !important; } }
+
           @keyframes buildingPanelSwap {
             0% { opacity: 0; transform: translateY(22px) scale(0.975); filter: blur(5px); }
             55% { opacity: 1; transform: translateY(-2px) scale(1.006); filter: blur(0); }
@@ -4578,9 +4667,58 @@ resetArena();
             <button onClick={addDeveloperResources}>∞</button>
             <button onClick={exitDeveloperLab}>×</button>
           </div>
-          <small>{CITY_WIDTH / CITY_GRID_STEP}×{CITY_HEIGHT / CITY_GRID_STEP} CITY</small>
+          <div style={styles.devLabCityLine}>
+            <small>{CITY_WIDTH / CITY_GRID_STEP}×{CITY_HEIGHT / CITY_GRID_STEP} CITY</small>
+            <button style={styles.devLabGridReportButton} onClick={() => setCityGridReportOpen(true)} title="City primary-cell diagnostics">▦ DATA</button>
+          </div>
         </div>
       )}
+
+      {devLab && cityGridReportOpen && (screen === "arena" || screen === "city") && (() => {
+        const report = getCityGridReport();
+        const mapOk = report.theoreticalCells === report.actualCells;
+        return (
+          <div style={styles.cityGridReportBackdrop} onPointerDown={(event) => { if (event.target === event.currentTarget) setCityGridReportOpen(false); }}>
+            <section style={styles.cityGridReportModal} role="dialog" aria-modal="true" aria-label="City grid diagnostics">
+              <div style={styles.cityGridReportHeader}>
+                <div><small>DEV LAB · LIVE DIAGNOSTICS</small><strong>CITY PRIMARY GRID · LV {report.level}</strong></div>
+                <button onClick={() => setCityGridReportOpen(false)} aria-label="Close city grid diagnostics">×</button>
+              </div>
+
+              <div style={styles.cityGridReportSummary}>
+                <div><small>THEORY</small><strong>{report.theoreticalSide}×{report.theoreticalSide}</strong><span>{report.theoreticalCells} primary cells</span></div>
+                <div><small>ACTUAL</small><strong>{report.actualWidth}×{report.actualHeight}</strong><span>{report.actualCells} primary cells</span></div>
+                <div style={mapOk ? styles.cityGridReportOk : styles.cityGridReportBad}><small>DELTA</small><strong>{report.actualCells - report.theoreticalCells}</strong><span>{mapOk ? "MATCH" : "MISMATCH"}</span></div>
+              </div>
+
+              <div style={styles.cityGridReportSectionTitle}>BUILDING FOOTPRINTS · PRIMARY CELLS</div>
+              <div style={styles.cityGridReportTableWrap}>
+                <table style={styles.cityGridReportTable}>
+                  <thead><tr><th>OBJECT</th><th>COUNT</th><th>THEORY</th><th>ACTUAL</th><th>Δ</th></tr></thead>
+                  <tbody>{report.buildings.map((item) => (
+                    <tr key={item.type}>
+                      <td><b>{item.label}</b><small>{item.theoreticalSize} → {item.actualSize}</small></td>
+                      <td>{item.count}</td><td>{item.theoreticalCells}</td><td>{item.actualCells}</td>
+                      <td style={item.ok ? styles.cityGridReportOkText : styles.cityGridReportBadText}>{item.actualCells - item.theoreticalCells}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+
+              <div style={styles.cityGridReportSectionTitle}>GRID LAYERS · 5% FADE PER LEVEL</div>
+              <div style={styles.cityGridLayerList}>{report.gridLayers.map((layer) => (
+                <div key={layer.generation} style={{...styles.cityGridLayerRow, ...(layer.newest ? styles.cityGridLayerNewest : {})}}>
+                  <div><b>G{layer.generation} · {layer.stepCells}× PRIMARY</b><small>starts LV {layer.startLevel} · visible grid {layer.cellsX}×{layer.cellsY}</small></div>
+                  <div><small>TRANSPARENCY</small><b>{layer.fade}%</b></div>
+                  <div><small>VISIBILITY</small><b>{layer.visibility}%</b></div>
+                  <div><small>DRAW ALPHA</small><b>{layer.alpha}%</b></div>
+                </div>
+              ))}</div>
+              <p style={styles.cityGridReportNote}>Transparency is the accumulated fade: LV 1 = 0%, LV 2 = 5%, and a layer reaches 100% after 20 level steps. Draw alpha shows the final canvas opacity after the layer's base intensity is applied.</p>
+            </section>
+          </div>
+        );
+      })()}
 
       {screen === "menu" && (
         <section style={styles.menuScreen}>
@@ -6758,6 +6896,23 @@ const styles = {
   devLabPanel: { position:"absolute",right:10,top:78,zIndex:45,width:148,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
   devLabHeader: { display:"flex",justifyContent:"space-between",alignItems:"center",color:"#e9d5ff",fontSize:9,fontWeight:950,letterSpacing:".08em" },
   devLabControls: { display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,margin:"7px 0 4px" },
+  devLabCityLine: { display:"flex",alignItems:"center",justifyContent:"space-between",gap:6 },
+  devLabGridReportButton: { minWidth:54,height:22,padding:"0 7px",borderRadius:7,border:"1px solid rgba(103,232,249,.48)",background:"rgba(8,47,73,.72)",color:"#a5f3fc",fontSize:8,fontWeight:950,letterSpacing:".05em",cursor:"pointer" },
+  cityGridReportBackdrop: { position:"fixed",inset:0,zIndex:240,display:"grid",placeItems:"center",padding:12,boxSizing:"border-box",background:"rgba(0,4,12,.78)",backdropFilter:"blur(9px)" },
+  cityGridReportModal: { width:"min(720px,100%)",maxHeight:"min(820px,calc(100vh - 24px))",overflowY:"auto",padding:14,boxSizing:"border-box",borderRadius:22,background:"linear-gradient(180deg,rgba(16,24,45,.99),rgba(3,10,24,.99))",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 28px 80px rgba(0,0,0,.72),0 0 34px rgba(168,85,247,.18)",color:"#e5f4ff" },
+  cityGridReportHeader: { display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12 },
+  cityGridReportSummary: { display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:7,marginBottom:14 },
+  cityGridReportSectionTitle: { margin:"12px 0 6px",color:"#c4b5fd",fontSize:9,fontWeight:950,letterSpacing:".1em" },
+  cityGridReportTableWrap: { overflowX:"auto",borderRadius:13,border:"1px solid rgba(148,163,184,.18)" },
+  cityGridReportTable: { width:"100%",minWidth:490,borderCollapse:"collapse",fontSize:10,textAlign:"right" },
+  cityGridReportOk: { borderColor:"rgba(34,197,94,.54)",color:"#86efac" },
+  cityGridReportBad: { borderColor:"rgba(239,68,68,.64)",color:"#fca5a5" },
+  cityGridReportOkText: { color:"#86efac",fontWeight:950 },
+  cityGridReportBadText: { color:"#fca5a5",fontWeight:950 },
+  cityGridLayerList: { display:"grid",gap:6 },
+  cityGridLayerRow: { display:"grid",gridTemplateColumns:"minmax(150px,1.6fr) repeat(3,minmax(64px,.7fr))",gap:7,alignItems:"center",padding:"8px 9px",borderRadius:12,background:"rgba(15,23,42,.74)",border:"1px solid rgba(148,163,184,.14)",fontSize:9 },
+  cityGridLayerNewest: { border:"1px solid rgba(103,232,249,.58)",boxShadow:"inset 0 0 18px rgba(34,211,238,.07)" },
+  cityGridReportNote: { margin:"10px 2px 0",color:"rgba(203,213,225,.68)",fontSize:9,lineHeight:1.45 },
   menuScreen: {
     minHeight: "100vh",
     padding: 18,
