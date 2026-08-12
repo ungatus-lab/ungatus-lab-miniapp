@@ -699,7 +699,9 @@ resetArena();
       }
 
       if (screen === "city") {
-        clampCityCameraToWorld(camera.zoom <= minimumZoom + 0.000001);
+        // clampCityCameraToWorld calculates the current minimum zoom itself.
+        // Do not reference local camera/minimumZoom variables from resize().
+        clampCityCameraToWorld();
         forceBuildPreviewRender();
       }
     }
@@ -4099,7 +4101,7 @@ resetArena();
           pointerState.pinchFocusY -
           (initialScreenOffsetY * remainingOffset) / camera.zoom;
 
-        clampCityCameraToWorld();
+        clampCityCameraToWorld(camera.zoom <= minimumZoom + 0.000001);
         forceBuildPreviewRender();
       }
 
