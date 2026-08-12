@@ -6668,22 +6668,55 @@ function BuildingPortrait({ type, level = 1, width = 72, height = 58, compact = 
         if (cycleStep === 1) footprint.h *= 2;
       }
     }
-    const aspect = Math.max(0.55, Math.min(1.8, footprint.w / Math.max(1, footprint.h)));
-    const drawWidth = compact ? Math.min(width - 4, 48 * aspect) : Math.min(width - 6, 58 * aspect);
-    const drawHeight = compact ? Math.min(height - 4, 48 / aspect) : Math.min(height - 6, 58 / aspect);
-    const x = (width - drawWidth) / 2;
-    const y = (height - drawHeight) / 2;
-    const building = { id: "portrait", type, level, x, y, w: drawWidth / CITY_GRID_STEP, h: drawHeight / CITY_GRID_STEP, trainTimer: 0 };
-    const cx = x + drawWidth / 2;
-    const cy = y + drawHeight / 2;
 
-    ctx.save();
-    if (type === "CrystalPoint") drawCrystalPointBuilding(ctx, building, drawWidth, drawHeight, cx, cy);
-    else if (type === "House") drawHouseBuilding(ctx, building, drawWidth, drawHeight);
-    else if (type === "Barracks") drawBarracksBuilding(ctx, building, drawWidth, drawHeight);
-    else drawCitadelBuilding(ctx, building, drawWidth, drawHeight, cx, cy);
-    if (type !== "Citadel" && level > 1) drawAutoFitEvolution(ctx, building, drawWidth, drawHeight, cx, cy);
-    ctx.restore();
+    // Render at the exact native city footprint first, then scale the finished
+    // pixels into the passport frame. This keeps all proportions identical to
+    // the building on the city canvas instead of recalculating it at icon size.
+    const nativeWidth = footprint.w * CITY_GRID_STEP;
+    const nativeHeight = footprint.h * CITY_GRID_STEP;
+    const nativePadding = Math.max(28, Math.round(Math.min(nativeWidth, nativeHeight) * 0.12));
+    const source = document.createElement("canvas");
+    source.width = Math.ceil(nativeWidth + nativePadding * 2);
+    source.height = Math.ceil(nativeHeight + nativePadding * 2);
+    const sourceCtx = source.getContext("2d");
+    if (!sourceCtx) return;
+
+    const building = {
+      id: "portrait",
+      type,
+      level,
+      x: nativePadding,
+      y: nativePadding,
+      w: footprint.w,
+      h: footprint.h,
+      trainTimer: 0,
+    };
+    const cx = nativePadding + nativeWidth / 2;
+    const cy = nativePadding + nativeHeight / 2;
+    sourceCtx.save();
+    sourceCtx.fillStyle = "rgba(0,0,0,0.28)";
+    roundedRect(sourceCtx, building.x + 8, building.y + 10, nativeWidth, nativeHeight, 22);
+    sourceCtx.fill();
+    if (type === "CrystalPoint") drawCrystalPointBuilding(sourceCtx, building, nativeWidth, nativeHeight, cx, cy);
+    else if (type === "House") drawHouseBuilding(sourceCtx, building, nativeWidth, nativeHeight);
+    else if (type === "Barracks") drawBarracksBuilding(sourceCtx, building, nativeWidth, nativeHeight);
+    else drawCitadelBuilding(sourceCtx, building, nativeWidth, nativeHeight, cx, cy);
+    if (type !== "Citadel" && level > 1) {
+      drawAutoFitEvolution(sourceCtx, building, nativeWidth, nativeHeight, cx, cy);
+    }
+    sourceCtx.restore();
+
+    const inset = compact ? 2 : 3;
+    const availableWidth = width - inset * 2;
+    const availableHeight = height - inset * 2;
+    const scale = Math.min(availableWidth / source.width, availableHeight / source.height);
+    const targetWidth = source.width * scale;
+    const targetHeight = source.height * scale;
+    const targetX = (width - targetWidth) / 2;
+    const targetY = (height - targetHeight) / 2;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(source, targetX, targetY, targetWidth, targetHeight);
   }, [type, level, width, height, compact]);
 
   return <canvas ref={portraitRef} aria-label={`${type} level ${level}`} style={styles.buildingPortraitCanvas} />;
