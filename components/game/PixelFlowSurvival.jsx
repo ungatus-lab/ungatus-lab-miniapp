@@ -5194,7 +5194,7 @@ resetArena();
                       title={tutorialStep === "crystals" ? "Drag Crystal Point to the city grid" : "Crystal Point"}
                       disabled={isTutorialBuildStep() && tutorialDragType !== "CrystalPoint"}
                     >
-                      <span style={styles.buildCardIconCrystal}>◆</span>
+                      <BuildingPortrait type="CrystalPoint" level={cityStats.level} width={68} height={54} compact />
                       <small>Lv{cityStats.level} · 👥{getBuildingEconomy("CrystalPoint", cityStats.level).workerCost}</small>
                     </button>
 
@@ -5214,7 +5214,7 @@ resetArena();
                       title={tutorialStep === "houses" ? "Drag House to the city grid" : "House"}
                       disabled={isTutorialBuildStep() && tutorialDragType !== "House"}
                     >
-                      <span style={styles.buildCardIconHouse}>■</span>
+                      <BuildingPortrait type="House" level={cityStats.level} width={68} height={54} compact />
                       <small>Lv{cityStats.level} · 💎{getBuildingEconomy("House", cityStats.level).crystalCost}</small>
                     </button>
 
@@ -5230,7 +5230,7 @@ resetArena();
                       title={tutorialStep === "barracks" ? "Drag Barracks to the city grid" : "Barracks"}
                       disabled={isTutorialBuildStep() && tutorialDragType !== "Barracks"}
                     >
-                      <span style={styles.buildCardIconBarracks}>▲</span>
+                      <BuildingPortrait type="Barracks" level={cityStats.level} width={68} height={54} compact />
                       <small>Lv{cityStats.level} · 💎{getBuildingEconomy("Barracks", cityStats.level).crystalCost}</small>
                     </button>
 
@@ -5384,14 +5384,8 @@ resetArena();
                     ×
                   </button>
 
-                  <div style={styles.panelIcon}>
-                    {selectedBuilding.type === "CrystalPoint"
-                      ? "◆"
-                      : selectedBuilding.type === "House"
-                        ? "■"
-                        : selectedBuilding.type === "Barracks"
-                          ? "▲"
-                          : "⌂"}
+                  <div style={{...styles.panelIcon,...styles.panelBuildingPortrait}}>
+                    <BuildingPortrait type={selectedBuilding.type} level={selectedBuilding.level || 1} width={58} height={54} compact />
                   </div>
 
                   <div style={styles.panelInfo}>
@@ -6647,6 +6641,46 @@ function roundedRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
+function BuildingPortrait({ type, level = 1, width = 72, height = 58, compact = false }) {
+  const portraitRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = portraitRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const footprint = type === "Citadel"
+      ? { w: 4 * Math.pow(2, getCityGeneration(level)), h: 4 * Math.pow(2, getCityGeneration(level)) }
+      : getBuildingFootprintsForLevel(type, level)[0] || BUILDINGS[type] || { w: 1, h: 1 };
+    const aspect = Math.max(0.55, Math.min(1.8, footprint.w / Math.max(1, footprint.h)));
+    const drawWidth = compact ? Math.min(width - 4, 48 * aspect) : Math.min(width - 6, 58 * aspect);
+    const drawHeight = compact ? Math.min(height - 4, 48 / aspect) : Math.min(height - 6, 58 / aspect);
+    const x = (width - drawWidth) / 2;
+    const y = (height - drawHeight) / 2;
+    const building = { id: "portrait", type, level, x, y, w: drawWidth / CITY_GRID_STEP, h: drawHeight / CITY_GRID_STEP, trainTimer: 0 };
+    const cx = x + drawWidth / 2;
+    const cy = y + drawHeight / 2;
+
+    ctx.save();
+    if (type === "CrystalPoint") drawCrystalPointBuilding(ctx, building, drawWidth, drawHeight, cx, cy);
+    else if (type === "House") drawHouseBuilding(ctx, building, drawWidth, drawHeight);
+    else if (type === "Barracks") drawBarracksBuilding(ctx, building, drawWidth, drawHeight);
+    else drawCitadelBuilding(ctx, building, drawWidth, drawHeight, cx, cy);
+    if (type !== "Citadel" && level > 1) drawAutoFitEvolution(ctx, building, drawWidth, drawHeight, cx, cy);
+    ctx.restore();
+  }, [type, level, width, height, compact]);
+
+  return <canvas ref={portraitRef} aria-label={`${type} level ${level}`} style={styles.buildingPortraitCanvas} />;
+}
+
 function ProfileStat({ label, value }) {
   return (
     <div style={styles.profileStat}>
@@ -7603,6 +7637,9 @@ const styles = {
     fontSize: 22,
     fontWeight: 900,
   },
+
+  panelBuildingPortrait: { width: 62, height: 58, overflow: "visible", padding: 0, background: "radial-gradient(circle,rgba(255,255,255,.08),rgba(15,23,42,.18))" },
+  buildingPortraitCanvas: { display: "block", pointerEvents: "none", filter: "drop-shadow(0 4px 8px rgba(0,0,0,.34))" },
 
   panelInfo: {
     gridArea: "info",
