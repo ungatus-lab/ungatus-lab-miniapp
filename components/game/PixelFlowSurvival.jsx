@@ -1405,72 +1405,122 @@ resetArena();
 
   function getExpectedBuildingFootprint(type, level) {
     if (type === "Citadel") {
-      const size = getCitadelFootprint(level);
-      return { w: size, h: size };
+      const generation = getCityGeneration(level);
+      const side = 4 * Math.pow(2, generation);
+      return { w: side, h: side };
+    }
+    const definition = BUILDINGS[type] || BUILDINGS.House;
+    const primaryCells = definition.w * definition.h * getBuildingModuleCount(level);
+    const footprint = getAutoFitFootprint(type, level);
+    return { w: footprint.w, h: footprint.h, primaryCells };
+  }
+
+  function getActualBuildingFootprint(type, level) {
+    if (type === "Citadel") {
+      const side = getCitadelFootprint(level);
+      return { w: side, h: side };
     }
     return getAutoFitFootprint(type, level);
   }
 
+  function getTheoreticalPrimaryCells(type, level) {
+    if (type === "City") {
+      const side = getCityCellsForLevel(level);
+      return side * side;
+    }
+    if (type === "Citadel") return 16 * Math.pow(4, getCityGeneration(level));
+    const definition = BUILDINGS[type] || BUILDINGS.House;
+    return definition.w * definition.h * getBuildingModuleCount(level);
+  }
+
+  function getActualPrimaryCells(type, level, currentLevel) {
+    if (type === "City") {
+      if (level === currentLevel) {
+        return Math.round(CITY_WIDTH / CITY_GRID_STEP) * Math.round(CITY_HEIGHT / CITY_GRID_STEP);
+      }
+      const side = getCityCellsForLevel(level);
+      return side * side;
+    }
+    const footprint = getActualBuildingFootprint(type, level);
+    return footprint.w * footprint.h;
+  }
+
+  function getTheoryGenerationTransparency(level, generation) {
+    const startLevel = 1 + (generation - 1) * 5;
+    return clamp((level - startLevel) * 5, 0, 100);
+  }
+
+  function getActualGenerationTransparency(level, generation) {
+    // Mirrors drawCityGrid exactly. Future layers are not rendered yet, so their
+    // internal primary lines are still treated as 0% transparent in diagnostics.
+    const gridGeneration = generation - 1;
+    if (gridGeneration > getCityGeneration(level)) return 0;
+    const startLevel = 1 + gridGeneration * 5;
+    return clamp((level - startLevel) * 5, 0, 100);
+  }
+
+  function findFirstLevelForGeneration(type, generation, actual, currentLevel) {
+    const divisor = Math.pow(4, generation - 1);
+    for (let level = 1; level <= MAX_BUILDING_LEVEL; level += 1) {
+      const primaryCells = actual
+        ? getActualPrimaryCells(type, level, currentLevel)
+        : getTheoreticalPrimaryCells(type, level);
+      if (Math.floor(primaryCells / divisor) >= 1) return level;
+    }
+    return null;
+  }
+
   function getCityGridReport() {
     const level = Math.max(1, Math.round(cityStats.level || 1));
-    const theoreticalSide = getCityCellsForLevel(level);
-    const actualWidth = Math.round(CITY_WIDTH / CITY_GRID_STEP);
-    const actualHeight = Math.round(CITY_HEIGHT / CITY_GRID_STEP);
-    const buildingTypes = ["Citadel", "Barracks", "CrystalPoint", "House"];
     const labels = {
+      City: "CITY MAP",
       Citadel: "CITADEL",
       Barracks: "BARRACKS",
       CrystalPoint: "CRYSTAL MINE",
       House: "HOUSE",
     };
-    const buildings = buildingTypes.map((type) => {
-      const matching = cityRef.current.buildings.filter((building) => building.type === type);
-      const expectedFootprint = getExpectedBuildingFootprint(type, level);
-      const theoreticalCells = matching.length * expectedFootprint.w * expectedFootprint.h;
-      const actualCells = matching.reduce((sum, building) => sum + building.w * building.h, 0);
-      const actualSizes = [...new Set(matching.map((building) => `${building.w}×${building.h}`))];
+    const types = ["City", "Citadel", "Barracks", "CrystalPoint", "House"];
+    const objects = types.map((type) => {
+      const theoryPrimary = getTheoreticalPrimaryCells(type, level);
+      const actualPrimary = getActualPrimaryCells(type, level, level);
+      const theoryFootprint = type === "City"
+        ? { w: getCityCellsForLevel(level), h: getCityCellsForLevel(level) }
+        : getExpectedBuildingFootprint(type, level);
+      const actualFootprint = type === "City"
+        ? { w: Math.round(CITY_WIDTH / CITY_GRID_STEP), h: Math.round(CITY_HEIGHT / CITY_GRID_STEP) }
+        : getActualBuildingFootprint(type, level);
+      const generations = Array.from({ length: 20 }, (_, index) => {
+        const generation = index + 1;
+        const divisor = Math.pow(4, index);
+        const theoryCells = Math.floor(theoryPrimary / divisor);
+        const actualCells = Math.floor(actualPrimary / divisor);
+        const theoryTransparency = getTheoryGenerationTransparency(level, generation);
+        const actualTransparency = getActualGenerationTransparency(level, generation);
+        return {
+          generation,
+          cellScale: Math.pow(2, index),
+          theoryCells,
+          actualCells,
+          theoryTransparency,
+          actualTransparency,
+          theoryFirstLevel: findFirstLevelForGeneration(type, generation, false, level),
+          actualFirstLevel: findFirstLevelForGeneration(type, generation, true, level),
+          active: generation <= getCityGeneration(level) + 1,
+          ok: theoryCells === actualCells && theoryTransparency === actualTransparency,
+        };
+      });
       return {
         type,
         label: labels[type],
-        count: matching.length,
-        theoreticalCells,
-        actualCells,
-        theoreticalSize: `${expectedFootprint.w}×${expectedFootprint.h}`,
-        actualSize: actualSizes.length ? actualSizes.join(", ") : "—",
-        ok: theoreticalCells === actualCells,
+        theoryPrimary,
+        actualPrimary,
+        theoryFootprint: `${theoryFootprint.w}×${theoryFootprint.h}`,
+        actualFootprint: `${actualFootprint.w}×${actualFootprint.h}`,
+        generations,
+        ok: generations.every((item) => item.ok),
       };
     });
-    const gridLayers = [];
-    const newestGeneration = getCityGeneration(level);
-    for (let generation = 0; generation <= newestGeneration; generation += 1) {
-      const startLevel = 1 + generation * 5;
-      const age = Math.max(0, level - startLevel);
-      const fade = Math.min(100, age * 5);
-      const visibility = Math.max(0, 100 - fade);
-      const stepCells = Math.pow(2, generation);
-      const baseAlpha = generation === newestGeneration ? 0.22 : 0.13;
-      gridLayers.push({
-        generation,
-        startLevel,
-        stepCells,
-        cellsX: Math.ceil(actualWidth / stepCells),
-        cellsY: Math.ceil(actualHeight / stepCells),
-        fade,
-        visibility,
-        alpha: Math.round(baseAlpha * (visibility / 100) * 1000) / 10,
-        newest: generation === newestGeneration,
-      });
-    }
-    return {
-      level,
-      theoreticalSide,
-      theoreticalCells: theoreticalSide * theoreticalSide,
-      actualWidth,
-      actualHeight,
-      actualCells: actualWidth * actualHeight,
-      buildings,
-      gridLayers,
-    };
+    return { level, objects, ok: objects.every((item) => item.ok) };
   }
 
   function isAutoFitMergeLevel(level) {
@@ -4635,6 +4685,15 @@ resetArena();
           [aria-label="City grid diagnostics"] > div:nth-of-type(5) small { color:#64748b; font-size:7px; }
           @media (max-width: 520px) { [aria-label="City grid diagnostics"] > div:nth-of-type(5) > div { grid-template-columns:minmax(125px,1.4fr) repeat(3,minmax(54px,.7fr)) !important; gap:4px !important; padding:7px 6px !important; } }
 
+          [aria-label="City grid diagnostics"] article > div:first-child > div { display:flex; flex-direction:column; gap:2px; }
+          [aria-label="City grid diagnostics"] article > div:first-child > div:last-child { text-align:right; }
+          [aria-label="City grid diagnostics"] article > div:first-child small { color:#64748b; font-size:7px; font-weight:950; letter-spacing:.06em; }
+          [aria-label="City grid diagnostics"] article > div:first-child strong { color:#dffcff; font-size:13px; }
+          [aria-label="City grid diagnostics"] article > div:first-child span { color:#64748b; font-size:8px; }
+          [aria-label="City grid diagnostics"] table th, [aria-label="City grid diagnostics"] table td { white-space:nowrap; }
+          [aria-label="City grid diagnostics"] table th:first-child, [aria-label="City grid diagnostics"] table td:first-child { text-align:left; }
+          @media (max-width:520px) { [aria-label="City grid diagnostics"] article > div:first-child { grid-template-columns:1fr !important; } [aria-label="City grid diagnostics"] article > div:first-child > div:last-child { text-align:left !important; } }
+
           @keyframes buildingPanelSwap {
             0% { opacity: 0; transform: translateY(22px) scale(0.975); filter: blur(5px); }
             55% { opacity: 1; transform: translateY(-2px) scale(1.006); filter: blur(0); }
@@ -4676,45 +4735,44 @@ resetArena();
 
       {devLab && cityGridReportOpen && (screen === "arena" || screen === "city") && (() => {
         const report = getCityGridReport();
-        const mapOk = report.theoreticalCells === report.actualCells;
         return (
           <div style={styles.cityGridReportBackdrop} onPointerDown={(event) => { if (event.target === event.currentTarget) setCityGridReportOpen(false); }}>
             <section style={styles.cityGridReportModal} role="dialog" aria-modal="true" aria-label="City grid diagnostics">
               <div style={styles.cityGridReportHeader}>
-                <div><small>DEV LAB · LIVE DIAGNOSTICS</small><strong>CITY PRIMARY GRID · LV {report.level}</strong></div>
+                <div><small>DEV LAB · 20 GENERATIONS</small><strong>CELL STRUCTURE · LV {report.level}</strong></div>
                 <button onClick={() => setCityGridReportOpen(false)} aria-label="Close city grid diagnostics">×</button>
               </div>
 
-              <div style={styles.cityGridReportSummary}>
-                <div><small>THEORY</small><strong>{report.theoreticalSide}×{report.theoreticalSide}</strong><span>{report.theoreticalCells} primary cells</span></div>
-                <div><small>ACTUAL</small><strong>{report.actualWidth}×{report.actualHeight}</strong><span>{report.actualCells} primary cells</span></div>
-                <div style={mapOk ? styles.cityGridReportOk : styles.cityGridReportBad}><small>DELTA</small><strong>{report.actualCells - report.theoreticalCells}</strong><span>{mapOk ? "MATCH" : "MISMATCH"}</span></div>
+              <div style={{...styles.cityGridReportStatus,...(report.ok ? styles.cityGridReportStatusOk : styles.cityGridReportStatusBad)}}>
+                <b>{report.ok ? "THEORY = ACTUAL" : "MISMATCH DETECTED"}</b>
+                <small>One object of each type · independent of how many buildings are placed</small>
               </div>
 
-              <div style={styles.cityGridReportSectionTitle}>BUILDING FOOTPRINTS · PRIMARY CELLS</div>
-              <div style={styles.cityGridReportTableWrap}>
-                <table style={styles.cityGridReportTable}>
-                  <thead><tr><th>OBJECT</th><th>COUNT</th><th>THEORY</th><th>ACTUAL</th><th>Δ</th></tr></thead>
-                  <tbody>{report.buildings.map((item) => (
-                    <tr key={item.type}>
-                      <td><b>{item.label}</b><small>{item.theoreticalSize} → {item.actualSize}</small></td>
-                      <td>{item.count}</td><td>{item.theoreticalCells}</td><td>{item.actualCells}</td>
-                      <td style={item.ok ? styles.cityGridReportOkText : styles.cityGridReportBadText}>{item.actualCells - item.theoreticalCells}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
+              <p style={styles.cityGridReportNote}>Each next-generation cell combines 4 cells of the previous generation. Transparency means disappearance of the internal lines: 0% keeps all inner borders visible, while 100% removes them so four cells read as one larger cell.</p>
 
-              <div style={styles.cityGridReportSectionTitle}>GRID LAYERS · 5% FADE PER LEVEL</div>
-              <div style={styles.cityGridLayerList}>{report.gridLayers.map((layer) => (
-                <div key={layer.generation} style={{...styles.cityGridLayerRow, ...(layer.newest ? styles.cityGridLayerNewest : {})}}>
-                  <div><b>G{layer.generation} · {layer.stepCells}× PRIMARY</b><small>starts LV {layer.startLevel} · visible grid {layer.cellsX}×{layer.cellsY}</small></div>
-                  <div><small>TRANSPARENCY</small><b>{layer.fade}%</b></div>
-                  <div><small>VISIBILITY</small><b>{layer.visibility}%</b></div>
-                  <div><small>DRAW ALPHA</small><b>{layer.alpha}%</b></div>
-                </div>
+              <div style={styles.cityGridObjectList}>{report.objects.map((object) => (
+                <article key={object.type} style={styles.cityGridObjectCard}>
+                  <div style={styles.cityGridObjectHeader}>
+                    <div><small>ONE OBJECT · CURRENT LEVEL {report.level}</small><strong>{object.label}</strong></div>
+                    <div><small>PRIMARY CELLS · THEORY / ACTUAL</small><b style={object.theoryPrimary === object.actualPrimary ? styles.cityGridReportOkText : styles.cityGridReportBadText}>{object.theoryPrimary} / {object.actualPrimary}</b><span>{object.theoryFootprint} / {object.actualFootprint}</span></div>
+                  </div>
+                  <div style={styles.cityGridReportTableWrap}>
+                    <table style={styles.cityGridGenerationTable}>
+                      <thead><tr><th>GEN</th><th>CELL SIZE</th><th>CELLS T / A</th><th>TRANSP. T / A</th><th>FIRST LV T / A</th><th>CHECK</th></tr></thead>
+                      <tbody>{object.generations.map((item) => (
+                        <tr key={item.generation} style={item.active ? styles.cityGridGenerationActive : {}}>
+                          <td><b>G{item.generation}</b></td>
+                          <td>{item.cellScale}×{item.cellScale}</td>
+                          <td>{item.theoryCells} / {item.actualCells}</td>
+                          <td>{item.theoryTransparency}% / {item.actualTransparency}%</td>
+                          <td>{item.theoryFirstLevel || "—"} / {item.actualFirstLevel || "—"}</td>
+                          <td style={item.ok ? styles.cityGridReportOkText : styles.cityGridReportBadText}>{item.ok ? "OK" : "Δ"}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </article>
               ))}</div>
-              <p style={styles.cityGridReportNote}>Transparency is the accumulated fade: LV 1 = 0%, LV 2 = 5%, and a layer reaches 100% after 20 level steps. Draw alpha shows the final canvas opacity after the layer's base intensity is applied.</p>
             </section>
           </div>
         );
@@ -6912,6 +6970,14 @@ const styles = {
   cityGridLayerList: { display:"grid",gap:6 },
   cityGridLayerRow: { display:"grid",gridTemplateColumns:"minmax(150px,1.6fr) repeat(3,minmax(64px,.7fr))",gap:7,alignItems:"center",padding:"8px 9px",borderRadius:12,background:"rgba(15,23,42,.74)",border:"1px solid rgba(148,163,184,.14)",fontSize:9 },
   cityGridLayerNewest: { border:"1px solid rgba(103,232,249,.58)",boxShadow:"inset 0 0 18px rgba(34,211,238,.07)" },
+  cityGridReportStatus: { display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:13,border:"1px solid",marginBottom:8 },
+  cityGridReportStatusOk: { color:"#86efac",borderColor:"rgba(34,197,94,.48)",background:"rgba(20,83,45,.18)" },
+  cityGridReportStatusBad: { color:"#fca5a5",borderColor:"rgba(239,68,68,.58)",background:"rgba(127,29,29,.18)" },
+  cityGridObjectList: { display:"grid",gap:12,marginTop:12 },
+  cityGridObjectCard: { padding:10,borderRadius:16,border:"1px solid rgba(148,163,184,.18)",background:"rgba(7,15,31,.72)" },
+  cityGridObjectHeader: { display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"end",marginBottom:8 },
+  cityGridGenerationTable: { width:"100%",minWidth:650,borderCollapse:"collapse",fontSize:9,textAlign:"right" },
+  cityGridGenerationActive: { background:"rgba(34,211,238,.065)" },
   cityGridReportNote: { margin:"10px 2px 0",color:"rgba(203,213,225,.68)",fontSize:9,lineHeight:1.45 },
   menuScreen: {
     minHeight: "100vh",
