@@ -6657,9 +6657,17 @@ function BuildingPortrait({ type, level = 1, width = 72, height = 58, compact = 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const footprint = type === "Citadel"
+    const definition = BUILDINGS[type] || { w: 1, h: 1 };
+    let footprint = type === "Citadel"
       ? { w: 4 * Math.pow(2, getCityGeneration(level)), h: 4 * Math.pow(2, getCityGeneration(level)) }
-      : getBuildingFootprintsForLevel(type, level)[0] || BUILDINGS[type] || { w: 1, h: 1 };
+      : { w: definition.w, h: definition.h };
+    if (type !== "Citadel") {
+      for (let current = 2; current <= level; current += 1) {
+        const cycleStep = ((current - 2) % 5 + 5) % 5;
+        if (cycleStep === 0) footprint.w *= 2;
+        if (cycleStep === 1) footprint.h *= 2;
+      }
+    }
     const aspect = Math.max(0.55, Math.min(1.8, footprint.w / Math.max(1, footprint.h)));
     const drawWidth = compact ? Math.min(width - 4, 48 * aspect) : Math.min(width - 6, 58 * aspect);
     const drawHeight = compact ? Math.min(height - 4, 48 / aspect) : Math.min(height - 6, 58 / aspect);
