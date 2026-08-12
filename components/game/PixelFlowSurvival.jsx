@@ -556,6 +556,9 @@ const trainingIntroTimerRef = useRef(null);
   const devRebuildTimerRef = useRef(null);
   const [devRebuildReport, setDevRebuildReport] = useState(null);
   const [cityGridReportOpen, setCityGridReportOpen] = useState(false);
+  const diagnosticHistoryRef = useRef([]);
+  const [diagnosticHistoryVersion, setDiagnosticHistoryVersion] = useState(0);
+  const [diagnosticCopyStatus, setDiagnosticCopyStatus] = useState("");
   const tutorialTeleportPointerTimerRef = useRef(null);
   const [tutorialTeleportPointerReady, setTutorialTeleportPointerReady] = useState(false);
 
@@ -1470,8 +1473,8 @@ resetArena();
     return null;
   }
 
-  function getCityGridReport() {
-    const level = Math.max(1, Math.round(cityStats.level || 1));
+  function getCityGridReport(forcedLevel = cityStatsRef.current.level) {
+    const level = Math.max(1, Math.round(forcedLevel || 1));
     const labels = {
       City: "CITY MAP",
       Citadel: "CITADEL",
@@ -1521,6 +1524,127 @@ resetArena();
       };
     });
     return { level, objects, ok: objects.every((item) => item.ok) };
+  }
+
+  function roundDiagnostic(value, digits = 3) {
+    const power = Math.pow(10, digits);
+    return Math.round((Number(value) || 0) * power) / power;
+  }
+
+  function buildDiagnosticSnapshot(forcedLevel = cityStatsRef.current.level) {
+    const level = Math.max(1, Math.round(forcedLevel || 1));
+    const stats = cityStatsRef.current;
+    const buildings = cityRef.current.buildings || [];
+    const mapWidth = Math.round(CITY_WIDTH / CITY_GRID_STEP);
+    const mapHeight = Math.round(CITY_HEIGHT / CITY_GRID_STEP);
+    const mapCells = mapWidth * mapHeight;
+    const definitions = [
+      ["Citadel", "CITADEL"], ["House", "HOUSE"],
+      ["CrystalPoint", "CRYSTAL MINE"], ["Barracks", "BARRACKS"],
+    ];
+    const buildingSummary = definitions.map(([type, label]) => {
+      const matching = buildings.filter((building) => building.type === type);
+      const oneFootprint = getActualBuildingFootprint(type, level);
+      const oneCells = oneFootprint.w * oneFootprint.h;
+      const totalCells = matching.reduce((sum, building) => sum + building.w * building.h, 0);
+      const oneEconomy = type === "Citadel" ? null : getBuildingEconomy(type, level);
+      const totalEffects = matching.reduce((total, building) => {
+        if (type === "Citadel") return total;
+        const economy = getBuildingEconomy(type, building.level || level);
+        total.crystalRate += economy.crystalRate || 0;
+        total.workerCapacity += economy.workerCapacity || 0;
+        total.guardCapacity += economy.guardCapacity || 0;
+        total.barracksBatch += economy.barracksBatch || 0;
+        return total;
+      }, { crystalRate: 0, workerCapacity: 0, guardCapacity: 0, barracksBatch: 0 });
+      return {
+        type, label, built: matching.length,
+        one: {
+          footprint: `${oneFootprint.w}x${oneFootprint.h}`,
+          primaryCells: oneCells,
+          mapPercent: roundDiagnostic(mapCells ? oneCells / mapCells * 100 : 0),
+          effects: oneEconomy ? {
+            crystalRate: oneEconomy.crystalRate || 0,
+            workerCapacity: oneEconomy.workerCapacity || 0,
+            guardCapacity: oneEconomy.guardCapacity || 0,
+            barracksBatch: oneEconomy.barracksBatch || 0,
+          } : {},
+        },
+        allBuilt: {
+          primaryCells: totalCells,
+          mapPercent: roundDiagnostic(mapCells ? totalCells / mapCells * 100 : 0),
+          effects: totalEffects,
+        },
+      };
+    });
+    const occupiedCells = buildingSummary.reduce((sum, item) => sum + item.allBuilt.primaryCells, 0);
+    const report = getCityGridReport(level);
+    return {
+      level,
+      city: {
+        width: mapWidth, height: mapHeight, primaryCells: mapCells,
+        occupiedCells, occupiedPercent: roundDiagnostic(mapCells ? occupiedCells / mapCells * 100 : 0),
+        freeCells: Math.max(0, mapCells - occupiedCells),
+        freePercent: roundDiagnostic(mapCells ? Math.max(0, mapCells - occupiedCells) / mapCells * 100 : 0),
+      },
+      buildings: buildingSummary,
+      economy: {
+        crystals: roundDiagnostic(stats.crystals), crystalRate: roundDiagnostic(stats.crystalRate),
+        workers: stats.workers, workerCap: stats.workerCap,
+        guardCap: stats.guardCap,
+        barracksBatchTotal: roundDiagnostic(buildingSummary.find((item) => item.type === "Barracks")?.allBuilt.effects.barracksBatch || 0),
+      },
+      army: {
+        cityGuards: getTotalGuardsFromStats(stats),
+        marchingGuards: getTotalGuardsInMarches(marchesRef.current),
+        totalOwnedGuards: getTotalOwnedGuards(stats, marchesRef.current),
+        marches: marchesRef.current.length,
+        guardsByLevel: { ...(stats.guardsByLevel || {}) },
+      },
+      generations: report.objects.map((object) => ({
+        type: object.type,
+        rows: object.generations.filter((row) => row.theoryCells > 0 || row.actualCells > 0).map((row) => ({
+          generation: row.generation, cellScale: row.cellScale,
+          theoryCells: row.theoryCells, actualCells: row.actualCells,
+          theoryTransparency: row.theoryTransparency, actualTransparency: row.actualTransparency,
+        })),
+      })),
+    };
+  }
+
+  function saveDiagnosticSnapshot(forcedLevel = cityStatsRef.current.level) {
+    const snapshot = buildDiagnosticSnapshot(forcedLevel);
+    const next = diagnosticHistoryRef.current.filter((item) => item.level !== snapshot.level);
+    next.push(snapshot);
+    next.sort((left, right) => left.level - right.level);
+    diagnosticHistoryRef.current = next;
+    setDiagnosticHistoryVersion((version) => version + 1);
+    return snapshot;
+  }
+
+  async function copyDiagnosticData(mode) {
+    const current = saveDiagnosticSnapshot();
+    const payload = mode === "history"
+      ? { format: "MacroSwarmDevLabHistoryV1", levels: diagnosticHistoryRef.current }
+      : { format: "MacroSwarmDevLabSnapshotV1", ...current };
+    const text = JSON.stringify(payload, null, 2);
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text; textarea.style.position = "fixed"; textarea.style.opacity = "0";
+        document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); textarea.remove();
+      }
+      setDiagnosticCopyStatus(mode === "history" ? `COPIED ${diagnosticHistoryRef.current.length} LEVELS` : `COPIED LV ${current.level}`);
+    } catch (error) {
+      setDiagnosticCopyStatus("COPY FAILED");
+    }
+    setTimeout(() => setDiagnosticCopyStatus(""), 1800);
+  }
+
+  function openCityGridReport() {
+    saveDiagnosticSnapshot();
+    setCityGridReportOpen(true);
   }
 
   function isAutoFitMergeLevel(level) {
@@ -1889,6 +2013,7 @@ resetArena();
     const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
     const stats = cityStatsRef.current;
     const previousLevel = stats.level;
+    saveDiagnosticSnapshot(previousLevel);
     const citadel = getCitadelBuilding();
     if (!citadel || target === previousLevel) return;
 
@@ -1920,6 +2045,7 @@ resetArena();
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
     setHud((current) => ({ ...current, level: target, status: `DEV LEVEL ${target}` }));
     setCityStats({ ...stats });
+    setTimeout(() => saveDiagnosticSnapshot(target), 0);
   }
 
   function addDeveloperResources() {
@@ -4694,6 +4820,14 @@ resetArena();
           [aria-label="City grid diagnostics"] table th:first-child, [aria-label="City grid diagnostics"] table td:first-child { text-align:left; }
           @media (max-width:520px) { [aria-label="City grid diagnostics"] article > div:first-child { grid-template-columns:1fr !important; } [aria-label="City grid diagnostics"] article > div:first-child > div:last-child { text-align:left !important; } }
 
+          [aria-label="City grid diagnostics"] button { cursor:pointer; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(3) button { min-height:34px; border-radius:10px; border:1px solid rgba(103,232,249,.42); background:rgba(8,47,73,.72); color:#a5f3fc; font-size:9px; font-weight:950; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(3) small { grid-column:1/-1; color:#94a3b8; font-size:8px; text-align:center; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(4) > div { padding:8px; border-radius:11px; background:rgba(15,23,42,.76); border:1px solid rgba(148,163,184,.14); display:flex; flex-direction:column; gap:2px; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(4) small { color:#64748b; font-size:7px; font-weight:950; }
+          [aria-label="City grid diagnostics"] > div:nth-of-type(4) span { color:#94a3b8; font-size:8px; }
+          @media(max-width:520px){ [aria-label="City grid diagnostics"] > div:nth-of-type(4){grid-template-columns:repeat(2,minmax(0,1fr)) !important;} }
+
           @keyframes buildingPanelSwap {
             0% { opacity: 0; transform: translateY(22px) scale(0.975); filter: blur(5px); }
             55% { opacity: 1; transform: translateY(-2px) scale(1.006); filter: blur(0); }
@@ -4728,7 +4862,7 @@ resetArena();
           </div>
           <div style={styles.devLabCityLine}>
             <small>{CITY_WIDTH / CITY_GRID_STEP}×{CITY_HEIGHT / CITY_GRID_STEP} CITY</small>
-            <button style={styles.devLabGridReportButton} onClick={() => setCityGridReportOpen(true)} title="City primary-cell diagnostics">▦ DATA</button>
+            <button style={styles.devLabGridReportButton} onClick={openCityGridReport} title="City primary-cell diagnostics">▦ DATA</button>
           </div>
         </div>
       )}
@@ -4750,6 +4884,35 @@ resetArena();
 
               <p style={styles.cityGridReportNote}>Each next-generation cell combines 4 cells of the previous generation. Transparency means disappearance of the internal lines: 0% keeps all inner borders visible, while 100% removes them so four cells read as one larger cell.</p>
 
+              {(() => {
+                const snapshot = buildDiagnosticSnapshot();
+                return (<>
+                  <div style={styles.cityGridCopyBar}>
+                    <button onClick={() => copyDiagnosticData("current")}>COPY CURRENT</button>
+                    <button onClick={() => copyDiagnosticData("history")}>COPY HISTORY · {diagnosticHistoryRef.current.length}</button>
+                    <small>{diagnosticCopyStatus || `SESSION LEVELS: ${diagnosticHistoryRef.current.map((item) => item.level).join(", ")}`}</small>
+                  </div>
+                  <div style={styles.cityGridBalanceGrid}>
+                    <div><small>MAP</small><b>{snapshot.city.width}×{snapshot.city.height}</b><span>{snapshot.city.primaryCells} cells</span></div>
+                    <div><small>OCCUPIED</small><b>{snapshot.city.occupiedPercent}%</b><span>{snapshot.city.occupiedCells} cells</span></div>
+                    <div><small>ARMY</small><b>{snapshot.army.totalOwnedGuards}</b><span>{snapshot.army.marchingGuards} marching</span></div>
+                    <div><small>CRYSTALS</small><b>+{snapshot.economy.crystalRate}/s</b><span>{snapshot.economy.crystals} stored</span></div>
+                  </div>
+                  <div style={styles.cityGridReportTableWrap}>
+                    <table style={styles.cityGridBalanceTable}>
+                      <thead><tr><th>TYPE</th><th>BUILT</th><th>ONE CELLS</th><th>ONE %</th><th>ALL %</th><th>ONE EFFECT</th><th>ALL EFFECT</th></tr></thead>
+                      <tbody>{snapshot.buildings.map((item) => {
+                        const effect = item.one.effects;
+                        const total = item.allBuilt.effects;
+                        const effectText = item.type === "House" ? `+${effect.workerCapacity} workers · +${effect.guardCapacity} cap` : item.type === "CrystalPoint" ? `+${effect.crystalRate}/s` : item.type === "Barracks" ? `${effect.barracksBatch}/cycle` : "territory";
+                        const totalText = item.type === "House" ? `+${total.workerCapacity} workers · +${total.guardCapacity} cap` : item.type === "CrystalPoint" ? `+${total.crystalRate}/s` : item.type === "Barracks" ? `${total.barracksBatch}/cycle` : "territory";
+                        return <tr key={item.type}><td><b>{item.label}</b></td><td>{item.built}</td><td>{item.one.primaryCells}</td><td>{item.one.mapPercent}%</td><td>{item.allBuilt.mapPercent}%</td><td>{effectText}</td><td>{totalText}</td></tr>;
+                      })}</tbody>
+                    </table>
+                  </div>
+                </>);
+              })()}
+
               <div style={styles.cityGridObjectList}>{report.objects.map((object) => (
                 <article key={object.type} style={styles.cityGridObjectCard}>
                   <div style={styles.cityGridObjectHeader}>
@@ -4759,7 +4922,7 @@ resetArena();
                   <div style={styles.cityGridReportTableWrap}>
                     <table style={styles.cityGridGenerationTable}>
                       <thead><tr><th>GEN</th><th>CELL SIZE</th><th>CELLS T / A</th><th>TRANSP. T / A</th><th>FIRST LV T / A</th><th>CHECK</th></tr></thead>
-                      <tbody>{object.generations.map((item) => (
+                      <tbody>{object.generations.filter((item) => item.theoryCells > 0 || item.actualCells > 0).map((item) => (
                         <tr key={item.generation} style={item.active ? styles.cityGridGenerationActive : {}}>
                           <td><b>G{item.generation}</b></td>
                           <td>{item.cellScale}×{item.cellScale}</td>
@@ -6978,6 +7141,9 @@ const styles = {
   cityGridObjectHeader: { display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"end",marginBottom:8 },
   cityGridGenerationTable: { width:"100%",minWidth:650,borderCollapse:"collapse",fontSize:9,textAlign:"right" },
   cityGridGenerationActive: { background:"rgba(34,211,238,.065)" },
+  cityGridCopyBar: { display:"grid",gridTemplateColumns:"1fr 1.25fr",gap:7,alignItems:"center",margin:"10px 0" },
+  cityGridBalanceGrid: { display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6,marginBottom:9 },
+  cityGridBalanceTable: { width:"100%",minWidth:780,borderCollapse:"collapse",fontSize:9,textAlign:"right" },
   cityGridReportNote: { margin:"10px 2px 0",color:"rgba(203,213,225,.68)",fontSize:9,lineHeight:1.45 },
   menuScreen: {
     minHeight: "100vh",
