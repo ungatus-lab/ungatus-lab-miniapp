@@ -25,7 +25,7 @@ const CITY_LEVEL_ONE_SIZE = CITY_LEVEL_ONE_CELLS * CITY_GRID_STEP;
 let CITY_WIDTH = CITY_LEVEL_ONE_SIZE;
 let CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
 const CITY_EXPANSION_PER_SIDE = CITY_MODULE_SIZE * CITY_GRID_STEP;
-const CITY_DECADE_TEMPLATE_CELLS = [8, 12, 16, 20, 24, 24, 26, 28, 30, 32];
+const CITY_DECADE_TEMPLATE_CELLS = [8, 12, 16, 20, 24, 32, 40, 48, 56, 64];
 const CITY_OUTSIDE_PADDING = 900;
 const CITY_MIN_ZOOM = 0.32;
 const CITY_MAX_ZOOM = 1.1;
@@ -85,24 +85,21 @@ function getBuildingModuleCount(level) {
 function getBuildingOutputScale(level) {
   const safeLevel = Math.max(1, Math.round(level || 1));
   let output = 1;
-  let enhancementBase = 1;
-
+  let generationBase = 1;
   for (let current = 2; current <= safeLevel; current += 1) {
     const cycleStep = ((current - 2) % 5 + 5) % 5;
-    const isMergeLevel = cycleStep === 0 || cycleStep === 1;
-    if (isMergeLevel) {
+    if (cycleStep === 0 || cycleStep === 1) {
       output *= 2;
-      enhancementBase = output;
-    } else if (current >= 4) {
-      output += enhancementBase * 0.25;
+      generationBase = output;
+    } else {
+      output += generationBase * 0.25;
     }
   }
   return output;
 }
 
 function getBuildingEfficiency(level) {
-  const modules = getBuildingModuleCount(level);
-  return getBuildingOutputScale(level) / Math.max(1, modules);
+  return getBuildingOutputScale(level) / Math.max(1, getBuildingModuleCount(level));
 }
 
 function getBuildingEconomy(type, level) {
@@ -115,13 +112,7 @@ function getBuildingEconomy(type, level) {
   const workerCost = type === "CrystalPoint" ? Math.ceil((definition.workerCost || 0) * outputScale) : 0;
   const buildTime = Math.max(1, (BUILD_TIME_SECONDS[type] || 3) * Math.sqrt(modules) * (1 + (safeLevel - 1) * 0.035));
   return {
-    level: safeLevel,
-    modules,
-    outputScale,
-    efficiency,
-    crystalCost,
-    workerCost,
-    buildTime,
+    level: safeLevel, modules, outputScale, efficiency, crystalCost, workerCost, buildTime,
     workerCapacity: type === "House" ? Math.round(5 * outputScale) : 0,
     guardCapacity: type === "House" ? Math.round(25 * outputScale) : 0,
     crystalRate: type === "CrystalPoint" ? outputScale : 0,
@@ -2138,8 +2129,10 @@ resetArena();
     }
 
     stats.crystalRate = buildings
-      .filter((building) => building.type === "CrystalPoint" && !building.underConstruction)
-      .reduce((sum, building) => sum + getBuildingEconomy("CrystalPoint", building.level || 1).crystalRate, 0);
+      .filter(
+        (building) => building.type === "CrystalPoint" && !building.underConstruction
+      )
+      .reduce((sum, building) => sum + (building.level || 1), 0);
 
     stats.crystals += stats.crystalRate * dt;
 
@@ -2161,19 +2154,17 @@ resetArena();
       const barracksEconomy = getBuildingEconomy("Barracks", buildingLevel);
       const productionTime = 1;
       building.trainTimer = (building.trainTimer || 0) + dt;
-
       if (building.trainTimer >= productionTime) {
         building.trainTimer -= productionTime;
         const exactBatch = barracksEconomy.barracksBatch + (building.trainCarry || 0);
         const requestedBatch = Math.max(1, Math.floor(exactBatch));
         building.trainCarry = exactBatch - requestedBatch;
-        const availableCapacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
-        const affordableBatch = Math.floor(stats.crystals / GUARD_CRYSTAL_COST);
-        const producedBatch = Math.min(requestedBatch, availableCapacity, affordableBatch);
-        if (producedBatch > 0) {
-          stats.crystals -= producedBatch * GUARD_CRYSTAL_COST;
-          stats.guardsByLevel[buildingLevel] =
-            (stats.guardsByLevel[buildingLevel] || 0) + producedBatch;
+        const capacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
+        const affordable = Math.floor(stats.crystals / GUARD_CRYSTAL_COST);
+        const produced = Math.min(requestedBatch, capacity, affordable);
+        if (produced > 0) {
+          stats.crystals -= produced * GUARD_CRYSTAL_COST;
+          stats.guardsByLevel[buildingLevel] = (stats.guardsByLevel[buildingLevel] || 0) + produced;
         }
       }
     }
@@ -2206,10 +2197,12 @@ resetArena();
         totals.guards += economy.guardCapacity;
         return totals;
       }, { workers: 0, guards: 0 });
-    stats.workerCap = 5 + houseEconomy.workers;
+    const citadelHouse = getBuildingEconomy("House", stats.level || 1);
+    const citadelWorkerCapacity = citadelHouse.workerCapacity * 4;
+    const citadelGuardCapacity = citadelHouse.guardCapacity * 4;
+    stats.workerCap = citadelWorkerCapacity + houseEconomy.workers;
     stats.workers = Math.min(stats.workers, stats.workerCap);
-    const levelGuardBonus = Math.max(0, stats.level - 1) * 5 + (stats.level >= 5 ? 10 : 0) + (stats.level >= 10 ? 25 : 0) + (stats.level >= 20 ? 50 : 0);
-    stats.guardCap = 10 + houseEconomy.guards + levelGuardBonus;
+    stats.guardCap = citadelGuardCapacity + houseEconomy.guards;
 
     setCityStats({ ...stats });
   }
@@ -3476,7 +3469,6 @@ resetArena();
         mergedModules: economy.modules,
         autoFitGeneration: devLabRef.current ? Math.floor((cityStatsRef.current.level - 1) / 5) : 0,
         trainTimer: 0,
-        trainCarry: 0,
         x: preview.x,
         y: preview.y,
         w: currentFootprint.w,
@@ -4359,32 +4351,29 @@ resetArena();
     const panelWidth = 148;
     const panelHeight = 126;
     const edge = 10;
-    const safeTop = 74;
+    const safeTop = 150;
     const safeBottom = 168;
     const camera = cityCameraRef.current;
     const mapWidth = CITY_WIDTH * camera.zoom;
     const mapHeight = CITY_HEIGHT * camera.zoom;
+    const viewportCenterY = safeTop + (canvas.clientHeight - safeTop - safeBottom) / 2;
     const mapLeft = canvas.clientWidth / 2 - mapWidth / 2;
     const mapRight = canvas.clientWidth / 2 + mapWidth / 2;
-    const mapTop = canvas.clientHeight / 2 - mapHeight / 2;
-    const mapBottom = canvas.clientHeight / 2 + mapHeight / 2;
-    const rightGap = canvas.clientWidth - mapRight;
-    const leftGap = mapLeft;
-    const topGap = mapTop - safeTop;
-    const bottomGap = canvas.clientHeight - safeBottom - mapBottom;
+    const mapTop = viewportCenterY - mapHeight / 2;
+    const mapBottom = viewportCenterY + mapHeight / 2;
 
-    if (rightGap >= panelWidth + edge * 2) {
-      return { ...styles.devLabPanel, left: Math.min(canvas.clientWidth - panelWidth - edge, mapRight + edge), right: "auto", top: Math.max(safeTop, mapTop) };
-    }
-    if (leftGap >= panelWidth + edge * 2) {
-      return { ...styles.devLabPanel, left: Math.max(edge, mapLeft - panelWidth - edge), right: "auto", top: Math.max(safeTop, mapTop) };
-    }
-    if (topGap >= panelHeight + edge) {
-      return { ...styles.devLabPanel, left: canvas.clientWidth - panelWidth - edge, right: "auto", top: Math.max(safeTop, mapTop - panelHeight - edge) };
-    }
-    if (bottomGap >= panelHeight + edge) {
-      return { ...styles.devLabPanel, left: canvas.clientWidth - panelWidth - edge, right: "auto", top: mapBottom + edge };
-    }
+    const candidates = [
+      { score: Math.max(0, canvas.clientWidth - mapRight) * Math.max(0, canvas.clientHeight - safeTop - safeBottom), left: mapRight + edge, top: Math.max(safeTop, mapTop) },
+      { score: Math.max(0, mapLeft) * Math.max(0, canvas.clientHeight - safeTop - safeBottom), left: mapLeft - panelWidth - edge, top: Math.max(safeTop, mapTop) },
+      { score: Math.max(0, mapTop - safeTop) * canvas.clientWidth, left: canvas.clientWidth - panelWidth - edge, top: mapTop - panelHeight - edge },
+      { score: Math.max(0, canvas.clientHeight - safeBottom - mapBottom) * canvas.clientWidth, left: canvas.clientWidth - panelWidth - edge, top: mapBottom + edge },
+    ].filter((candidate) =>
+      candidate.left >= edge && candidate.left + panelWidth <= canvas.clientWidth - edge &&
+      candidate.top >= safeTop && candidate.top + panelHeight <= canvas.clientHeight - safeBottom
+    ).sort((left, right) => right.score - left.score);
+
+    const best = candidates[0];
+    if (best) return { ...styles.devLabPanel, left: best.left, right: "auto", top: best.top };
     return { ...styles.devLabPanel, left: canvas.clientWidth - panelWidth - edge, right: "auto", top: safeTop };
   }
 
@@ -5151,7 +5140,7 @@ resetArena();
                       disabled={isTutorialBuildStep() && tutorialDragType !== "CrystalPoint"}
                     >
                       <span style={styles.buildCardIconCrystal}>◆</span>
-                      <small>👥5</small>
+                      <small>Lv{cityStats.level} · 👥{getBuildingEconomy("CrystalPoint", cityStats.level).workerCost}</small>
                     </button>
 
                     <button
@@ -5171,7 +5160,7 @@ resetArena();
                       disabled={isTutorialBuildStep() && tutorialDragType !== "House"}
                     >
                       <span style={styles.buildCardIconHouse}>■</span>
-                      <small>💎25</small>
+                      <small>Lv{cityStats.level} · 💎{getBuildingEconomy("House", cityStats.level).crystalCost}</small>
                     </button>
 
                     <button
@@ -5187,7 +5176,7 @@ resetArena();
                       disabled={isTutorialBuildStep() && tutorialDragType !== "Barracks"}
                     >
                       <span style={styles.buildCardIconBarracks}>▲</span>
-                      <small>💎30</small>
+                      <small>Lv{cityStats.level} · 💎{getBuildingEconomy("Barracks", cityStats.level).crystalCost}</small>
                     </button>
 
                     <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled title="Locked">
@@ -5354,18 +5343,18 @@ resetArena();
                     <strong>Lv {selectedBuilding.level || 1}</strong>
                     <small>
                       {selectedBuilding.type === "CrystalPoint"
-                        ? `+${selectedBuilding.level || 1}/s`
+                        ? `+${getBuildingEconomy("CrystalPoint", selectedBuilding.level || 1).crystalRate}/s`
                         : selectedBuilding.type === "House"
-                          ? `+${(selectedBuilding.level || 1) * 5}👥 +${(selectedBuilding.level || 1) * 25}⚔`
+                          ? `+${getBuildingEconomy("House", selectedBuilding.level || 1).workerCapacity}👥 +${getBuildingEconomy("House", selectedBuilding.level || 1).guardCapacity}⚔`
                           : selectedBuilding.type === "Barracks"
-                            ? `Guard Lv${selectedBuilding.level || 1}`
-                            : `Territory ${CITY_WIDTH / CITY_GRID_STEP}×${CITY_HEIGHT / CITY_GRID_STEP}`}
+                            ? `${getBuildingEconomy("Barracks", selectedBuilding.level || 1).barracksBatch} guards/cycle · Lv${selectedBuilding.level || 1}`
+                            : `Territory ${CITY_WIDTH / CITY_GRID_STEP}×${CITY_HEIGHT / CITY_GRID_STEP} · +${getBuildingEconomy("House", cityStats.level).workerCapacity * 4}👥 +${getBuildingEconomy("House", cityStats.level).guardCapacity * 4}⚔`}
                     </small>
                   </div>
 
                   {selectedBuilding.type === "Citadel" && (
                     <div style={styles.citadelUpgradeBenefits}>
-                      <span>NEW TERRITORY RING <b>+2×2</b></span>
+                      <span>NEW TERRITORY <b>{getCityCellsForLevel(Math.min(100, cityStats.level + 1))}×{getCityCellsForLevel(Math.min(100, cityStats.level + 1))}</b></span>
                       <span>UNLOCK PREVIEW <b>TECHNOLOGY CENTER</b></span>
                     </div>
                   )}
@@ -5939,19 +5928,23 @@ function drawCityOutsideShadow(ctx) {
 }
 
 function drawCityGrid(ctx, level = 1) {
-  const generation = getCityGeneration(level);
-  const oldestVisible = Math.max(0, generation - 3);
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  const newestGeneration = getCityGeneration(safeLevel);
 
-  for (let gridGeneration = oldestVisible; gridGeneration <= generation; gridGeneration += 1) {
-    const age = generation - gridGeneration;
-    const visibility = Math.max(0, 1 - age * 0.25);
+  // All placement maths continues to use the original 1x1 cell. Rendering only
+  // changes emphasis. A generation starts fully visible and its internal lines
+  // fade by 5% per level over twenty levels.
+  for (let gridGeneration = 0; gridGeneration <= newestGeneration; gridGeneration += 1) {
+    const startLevel = 1 + gridGeneration * 5;
+    const age = Math.max(0, safeLevel - startLevel);
+    const visibility = clamp(1 - age * 0.05, 0, 1);
     if (visibility <= 0) continue;
-    const cellScale = Math.pow(2, gridGeneration);
-    const step = CITY_GRID_STEP * cellScale;
-    const alpha = (gridGeneration === generation ? 0.22 : 0.10) * visibility;
-    const lineWidth = Math.max(1, 1 + (gridGeneration === generation ? 1.2 : 0));
 
-    ctx.lineWidth = lineWidth;
+    const step = CITY_GRID_STEP * Math.pow(2, gridGeneration);
+    const isNewest = gridGeneration === newestGeneration;
+    const alpha = (isNewest ? 0.22 : 0.13) * visibility;
+    ctx.lineWidth = isNewest ? 2.2 : 1;
+
     for (let x = 0; x <= CITY_WIDTH; x += step) {
       ctx.beginPath();
       ctx.strokeStyle = `rgba(103,232,249,${alpha})`;
@@ -5998,6 +5991,11 @@ function drawCityBuildings(ctx, buildings, selectedBuildingId, groupSelection, u
 
     const groupSelected = groupSelection?.active && groupSelection.ids?.includes(building.id);
     const planItem = upgradePlan?.find((item) => item.id === building.id);
+    ctx.beginPath();
+    ctx.strokeStyle = building.type === "Citadel" ? "rgba(167,139,250,0.48)" : "rgba(148,163,184,0.18)";
+    ctx.lineWidth = building.type === "Citadel" ? 5 : 2;
+    roundedRect(ctx, building.x + 2, building.y + 2, width - 4, height - 4, 20);
+    ctx.stroke();
     if (selectedBuildingId === building.id || groupSelected) {
       ctx.beginPath();
       ctx.strokeStyle = planItem ? (planItem.affordable ? "rgba(34,197,94,0.96)" : "rgba(239,68,68,0.96)") : groupSelected ? "rgba(34,211,238,0.95)" : "rgba(251,191,36,0.78)";
