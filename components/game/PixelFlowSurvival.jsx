@@ -699,7 +699,7 @@ resetArena();
       }
 
       if (screen === "city") {
-        clampCityCameraToWorld();
+        clampCityCameraToWorld(camera.zoom <= minimumZoom + 0.000001);
         forceBuildPreviewRender();
       }
     }
@@ -4075,7 +4075,8 @@ resetArena();
       if (pointerState.lastPinchDistance > 0) {
         const ratio = distance / pointerState.lastPinchDistance;
         const camera = cityCameraRef.current;
-        camera.zoom = clamp(camera.zoom * ratio, devLabRef.current ? getCityFitMinZoom(canvasRef.current, 140) : CITY_MIN_ZOOM, CITY_MAX_ZOOM);
+        const minimumZoom = devLabRef.current ? getCityFitMinZoom(canvasRef.current, 140) : CITY_MIN_ZOOM;
+        camera.zoom = clamp(camera.zoom * ratio, minimumZoom, CITY_MAX_ZOOM);
 
         const zoomRange = Math.max(0.0001, CITY_MAX_ZOOM - pointerState.pinchStartZoom);
         const centerProgress = clamp(
@@ -4294,9 +4295,11 @@ resetArena();
 
   function zoomCityCamera(ratio) {
     const camera = cityCameraRef.current;
-
-    camera.zoom = clamp(camera.zoom * ratio, devLabRef.current ? getCityFitMinZoom(canvasRef.current, 140) : CITY_MIN_ZOOM, CITY_MAX_ZOOM);
-    clampCityCameraToWorld();
+    const minimumZoom = devLabRef.current
+      ? getCityFitMinZoom(canvasRef.current, 140)
+      : CITY_MIN_ZOOM;
+    camera.zoom = clamp(camera.zoom * ratio, minimumZoom, CITY_MAX_ZOOM);
+    clampCityCameraToWorld(camera.zoom <= minimumZoom + 0.000001);
     forceBuildPreviewRender();
   }
 
@@ -4333,26 +4336,40 @@ resetArena();
     camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
   }
 
-  function clampCityCameraToWorld() {
+  function clampCityCameraToWorld(forceCenter = false) {
     const canvas = canvasRef.current;
     const camera = cityCameraRef.current;
 
-    const minX = -CITY_OUTSIDE_PADDING;
-    const maxX = CITY_WIDTH + CITY_OUTSIDE_PADDING;
-    const minY = -CITY_OUTSIDE_PADDING;
-    const maxY = CITY_HEIGHT + CITY_OUTSIDE_PADDING;
-
     if (!canvas) {
-      camera.x = clamp(camera.x, minX, maxX);
-      camera.y = clamp(camera.y, minY, maxY);
+      camera.x = CITY_WIDTH / 2;
+      camera.y = CITY_HEIGHT / 2;
       return;
     }
 
-    const halfW = canvas.clientWidth / (2 * camera.zoom);
-    const halfH = canvas.clientHeight / (2 * camera.zoom);
+    const viewport = getCityViewportMetrics(canvas);
+    const minimumZoom = devLabRef.current
+      ? getCityFitMinZoom(canvas, 140)
+      : CITY_MIN_ZOOM;
+    const atMaximumDistance = camera.zoom <= minimumZoom + 0.000001;
 
-    camera.x = clamp(camera.x, minX + halfW, maxX - halfW);
-    camera.y = clamp(camera.y, minY + halfH, maxY - halfH);
+    // At the farthest zoom the city is always locked to its own geometric
+    // center and rendered at the exact center of the usable HUD viewport.
+    // This prevents an inverted clamp range from pinning the map upward.
+    if (forceCenter || atMaximumDistance) {
+      camera.x = CITY_WIDTH / 2;
+      camera.y = CITY_HEIGHT / 2;
+      return;
+    }
+
+    const halfVisibleWidth = viewport.width / (2 * camera.zoom);
+    const halfVisibleHeight = viewport.height / (2 * camera.zoom);
+    const minX = -CITY_OUTSIDE_PADDING + halfVisibleWidth;
+    const maxX = CITY_WIDTH + CITY_OUTSIDE_PADDING - halfVisibleWidth;
+    const minY = -CITY_OUTSIDE_PADDING + halfVisibleHeight;
+    const maxY = CITY_HEIGHT + CITY_OUTSIDE_PADDING - halfVisibleHeight;
+
+    camera.x = minX <= maxX ? clamp(camera.x, minX, maxX) : CITY_WIDTH / 2;
+    camera.y = minY <= maxY ? clamp(camera.y, minY, maxY) : CITY_HEIGHT / 2;
   }
 
   function beginDeveloperLabPanelDrag(event) {
