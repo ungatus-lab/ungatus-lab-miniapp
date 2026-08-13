@@ -180,9 +180,9 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             interaction-prompt="none"
             loading="eager"
             reveal="auto"
-            orientation="-90deg 0deg 0deg"
-            camera-orbit="-18deg 62deg 27m"
-            camera-target="0m 1.7m 0m"
+            orientation="0deg -90deg 0deg"
+            camera-orbit="-18deg 67deg 29m"
+            camera-target="0m 0.8m 0m"
             field-of-view="32deg"
             shadow-intensity="0.25"
             exposure="0.85"
@@ -229,7 +229,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>СНАЧАЛА ПРОВЕРЯЕМ ПРАВИЛЬНОЕ ПОЛОЖЕНИЕ</div>
+        <div style={styles.cameraHint}>ПРОВЕРКА: БАШНЯ ДОЛЖНА СМОТРЕТЬ ВВЕРХ</div>
       )}
 
       {active && (
