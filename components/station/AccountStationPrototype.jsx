@@ -181,9 +181,9 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             loading="eager"
             reveal="auto"
             orientation="0deg -90deg 0deg"
-            camera-orbit="-18deg 67deg 21m"
+            camera-orbit="-18deg 67deg 29m"
             camera-target="10.5m 0.8m 0m"
-            field-of-view="32deg"
+            field-of-view="24deg"
             shadow-intensity="0.25"
             exposure="0.85"
             style={styles.stationModel}
@@ -229,7 +229,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПРОВЕРКА: ПОДЛЕТЕЛИ БЛИЖЕ</div>
+        <div style={styles.cameraHint}>ПРОВЕРКА: ЛЕГКОЕ ПРИБЛИЖЕНИЕ К КРАЮ</div>
       )}
 
       {active && (
