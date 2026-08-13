@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppDrawer from "../components/shell/AppDrawer";
 import PixelFlowSurvival from "../components/game/PixelFlowSurvival";
+import AccountStationPrototype from "../components/station/AccountStationPrototype";
 import {
   createTranslator,
   normalizeLanguage,
@@ -73,6 +74,7 @@ export default function Home() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nativeNoticeOpen, setNativeNoticeOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
+  const [stationOpen, setStationOpen] = useState(false);
 
   const t = useMemo(() => createTranslator(language), [language]);
 
@@ -162,6 +164,14 @@ export default function Home() {
     setGameOpen(false);
   }
 
+  function openStationPrototype() {
+    setStationOpen(true);
+  }
+
+  function closeStationPrototype() {
+    setStationOpen(false);
+  }
+
   function resetMiniAppEntrance() {
     if (typeof window === "undefined") return;
 
@@ -235,6 +245,7 @@ export default function Home() {
           telegramUser={telegramUser}
           t={t}
           onLaunchGame={openGame}
+          onLaunchStation={openStationPrototype}
         />
 
         <DualBottomNav
@@ -261,6 +272,14 @@ export default function Home() {
         />
 
         <PixelFlowSurvival open={gameOpen} onClose={closeGame} />
+
+        <AccountStationPrototype
+          open={stationOpen}
+          onClose={closeStationPrototype}
+          onLaunchGame={openGame}
+          telegramUser={telegramUser}
+          t={t}
+        />
       </div>
     </div>
   );
@@ -302,9 +321,21 @@ function WelcomeScreen({ onStart, telegramUser, t }) {
   );
 }
 
-function RoomRenderer({ activeRoom, telegramUser, t, onLaunchGame }) {
+function RoomRenderer({
+  activeRoom,
+  telegramUser,
+  t,
+  onLaunchGame,
+  onLaunchStation,
+}) {
   if (activeRoom === "game") {
-    return <GameRoom t={t} onLaunchGame={onLaunchGame} />;
+    return (
+      <GameRoom
+        t={t}
+        onLaunchGame={onLaunchGame}
+        onLaunchStation={onLaunchStation}
+      />
+    );
   }
 
   if (activeRoom === "squad") {
@@ -541,7 +572,7 @@ function MarketRoom({ t }) {
   );
 }
 
-function GameRoom({ t, onLaunchGame }) {
+function GameRoom({ t, onLaunchGame, onLaunchStation }) {
   return (
     <>
       <RoomHeader
@@ -580,6 +611,10 @@ function GameRoom({ t, onLaunchGame }) {
 
         <button style={styles.primaryAction} onClick={onLaunchGame}>
           Launch Scenario Survival
+        </button>
+
+        <button style={styles.secondaryAction} onClick={onLaunchStation}>
+          Launch Account Station Prototype
         </button>
       </section>
     </>
