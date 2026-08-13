@@ -3027,6 +3027,18 @@ const styles = {
 };
 
 
+-
+
+2.3) components/station/AccountStationPrototype.jsx
+таким образом расположение целиком:
+ungatus-lab-miniapp/components/station/AccountStationPrototype.jsx
+
+Содержимое документа: 
+
+(тут пока пусто) 
+
+
+
 ---
 
 3) папка 3 : lib
