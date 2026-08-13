@@ -1,18 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 const MODULES = [
-  { id: "center", label: "CORE", sub: "Account Center", icon: "◎", x: 50, y: 49, size: 112, color: "#67e8f9", kind: "core" },
-  { id: "game", label: "ARENA", sub: "PvP Gate", icon: "⚔", x: 50, y: 13, size: 82, color: "#fb7185", kind: "gate" },
-  { id: "squad", label: "SQUAD", sub: "Relay Array", icon: "⬡", x: 20, y: 25, size: 70, color: "#c084fc", kind: "relay" },
-  { id: "earn", label: "EARN", sub: "Mission Beacon", icon: "✦", x: 80, y: 25, size: 70, color: "#facc15", kind: "beacon" },
-  { id: "allocation", label: "ALLOCATION", sub: "Crystal Reactor", icon: "◇", x: 21, y: 68, size: 84, color: "#34d399", kind: "crystal" },
-  { id: "wallet", label: "WALLET", sub: "UGT Vault", icon: "⇄", x: 79, y: 68, size: 76, color: "#fde68a", kind: "vault" },
-  { id: "device", label: "DEVICE", sub: "Emulator Hangar", icon: "▣", x: 12, y: 47, size: 78, color: "#38bdf8", kind: "hangar" },
-  { id: "collab", label: "COLLAB", sub: "Link Hub", icon: "◈", x: 88, y: 47, size: 78, color: "#a78bfa", kind: "hub" },
-  { id: "market", label: "MARKET", sub: "Trade Dock", icon: "◍", x: 35, y: 88, size: 76, color: "#f472b6", kind: "dock" },
-  { id: "native", label: "NATIVE", sub: "Research Lab", icon: "◉", x: 65, y: 88, size: 76, color: "#22d3ee", kind: "lab" },
+  { id: "device", label: "DEVICE", sub: "Emulator Hangar", icon: "▣", x: 10, y: 42, size: 104, color: "#38bdf8", kind: "hangar", sector: 0 },
+  { id: "native", label: "NATIVE", sub: "Research Lab", icon: "◉", x: 21, y: 66, size: 116, color: "#22d3ee", kind: "lab", sector: 0 },
+  { id: "collab", label: "COLLAB", sub: "Link Hub", icon: "◈", x: 28, y: 30, size: 96, color: "#a78bfa", kind: "hub", sector: 0 },
+  { id: "market", label: "MARKET", sub: "Trade Dock", icon: "◍", x: 37, y: 72, size: 112, color: "#f472b6", kind: "dock", sector: 1 },
+  { id: "allocation", label: "ALLOCATION", sub: "Crystal Reactor", icon: "◇", x: 43, y: 31, size: 122, color: "#34d399", kind: "crystal", sector: 1 },
+  { id: "center", label: "CORE", sub: "Account Center", icon: "◎", x: 50, y: 51, size: 164, color: "#67e8f9", kind: "core", sector: 1 },
+  { id: "wallet", label: "WALLET", sub: "UGT Vault", icon: "⇄", x: 58, y: 70, size: 108, color: "#fde68a", kind: "vault", sector: 1 },
+  { id: "squad", label: "SQUAD", sub: "Relay Array", icon: "⬡", x: 70, y: 31, size: 112, color: "#c084fc", kind: "relay", sector: 2 },
+  { id: "earn", label: "EARN", sub: "Mission Beacon", icon: "✦", x: 79, y: 67, size: 104, color: "#facc15", kind: "beacon", sector: 2 },
+  { id: "game", label: "ARENA", sub: "PvP Gate", icon: "⚔", x: 89, y: 43, size: 152, color: "#fb7185", kind: "gate", sector: 2 },
 ];
 
 const ALLOCATION_PACKS = [
@@ -38,6 +38,9 @@ export default function AccountStationPrototype({
   const [activeModule, setActiveModule] = useState(null);
   const [stationLevel, setStationLevel] = useState(1);
   const [showLabels, setShowLabels] = useState(true);
+  const [viewIndex, setViewIndex] = useState(2);
+  const [dragOffset, setDragOffset] = useState(0);
+  const dragRef = useRef({ active: false, startX: 0, width: 1 });
 
   const profileName = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
   const active = useMemo(
@@ -54,6 +57,8 @@ export default function AccountStationPrototype({
   }
 
   function selectModule(id) {
+    const module = MODULES.find((item) => item.id === id);
+    if (module) setViewIndex(module.sector);
     setActiveModule(id);
   }
 
@@ -65,9 +70,27 @@ export default function AccountStationPrototype({
     if (typeof onLaunchGame === "function") onLaunchGame();
   }
 
+  const panoramaX = -(viewIndex * 100) + dragOffset;
   const cameraTransform = active
-    ? `translate(${50 - active.x}%, ${49 - active.y}%) scale(1.72)`
-    : "translate(0%, 0%) scale(1)";
+    ? `translate3d(calc(${panoramaX}vw + ${(50 - active.x) * 0.28}vw), 0, 0) scale(1.28)`
+    : `translate3d(${panoramaX}vw, 0, 0) scale(1)`;
+
+  function beginPan(event) {
+    if (active) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = { active: true, startX: event.clientX, width: event.currentTarget.clientWidth || 1 };
+  }
+  function movePan(event) {
+    if (!dragRef.current.active || active) return;
+    setDragOffset(((event.clientX - dragRef.current.startX) / dragRef.current.width) * 100);
+  }
+  function endPan() {
+    if (!dragRef.current.active) return;
+    const threshold = 17;
+    setViewIndex((index) => dragOffset > threshold ? Math.max(0, index - 1) : dragOffset < -threshold ? Math.min(2, index + 1) : index);
+    dragRef.current.active = false;
+    setDragOffset(0);
+  }
 
   return (
     <main style={styles.root}>
@@ -78,6 +101,8 @@ export default function AccountStationPrototype({
         @keyframes stationFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }
         @keyframes stationPanelIn { from { opacity:0; transform:translateY(22px) scale(.965); } to { opacity:1; transform:translateY(0) scale(1); } }
         @keyframes stationScan { from { transform:translateY(-160%); } to { transform:translateY(500%); } }
+        @keyframes auroraDrift { 0%,100% { transform:translate3d(-3%,0,0) scale(1); } 50% { transform:translate3d(3%,-2%,0) scale(1.08); } }
+        @keyframes energyFlow { to { background-position:120px 0; } }
         .station-module:hover { filter:brightness(1.24); }
         .station-module:active { transform:translate(-50%,-50%) scale(.95) !important; }
         .station-scroll::-webkit-scrollbar { width:5px; }
@@ -87,7 +112,8 @@ export default function AccountStationPrototype({
       <div style={styles.spaceBackdrop} />
       <div style={styles.nebulaOne} />
       <div style={styles.nebulaTwo} />
-      <div style={styles.starLayer} />
+      <div style={{ ...styles.starLayer, transform: `translate3d(${panoramaX * 0.08}vw,0,0)` }} />
+      <div style={{ ...styles.distantArchitecture, transform: `translate3d(${panoramaX * 0.18}vw,0,0)` }} />
 
       <header style={styles.topHud}>
         <button style={styles.exitButton} onClick={onClose} title="Back to current Mini App">‹</button>
@@ -98,19 +124,26 @@ export default function AccountStationPrototype({
         <div style={styles.levelBadge}><small>STATION</small><b>LV {stationLevel}</b></div>
       </header>
 
-      <section style={styles.sceneViewport}>
+      <section
+        style={styles.sceneViewport}
+        onPointerDown={beginPan}
+        onPointerMove={movePan}
+        onPointerUp={endPan}
+        onPointerCancel={endPan}
+      >
         <div style={styles.horizonGlow} />
         <div style={styles.stationShadow} />
         <div style={{ ...styles.stationScene, transform: cameraTransform }}>
-          <div style={styles.stationDeck}>
-            <div style={styles.deckGrid} />
-            <div style={styles.deckRingOuter} />
-            <div style={styles.deckRingMiddle} />
-            <div style={styles.deckRingInner} />
-            {MODULES.filter((module) => module.id !== "center").map((module) => (
-              <div key={`line-${module.id}`} style={connectorStyle(module)} />
-            ))}
-          </div>
+          {[0, 1, 2].map((sector) => (
+            <div key={sector} style={{ ...styles.stationDeck, left: `${sector * 33.333 + 2}%` }}>
+              <div style={styles.deckGrid} />
+              <div style={styles.deckRingOuter} />
+              <div style={styles.deckRingMiddle} />
+              <div style={styles.deckRingInner} />
+              <div style={styles.sectorMonolith} />
+            </div>
+          ))}
+          <div style={styles.energySpine} />
 
           {MODULES.map((module) => (
             <StationModule
@@ -126,10 +159,15 @@ export default function AccountStationPrototype({
         </div>
 
         {!active && (
-          <div style={styles.sceneHint}>
-            <b>ACCOUNT STATION · FREE TIER</b>
-            <span>Нажми на объект, чтобы приблизить камеру и открыть раздел</span>
-          </div>
+          <>
+            <div style={styles.sectorCaption}>
+              <small>SECTOR 0{viewIndex + 1} · ACCOUNT STATION</small>
+              <b>{["NATIVE SYSTEMS", "ACCOUNT CORE", "ARENA NETWORK"][viewIndex]}</b>
+              <span>{["Инструменты, устройства и совместная работа", "Профиль, ресурсы и торговая инфраструктура", "Миссии, отряд и выход в PvP"][viewIndex]}</span>
+            </div>
+            <div style={styles.viewDots}>{[0,1,2].map((index) => <button key={index} onClick={() => setViewIndex(index)} style={{...styles.viewDot,...(viewIndex === index ? styles.viewDotActive : {})}} aria-label={`Open station sector ${index + 1}`} />)}</div>
+            <div style={styles.swipeHint}><span>‹</span><b>SWIPE TO ORBIT</b><span>›</span></div>
+          </>
         )}
       </section>
 
@@ -302,21 +340,21 @@ function connectorStyle(module) {
 
 const styles = {
   root: { position: "fixed", inset: 0, overflow: "hidden", background: "#02040c", color: "#eefcff", fontFamily: "Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", zIndex: 180 },
-  spaceBackdrop: { position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 42%,rgba(14,116,144,.24),transparent 26%),radial-gradient(circle at 18% 15%,rgba(124,58,237,.21),transparent 30%),linear-gradient(180deg,#071126,#020611 55%,#010208)" },
+  spaceBackdrop: { position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 42%,rgba(14,116,144,.24),transparent 26%),radial-gradient(circle at 18% 15%,rgba(124,58,237,.21),transparent 30%),linear-gradient(180deg,#071426,#030619 48%,#010107)" },
   nebulaOne: { position: "absolute", width: "58vw", height: "58vw", left: "-28vw", top: "10vh", borderRadius: "50%", background: "rgba(14,165,233,.12)", filter: "blur(70px)" },
   nebulaTwo: { position: "absolute", width: "52vw", height: "52vw", right: "-25vw", bottom: "-20vh", borderRadius: "50%", background: "rgba(168,85,247,.12)", filter: "blur(74px)" },
-  starLayer: { position: "absolute", inset: -50, opacity: .55, backgroundImage: "radial-gradient(circle,#fff 0 1px,transparent 1.3px),radial-gradient(circle,#67e8f9 0 1px,transparent 1.4px)", backgroundPosition: "0 0,27px 31px", backgroundSize: "71px 71px,103px 103px", animation: "stationStars 28s linear infinite" },
+  starLayer: { position: "absolute", inset: -80, transition:"transform .16s linear", opacity: .55, backgroundImage: "radial-gradient(circle,#fff 0 1px,transparent 1.3px),radial-gradient(circle,#67e8f9 0 1px,transparent 1.4px)", backgroundPosition: "0 0,27px 31px", backgroundSize: "71px 71px,103px 103px", animation: "stationStars 28s linear infinite" },
   topHud: { position: "absolute", left: 10, right: 10, top: 9, height: 52, zIndex: 80, display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 9, padding: "0 9px", borderRadius: 17, background: "rgba(5,12,28,.74)", border: "1px solid rgba(103,232,249,.18)", backdropFilter: "blur(16px)", boxShadow: "0 12px 38px rgba(0,0,0,.35)" },
   exitButton: { width: 36, height: 36, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.055)", color: "#fff", fontSize: 28, lineHeight: 1, cursor: "pointer" },
   brandBlock: { minWidth: 0, display: "flex", flexDirection: "column", gap: 2 },
   eyebrow: { color: "#67e8f9", fontSize: 7, fontWeight: 900, letterSpacing: ".12em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   brandTitle: { fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   levelBadge: { minWidth: 58, height: 35, padding: "0 10px", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(103,232,249,.08)", border: "1px solid rgba(103,232,249,.22)" },
-  sceneViewport: { position: "absolute", inset: "58px 0 0", overflow: "hidden", perspective: 1100 },
+  sceneViewport: { position: "absolute", inset: "58px 0 0", overflow: "hidden", perspective: 1200, touchAction: "pan-y", userSelect: "none" },
   horizonGlow: { position: "absolute", left: "8%", right: "8%", top: "42%", height: 2, background: "linear-gradient(90deg,transparent,#22d3ee,transparent)", boxShadow: "0 0 55px 17px rgba(34,211,238,.12)", opacity: .5 },
   stationShadow: { position: "absolute", width: "72vw", height: "30vw", left: "14vw", top: "46%", borderRadius: "50%", background: "rgba(0,0,0,.68)", filter: "blur(28px)", transform: "rotateX(66deg)" },
-  stationScene: { position: "absolute", left: "4%", top: "9%", width: "92%", height: "78%", transformOrigin: "50% 50%", transition: "transform .72s cubic-bezier(.2,.75,.18,1)" },
-  stationDeck: { position: "absolute", left: "8%", right: "8%", top: "4%", bottom: "2%", transform: "rotateX(61deg) rotateZ(-1deg)", borderRadius: "50%", background: "radial-gradient(circle,rgba(16,42,67,.9),rgba(5,14,30,.96) 55%,rgba(2,6,18,.2) 70%)", border: "1px solid rgba(103,232,249,.18)", boxShadow: "inset 0 0 70px rgba(34,211,238,.08),0 0 65px rgba(0,0,0,.58)" },
+  stationScene: { position: "absolute", left: 0, top: "8%", width: "300%", height: "80%", transformOrigin: "50% 50%", transition: "transform .78s cubic-bezier(.16,.8,.18,1)", willChange: "transform" },
+  stationDeck: { position: "absolute", width: "29.333%", top: "5%", bottom: "3%", transform: "rotateX(61deg) rotateZ(-1deg)", borderRadius: "50%", background: "radial-gradient(circle,rgba(16,42,67,.9),rgba(5,14,30,.96) 55%,rgba(2,6,18,.2) 70%)", border: "1px solid rgba(103,232,249,.18)", boxShadow: "inset 0 0 70px rgba(34,211,238,.08),0 0 65px rgba(0,0,0,.58)" },
   deckGrid: { position: "absolute", inset: "8%", borderRadius: "50%", opacity: .34, backgroundImage: "linear-gradient(rgba(103,232,249,.11) 1px,transparent 1px),linear-gradient(90deg,rgba(103,232,249,.11) 1px,transparent 1px)", backgroundSize: "24px 24px", maskImage: "radial-gradient(circle,#000 38%,transparent 74%)" },
   deckRingOuter: { position: "absolute", inset: "4%", borderRadius: "50%", border: "2px solid rgba(103,232,249,.18)" },
   deckRingMiddle: { position: "absolute", inset: "23%", borderRadius: "50%", border: "1px dashed rgba(167,139,250,.28)", animation: "stationOrbit 30s linear infinite" },
@@ -338,6 +376,14 @@ const styles = {
   hudStat: { minWidth: 72, padding: "7px 9px", borderRadius: 10, background: "rgba(5,12,28,.72)", border: "1px solid rgba(255,255,255,.08)", backdropFilter: "blur(9px)", display: "flex", flexDirection: "column", gap: 1 },
   utilityControls: { position: "absolute", right: 10, top: 72, zIndex: 60, display: "grid", gap: 5 },
   utilityButton: { minWidth: 76, height: 28, borderRadius: 9, border: "1px solid rgba(167,139,250,.25)", background: "rgba(20,16,43,.74)", color: "#ddd6fe", fontSize: 8, fontWeight: 900, cursor: "pointer", backdropFilter: "blur(9px)" },
+  distantArchitecture: { position:"absolute",left:"-12%",right:"-12%",bottom:"11%",height:"32%",opacity:.26,background:"repeating-linear-gradient(118deg,transparent 0 8%,rgba(34,211,238,.11) 8.2% 8.5%,transparent 8.7% 16%)",filter:"blur(.4px)",transition:"transform .18s linear" },
+  energySpine: { position:"absolute",left:"3%",right:"3%",top:"53%",height:3,background:"repeating-linear-gradient(90deg,#22d3ee 0 24px,transparent 24px 42px)",backgroundSize:"120px 3px",boxShadow:"0 0 18px rgba(34,211,238,.58)",opacity:.66,animation:"energyFlow 2.5s linear infinite" },
+  sectorMonolith: { position:"absolute",left:"49%",top:"8%",width:2,height:"84%",background:"linear-gradient(transparent,rgba(103,232,249,.2),transparent)",boxShadow:"0 0 25px rgba(34,211,238,.16)" },
+  sectorCaption: { position:"absolute",left:18,right:18,bottom:72,zIndex:55,padding:"13px 15px",borderRadius:18,background:"linear-gradient(135deg,rgba(5,14,34,.82),rgba(22,12,52,.68))",border:"1px solid rgba(103,232,249,.2)",backdropFilter:"blur(18px)",boxShadow:"0 18px 45px rgba(0,0,0,.4)",display:"flex",flexDirection:"column",gap:3,pointerEvents:"none" },
+  viewDots: { position:"absolute",left:"50%",bottom:49,transform:"translateX(-50%)",zIndex:58,display:"flex",gap:8 },
+  viewDot: { width:7,height:7,borderRadius:999,border:0,padding:0,background:"rgba(255,255,255,.25)",cursor:"pointer",transition:"all .3s ease" },
+  viewDotActive: { width:27,background:"linear-gradient(90deg,#67e8f9,#a78bfa)",boxShadow:"0 0 12px rgba(103,232,249,.55)" },
+  swipeHint: { position:"absolute",left:"50%",bottom:20,transform:"translateX(-50%)",zIndex:55,display:"flex",alignItems:"center",gap:13,color:"rgba(226,232,240,.62)",fontSize:8,letterSpacing:".15em",pointerEvents:"none" },
   panelBackdrop: { position: "absolute", inset: 0, zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "72px 10px 10px", boxSizing: "border-box", background: "linear-gradient(180deg,transparent 18%,rgba(0,3,12,.38) 47%,rgba(0,3,12,.9))" },
   panel: { position: "relative", width: "min(620px,100%)", maxHeight: "64vh", overflowY: "auto", padding: "12px", boxSizing: "border-box", borderRadius: "22px 22px 16px 16px", background: "linear-gradient(180deg,rgba(12,25,49,.97),rgba(3,8,20,.985))", border: "1px solid", boxShadow: "0 -18px 60px rgba(0,0,0,.58)", animation: "stationPanelIn .38s ease-out both" },
   panelAccent: { position: "absolute", left: "18%", right: "18%", top: 0, height: 2, boxShadow: "0 0 18px currentColor" },
