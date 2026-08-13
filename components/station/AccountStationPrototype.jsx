@@ -3,16 +3,16 @@
 import { useMemo, useRef, useState } from "react";
 
 const MODULES = [
-  { id: "device", title: "DEVICE", subtitle: "Emulator Hangar", x: 13, y: 56, color: "#5ee7ff", icon: "▣" },
-  { id: "scanner", title: "SCANNER", subtitle: "Etalon Laboratory", x: 22, y: 38, color: "#53f5df", icon: "◉" },
-  { id: "collab", title: "COLLAB", subtitle: "Link Hub", x: 31, y: 61, color: "#b99cff", icon: "◈" },
-  { id: "market", title: "MARKET", subtitle: "Trade Dock", x: 40, y: 43, color: "#ff8bc8", icon: "◍" },
-  { id: "premium", title: "PREMIUM", subtitle: "Status Reactor", x: 49, y: 63, color: "#6df0ad", icon: "◇" },
-  { id: "center", title: "CORE", subtitle: "Account Citadel", x: 57, y: 43, color: "#8cecff", icon: "◎" },
-  { id: "wallet", title: "WALLET", subtitle: "UGT Vault", x: 65, y: 64, color: "#ffe693", icon: "⇄" },
-  { id: "squad", title: "SQUAD", subtitle: "Relay Array", x: 73, y: 42, color: "#ca9cff", icon: "⬡" },
-  { id: "earn", title: "EARN", subtitle: "Mission Beacon", x: 82, y: 65, color: "#ffe45c", icon: "✦" },
-  { id: "game", title: "ARENA", subtitle: "PvP Rift", x: 91, y: 44, color: "#ff6f91", icon: "⚔" },
+  { id: "device", title: "DEVICE", subtitle: "Emulator Hangar", x: 15.2, y: 56.5, color: "#5ee7ff", icon: "▣", shape: "hangar" },
+  { id: "scanner", title: "SCANNER", subtitle: "Etalon Laboratory", x: 23.0, y: 34.5, color: "#53f5df", icon: "◉", shape: "dish" },
+  { id: "collab", title: "COLLAB", subtitle: "Link Hub", x: 31.5, y: 67.5, color: "#b99cff", icon: "◈", shape: "relay" },
+  { id: "market", title: "MARKET", subtitle: "Trade Dock", x: 79.5, y: 61.5, color: "#ff8bc8", icon: "◍", shape: "dock" },
+  { id: "premium", title: "PREMIUM", subtitle: "Status Reactor", x: 67.7, y: 38.5, color: "#6df0ad", icon: "◇", shape: "reactor" },
+  { id: "center", title: "CORE", subtitle: "Account Citadel", x: 50.0, y: 31.0, color: "#8cecff", icon: "◎", shape: "citadel" },
+  { id: "wallet", title: "WALLET", subtitle: "UGT Vault", x: 43.5, y: 69.5, color: "#ffe693", icon: "⇄", shape: "vault" },
+  { id: "squad", title: "SQUAD", subtitle: "Relay Array", x: 76.0, y: 34.0, color: "#ca9cff", icon: "⬡", shape: "relay" },
+  { id: "earn", title: "EARN", subtitle: "Mission Beacon", x: 87.0, y: 50.0, color: "#ffe45c", icon: "✦", shape: "beacon" },
+  { id: "game", title: "ARENA", subtitle: "PvP Rift", x: 77.5, y: 73.8, color: "#ff6f91", icon: "⚔", shape: "gate" },
 ];
 
 const PREMIUM_TIERS = [
@@ -87,27 +87,47 @@ const DETAILS = {
 };
 
 export default function AccountStationPrototype({ open = true, onClose, onLaunchGame, telegramUser }) {
-  const [camera, setCamera] = useState(52);
+  const viewportRef = useRef(null);
   const [activeId, setActiveId] = useState(null);
-  const [showTargets, setShowTargets] = useState(true);
   const [generation, setGeneration] = useState(1);
-  const drag = useRef({ down: false, startX: 0, startCamera: 52, moved: 0 });
+  const [panX, setPanX] = useState(0);
+  const [metrics, setMetrics] = useState({ viewportWidth: 1, worldWidth: 1 });
+  const drag = useRef({ down: false, startX: 0, startPan: 0, moved: 0 });
   const active = useMemo(() => MODULES.find((module) => module.id === activeId), [activeId]);
   const accountName = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
 
+  useEffect(() => {
+    if (!open || !viewportRef.current) return;
+    const node = viewportRef.current;
+    const update = () => {
+      const viewportWidth = node.clientWidth || 1;
+      const viewportHeight = node.clientHeight || 1;
+      const worldWidth = viewportHeight * 1.5;
+      setMetrics({ viewportWidth, worldWidth });
+      setPanX((value) => clamp(value, 0, Math.max(0, worldWidth - viewportWidth)));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [open]);
+
   if (!open) return null;
+
+  const maxPan = Math.max(0, metrics.worldWidth - metrics.viewportWidth);
+  const progress = maxPan ? panX / maxPan : 0;
 
   function beginCamera(event) {
     if (active) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    drag.current = { down: true, startX: event.clientX, startCamera: camera, moved: 0 };
+    drag.current = { down: true, startX: event.clientX, startPan: panX, moved: 0 };
   }
 
   function moveCamera(event) {
     if (!drag.current.down || active) return;
     const delta = event.clientX - drag.current.startX;
     drag.current.moved = Math.max(drag.current.moved, Math.abs(delta));
-    setCamera(clamp(drag.current.startCamera - delta * 0.09, 0, 100));
+    setPanX(clamp(drag.current.startPan - delta, 0, maxPan));
   }
 
   function endCamera() {
@@ -116,27 +136,58 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
 
   function openModule(module) {
     if (drag.current.moved > 8) return;
-    setCamera(module.x);
-    window.setTimeout(() => setActiveId(module.id), 220);
+    const target = clamp((module.x / 100) * metrics.worldWidth - metrics.viewportWidth / 2, 0, maxPan);
+    setPanX(target);
+    window.setTimeout(() => setActiveId(module.id), 180);
   }
-
-  const backgroundX = 12 + camera * 0.76;
-  const cameraAngle = (camera - 50) * 0.06;
 
   return (
     <main style={styles.root}>
       <style>{css}</style>
 
-      <div
-        style={{
-          ...styles.panorama,
-          backgroundPosition: `${backgroundX}% center`,
-          transform: `scale(1.22) perspective(1200px) rotateY(${cameraAngle}deg)`,
-        }}
-      />
-      <div style={{ ...styles.shuttleGlass, transform: `translateX(${(camera - 50) * -0.08}vw)` }} />
-      <div style={styles.vignette} />
-      <div style={styles.grain} />
+      <section
+        ref={viewportRef}
+        style={styles.viewport}
+        onPointerDown={beginCamera}
+        onPointerMove={moveCamera}
+        onPointerUp={endCamera}
+        onPointerCancel={endCamera}
+      >
+        <div
+          style={{
+            ...styles.world,
+            width: `${metrics.worldWidth}px`,
+            transform: `translate3d(${-panX}px,0,0)`,
+          }}
+        >
+          <img
+            src="/account-station-panorama.png"
+            alt=""
+            draggable="false"
+            style={styles.panoramaImage}
+          />
+
+          {MODULES.map((module) => (
+            <button
+              key={module.id}
+              className={`station-sector sector-${module.shape}`}
+              style={{
+                ...styles.sector,
+                left: `${module.x}%`,
+                top: `${module.y}%`,
+                color: module.color,
+                borderColor: `${module.color}88`,
+                boxShadow: `0 0 22px ${module.color}33, inset 0 0 18px ${module.color}1f`,
+              }}
+              onClick={() => openModule(module)}
+              aria-label={`${module.title}: ${module.subtitle}`}
+            >
+              <span className="sector-building"><i>{module.icon}</i></span>
+              <span className="sector-name"><b>{module.title}</b><small>{module.subtitle}</small></span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <header style={styles.header}>
         <button style={styles.backButton} onClick={onClose}>‹</button>
@@ -145,56 +196,9 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
           <strong>{accountName}</strong>
         </div>
         <button style={styles.generation} onClick={() => setGeneration((value) => value === 10 ? 1 : value + 1)}>
-          <small>GENERATION</small>
-          <b>G{generation}</b>
+          <small>GENERATION</small><b>G{generation}</b>
         </button>
       </header>
-
-      <section
-        style={styles.cameraSurface}
-        onPointerDown={beginCamera}
-        onPointerMove={moveCamera}
-        onPointerUp={endCamera}
-        onPointerCancel={endCamera}
-      >
-        {MODULES.map((module) => {
-          const projection = project(module, camera);
-          if (!projection.visible) return null;
-
-          return (
-            <button
-              key={module.id}
-              className="station-hotspot"
-              style={{
-                ...styles.hotspot,
-                left: `${projection.x}%`,
-                top: `${projection.y}%`,
-                opacity: projection.opacity,
-                transform: `translate(-50%,-50%) scale(${projection.scale})`,
-                zIndex: projection.z,
-              }}
-              onClick={() => openModule(module)}
-            >
-              <span
-                style={{
-                  ...styles.target,
-                  color: module.color,
-                  borderColor: `${module.color}99`,
-                  boxShadow: `0 0 28px ${module.color}55, inset 0 0 19px ${module.color}2b`,
-                }}
-              >
-                <i>{module.icon}</i>
-              </span>
-              {showTargets && (
-                <span style={styles.tag}>
-                  <b>{module.title}</b>
-                  <small>{module.subtitle}</small>
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </section>
 
       <div style={styles.stats}>
         <Stat label="UGT" value="0" />
@@ -202,23 +206,12 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
         <Stat label="EMULATORS" value="1 / 1" />
       </div>
 
-      <button style={styles.targetsButton} onClick={() => setShowTargets((value) => !value)}>
-        {showTargets ? "HIDE TARGETS" : "SHOW TARGETS"}
-      </button>
-
       {!active && (
-        <>
-          <div style={styles.caption}>
-            <small>{camera < 32 ? "TOOLS HEMISPHERE" : camera > 69 ? "ARENA HEMISPHERE" : "ACCOUNT CITADEL"}</small>
-            <b>ORBITAL CITY</b>
-            <span>Удерживай экран и поворачивай обзор шатла вокруг станции</span>
-          </div>
-          <div style={styles.cameraRail}>
-            <span>TOOLS</span>
-            <div><i style={{ left: `${camera}%` }} /></div>
-            <span>ARENA</span>
-          </div>
-        </>
+        <div style={styles.cameraRail}>
+          <span>TOOLS</span>
+          <div><i style={{ left: `${progress * 100}%` }} /></div>
+          <span>ARENA</span>
+        </div>
       )}
 
       {active && (
@@ -286,69 +279,55 @@ function Stat({ label, value }) {
   return <div><small>{label}</small><b>{value}</b></div>;
 }
 
-function project(module, camera) {
-  const delta = (module.x - camera) / 100 * Math.PI * 0.92;
-  const forward = Math.cos(delta);
-  const side = Math.sin(delta);
-  return {
-    visible: forward > 0.1,
-    x: 50 + side * 49,
-    y: module.y + (1 - forward) * 8,
-    scale: 0.55 + forward * 0.72,
-    opacity: clamp(forward * 1.55, 0.12, 1),
-    z: Math.round(100 + forward * 100),
-  };
-}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
 const css = `
-@keyframes targetPulse { 50% { opacity:.72; transform:translate(-50%,-50%) scale(1.08); } }
-@keyframes panelOpen { from { opacity:0; transform:translateY(28px) scale(.97); } to { opacity:1; transform:none; } }
-.station-hotspot { transition:left .09s linear, top .09s linear, opacity .14s ease, transform .14s ease; }
-.identity small,.generation small,.stats small,.caption small,.panelHeader small,.hero small,.metricGrid small,.pack small{font-size:7px;letter-spacing:.1em;color:rgba(203,213,225,.62);font-weight:900}
+@keyframes sectorPulse { 50% { filter:brightness(1.25); } }
+@keyframes panelOpen { from { opacity:0; transform:translateY(24px) scale(.98); } to { opacity:1; transform:none; } }
+.station-sector { transition:filter .2s ease, transform .2s ease, border-color .2s ease; }
+.station-sector:active { transform:translate(-50%,-50%) scale(.95); }
+.station-sector .sector-name { opacity:0; transform:translate(-50%,8px); transition:.2s ease; }
+.station-sector:hover .sector-name,.station-sector:focus .sector-name { opacity:1; transform:translate(-50%,0); }
+.sector-building { position:absolute; inset:13%; border-radius:50%; display:grid; place-items:center; border:1px solid currentColor; background:radial-gradient(circle at 35% 25%,rgba(255,255,255,.18),rgba(2,8,18,.54) 55%,rgba(1,4,12,.82)); box-shadow:0 0 18px currentColor; animation:sectorPulse 2.8s ease-in-out infinite; }
+.sector-building:before,.sector-building:after { content:""; position:absolute; border:1px solid currentColor; border-radius:50%; opacity:.38; }
+.sector-building:before { inset:-8px; border-style:dashed; }
+.sector-building:after { inset:6px; border-left-color:transparent; border-right-color:transparent; }
+.sector-building i { font-style:normal; font-size:18px; text-shadow:0 0 13px currentColor; }
+.sector-name { position:absolute; left:50%; top:96%; min-width:108px; padding:7px 9px; border-radius:11px; background:rgba(2,7,17,.84); border:1px solid rgba(255,255,255,.12); backdrop-filter:blur(12px); display:flex; flex-direction:column; pointer-events:none; z-index:4; }
+.sector-name b { font-size:10px; }.sector-name small { font-size:7px; color:rgba(226,232,240,.66); }
+.sector-hangar { border-radius:25% 25% 40% 40% !important; }
+.sector-gate .sector-building { border-width:3px; }
+.sector-citadel .sector-building { transform:scale(1.18); }
+.identity small,.generation small,.stats small,.panelHeader small,.hero small,.metricGrid small,.pack small{font-size:7px;letter-spacing:.1em;color:rgba(203,213,225,.62);font-weight:900}
 .identity strong{font-size:14px}.generation b{font-size:13px}
-.stats>div{min-width:59px;padding:6px 8px;border-radius:11px;background:rgba(2,10,23,.64);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(15px);display:flex;flex-direction:column}
-.stats b{font-size:12px}.target i{font-style:normal;font-size:20px;text-shadow:0 0 16px currentColor}
-.tag b{font-size:9px}.tag small{font-size:7px;color:rgba(226,232,240,.68)}
-.caption b{font-size:17px;letter-spacing:.06em}.caption span{font-size:9px;color:rgba(226,232,240,.64)}
-.cameraRail>div{height:3px;position:relative;border-radius:99px;background:linear-gradient(90deg,rgba(34,211,238,.5),rgba(167,139,250,.6),rgba(251,113,133,.5))}
-.cameraRail i{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;transform:translate(-50%,-50%);background:#e0f2fe;box-shadow:0 0 14px #67e8f9}
-.panelHeader>div{display:flex;flex-direction:column}.panelHeader em{font-style:normal;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.05);font-size:9px}
-.hero h2{margin:5px 0 6px;font-size:20px}.hero p{margin:0;color:rgba(226,232,240,.66);font-size:12px;line-height:1.5}
-.metricGrid>div{min-height:52px;padding:8px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;justify-content:center}
-.metricGrid b{font-size:11px}.detailRows>div{min-height:35px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.055);font-size:10px}
-.detailRows span{color:#94a3b8}.pack b{font-size:11px}.pack span{font-size:10px;color:#d1fae5}
+.stats>div{min-width:59px;padding:6px 8px;border-radius:11px;background:rgba(2,10,23,.72);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(15px);display:flex;flex-direction:column}.stats b{font-size:12px}
+.cameraRail>div{height:3px;position:relative;border-radius:99px;background:linear-gradient(90deg,rgba(34,211,238,.5),rgba(167,139,250,.6),rgba(251,113,133,.5))}.cameraRail i{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;transform:translate(-50%,-50%);background:#e0f2fe;box-shadow:0 0 14px #67e8f9}
+.panelHeader>div{display:flex;flex-direction:column}.panelHeader em{font-style:normal;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.05);font-size:9px}.hero h2{margin:5px 0 6px;font-size:20px}.hero p{margin:0;color:rgba(226,232,240,.66);font-size:12px;line-height:1.5}.metricGrid>div{min-height:52px;padding:8px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;justify-content:center}.metricGrid b{font-size:11px}.detailRows>div{min-height:35px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.055);font-size:10px}.detailRows span{color:#94a3b8}.pack b{font-size:11px}.pack span{font-size:10px;color:#d1fae5}
 `;
 
 const styles = {
-  root: { position: "fixed", inset: 0, zIndex: 180, overflow: "hidden", background: "#010207", color: "#f2fbff", fontFamily: "Inter,system-ui,-apple-system,'Segoe UI',sans-serif" },
-  panorama: { position: "absolute", inset: "-8%", backgroundImage: "url('/account-station-panorama.png')", backgroundRepeat: "no-repeat", backgroundSize: "cover", transition: "background-position .08s linear, transform .16s linear", willChange: "background-position,transform" },
-  shuttleGlass: { position: "absolute", left: -50, bottom: -24, width: "43%", height: "27%", borderRadius: "50% 55% 0 0", background: "linear-gradient(135deg,rgba(155,230,255,.12),rgba(2,7,18,.5) 42%,rgba(0,0,0,.86))", borderTop: "1px solid rgba(180,238,255,.22)", boxShadow: "0 -18px 70px rgba(0,0,0,.45)", pointerEvents: "none", transition: "transform .08s linear" },
-  vignette: { position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 50% 46%,transparent 38%,rgba(0,2,10,.18) 70%,rgba(0,2,10,.78) 120%)" },
-  grain: { position: "absolute", inset: -50, opacity: .035, pointerEvents: "none", backgroundImage: "radial-gradient(rgba(255,255,255,.5) .5px, transparent .7px)", backgroundSize: "3px 3px" },
-  header: { position: "absolute", zIndex: 70, top: 10, left: 10, right: 10, height: 54, display: "grid", gridTemplateColumns: "42px 1fr auto", gap: 10, alignItems: "center", padding: "0 10px", borderRadius: 18, background: "linear-gradient(135deg,rgba(2,10,23,.72),rgba(11,8,30,.56))", border: "1px solid rgba(175,232,255,.16)", backdropFilter: "blur(22px)", boxShadow: "0 18px 55px rgba(0,0,0,.3)" },
-  backButton: { width: 36, height: 36, padding: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.055)", color: "white", fontSize: 27, cursor: "pointer" },
-  identity: { minWidth: 0, display: "flex", flexDirection: "column" },
-  generation: { minWidth: 66, height: 39, borderRadius: 12, border: "1px solid rgba(103,232,249,.2)", background: "rgba(4,31,46,.5)", color: "#e0fbff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" },
-  cameraSurface: { position: "absolute", inset: "64px 0 0", touchAction: "none", userSelect: "none" },
-  hotspot: { position: "absolute", width: 92, height: 92, padding: 0, border: 0, background: "transparent", color: "white", cursor: "pointer", transformOrigin: "center" },
-  target: { position: "absolute", left: "50%", top: "42%", width: 49, height: 49, transform: "translate(-50%,-50%)", border: "1px solid", borderRadius: "50%", background: "rgba(2,8,18,.2)", backdropFilter: "blur(2px)", display: "grid", placeItems: "center", animation: "targetPulse 2.3s ease-in-out infinite" },
-  tag: { position: "absolute", left: "50%", top: "73%", transform: "translateX(-50%)", minWidth: 102, padding: "6px 10px", borderRadius: 10, background: "rgba(1,6,15,.67)", border: "1px solid rgba(255,255,255,.11)", backdropFilter: "blur(12px)", display: "flex", flexDirection: "column", pointerEvents: "none" },
-  stats: { position: "absolute", zIndex: 75, top: 73, left: 10, display: "flex", gap: 5 },
-  targetsButton: { position: "absolute", zIndex: 75, top: 73, right: 10, height: 31, padding: "0 11px", borderRadius: 10, border: "1px solid rgba(103,232,249,.17)", background: "rgba(2,10,23,.65)", color: "#e0fbff", fontSize: 8, fontWeight: 900, backdropFilter: "blur(15px)" },
-  caption: { position: "absolute", zIndex: 60, left: 15, bottom: 67, maxWidth: "72%", padding: "11px 13px", borderRadius: 16, background: "linear-gradient(135deg,rgba(2,12,27,.73),rgba(16,9,39,.55))", border: "1px solid rgba(103,232,249,.16)", backdropFilter: "blur(19px)", display: "flex", flexDirection: "column" },
-  cameraRail: { position: "absolute", zIndex: 60, left: 20, right: 20, bottom: 28, display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 9, alignItems: "center", color: "rgba(226,232,240,.58)", fontSize: 7 },
-  panelShade: { position: "absolute", inset: 0, zIndex: 100, display: "flex", alignItems: "flex-end", padding: 10, background: "linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))" },
-  panel: { width: "100%", maxHeight: "68vh", overflowY: "auto", padding: 12, borderRadius: "24px 24px 16px 16px", background: "linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))", border: "1px solid", boxShadow: "0 -28px 90px rgba(0,0,0,.8)", animation: "panelOpen .38s ease-out" },
-  panelHeader: { display: "grid", gridTemplateColumns: "38px 40px 1fr auto", gap: 8, alignItems: "center", marginBottom: 10 },
-  panelIcon: { width: 38, height: 38, borderRadius: 12, display: "grid", placeItems: "center", background: "rgba(255,255,255,.05)", fontSize: 20 },
-  hero: { padding: 14, borderRadius: 17, background: "radial-gradient(circle at 100% 0,rgba(103,232,249,.15),transparent 38%),rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.075)", marginBottom: 9 },
-  metricGrid: { display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6 },
-  detailRows: { marginTop: 9, padding: "4px 12px", borderRadius: 15, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)" },
-  packGrid: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 7, marginTop: 9 },
-  pack: { padding: 11, borderRadius: 14, background: "rgba(52,211,153,.06)", border: "1px solid rgba(52,211,153,.17)", display: "flex", flexDirection: "column" },
-  launchButton: { width: "100%", height: 50, marginTop: 10, border: 0, borderRadius: 15, background: "linear-gradient(135deg,#e11d48,#7c3aed,#0891b2)", color: "white", fontWeight: 950, letterSpacing: ".08em", boxShadow: "0 0 34px rgba(225,29,72,.25)" },
+  root:{ position:"fixed", inset:0, zIndex:180, overflow:"hidden", background:"#010207", color:"#f2fbff", fontFamily:"Inter,system-ui,-apple-system,'Segoe UI',sans-serif" },
+  viewport:{ position:"absolute", inset:0, overflow:"hidden", touchAction:"none", userSelect:"none", background:"#010207" },
+  world:{ position:"absolute", top:0, bottom:0, left:0, height:"100%", transformOrigin:"left center", transition:"transform .08s linear", willChange:"transform" },
+  panoramaImage:{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill", pointerEvents:"none", userSelect:"none" },
+  sector:{ position:"absolute", width:68, height:68, transform:"translate(-50%,-50%)", padding:0, border:"1px solid", borderRadius:"50%", background:"rgba(2,8,18,.08)", color:"white", cursor:"pointer" },
+  header:{ position:"absolute", zIndex:70, top:"max(10px, env(safe-area-inset-top))", left:10, right:10, height:54, display:"grid", gridTemplateColumns:"42px 1fr auto", gap:10, alignItems:"center", padding:"0 10px", borderRadius:18, background:"linear-gradient(135deg,rgba(2,10,23,.78),rgba(11,8,30,.64))", border:"1px solid rgba(175,232,255,.16)", backdropFilter:"blur(22px)", boxShadow:"0 18px 55px rgba(0,0,0,.3)" },
+  backButton:{ width:36, height:36, padding:0, borderRadius:12, border:"1px solid rgba(255,255,255,.14)", background:"rgba(255,255,255,.055)", color:"white", fontSize:27, cursor:"pointer" },
+  identity:{ minWidth:0, display:"flex", flexDirection:"column" },
+  generation:{ minWidth:66, height:39, borderRadius:12, border:"1px solid rgba(103,232,249,.2)", background:"rgba(4,31,46,.5)", color:"#e0fbff", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer" },
+  stats:{ position:"absolute", zIndex:75, top:"calc(max(10px, env(safe-area-inset-top)) + 64px)", left:10, display:"flex", gap:5 },
+  cameraRail:{ position:"absolute", zIndex:60, left:20, right:20, bottom:"max(18px, env(safe-area-inset-bottom))", display:"grid", gridTemplateColumns:"auto 1fr auto", gap:9, alignItems:"center", color:"rgba(226,232,240,.58)", fontSize:7 },
+  panelShade:{ position:"absolute", inset:0, zIndex:100, display:"flex", alignItems:"flex-end", padding:10, background:"linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))" },
+  panel:{ width:"100%", maxHeight:"68vh", overflowY:"auto", padding:12, borderRadius:"24px 24px 16px 16px", background:"linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))", border:"1px solid", boxShadow:"0 -28px 90px rgba(0,0,0,.8)", animation:"panelOpen .38s ease-out" },
+  panelHeader:{ display:"grid", gridTemplateColumns:"38px 40px 1fr auto", gap:8, alignItems:"center", marginBottom:10 },
+  panelIcon:{ width:38, height:38, borderRadius:12, display:"grid", placeItems:"center", background:"rgba(255,255,255,.05)", fontSize:20 },
+  hero:{ padding:14, borderRadius:17, background:"radial-gradient(circle at 100% 0,rgba(103,232,249,.15),transparent 38%),rgba(255,255,255,.035)", border:"1px solid rgba(255,255,255,.075)", marginBottom:9 },
+  metricGrid:{ display:"grid", gridTemplateColumns:"repeat(4,minmax(0,1fr))", gap:6 },
+  detailRows:{ marginTop:9, padding:"4px 12px", borderRadius:15, background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)" },
+  packGrid:{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:7, marginTop:9 },
+  pack:{ padding:11, borderRadius:14, background:"rgba(52,211,153,.06)", border:"1px solid rgba(52,211,153,.17)", display:"flex", flexDirection:"column" },
+  launchButton:{ width:"100%", height:50, marginTop:10, border:0, borderRadius:15, background:"linear-gradient(135deg,#e11d48,#7c3aed,#0891b2)", color:"white", fontWeight:950, letterSpacing:".08em", boxShadow:"0 0 34px rgba(225,29,72,.25)" },
 };
