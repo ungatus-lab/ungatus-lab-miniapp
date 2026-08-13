@@ -3,16 +3,16 @@
 import { useMemo, useRef, useState } from "react";
 
 const MODULES = [
-  { id: "device", label: "DEVICE", sub: "Emulator Hangar", icon: "▣", x: 7, y: 48, size: 116, color: "#38bdf8", kind: "hangar", depth: 0.86 },
-  { id: "native", label: "NATIVE", sub: "Research Lab", icon: "◉", x: 16, y: 69, size: 128, color: "#22d3ee", kind: "lab", depth: 1.02 },
-  { id: "collab", label: "COLLAB", sub: "Link Hub", icon: "◈", x: 24, y: 29, size: 106, color: "#a78bfa", kind: "hub", depth: 0.94 },
-  { id: "market", label: "MARKET", sub: "Trade Dock", icon: "◍", x: 34, y: 67, size: 122, color: "#f472b6", kind: "dock", depth: 1.08 },
-  { id: "allocation", label: "ALLOCATION", sub: "Crystal Reactor", icon: "◇", x: 42, y: 31, size: 138, color: "#34d399", kind: "crystal", depth: 0.96 },
-  { id: "center", label: "CORE", sub: "Account Center", icon: "◎", x: 51, y: 50, size: 188, color: "#67e8f9", kind: "core", depth: 1.12 },
-  { id: "wallet", label: "WALLET", sub: "UGT Vault", icon: "⇄", x: 61, y: 69, size: 118, color: "#fde68a", kind: "vault", depth: 1.04 },
-  { id: "squad", label: "SQUAD", sub: "Relay Array", icon: "⬡", x: 70, y: 29, size: 122, color: "#c084fc", kind: "relay", depth: 0.92 },
-  { id: "earn", label: "EARN", sub: "Mission Beacon", icon: "✦", x: 80, y: 68, size: 116, color: "#facc15", kind: "beacon", depth: 1.04 },
-  { id: "game", label: "ARENA", sub: "PvP Gate", icon: "⚔", x: 91, y: 45, size: 174, color: "#fb7185", kind: "gate", depth: 1.1 },
+  { id: "device", label: "DEVICE", sub: "Emulator Hangar", icon: "▣", angle: -76, lane: -0.12, size: 118, color: "#38bdf8", kind: "hangar", depth: 0.92 },
+  { id: "native", label: "NATIVE", sub: "Research Lab", icon: "◉", angle: -60, lane: 0.2, size: 132, color: "#22d3ee", kind: "lab", depth: 1.04 },
+  { id: "collab", label: "COLLAB", sub: "Link Hub", icon: "◈", angle: -43, lane: -0.24, size: 108, color: "#a78bfa", kind: "hub", depth: 0.96 },
+  { id: "market", label: "MARKET", sub: "Trade Dock", icon: "◍", angle: -27, lane: 0.24, size: 124, color: "#f472b6", kind: "dock", depth: 1.06 },
+  { id: "allocation", label: "ALLOCATION", sub: "Crystal Reactor", icon: "◇", angle: -12, lane: -0.22, size: 140, color: "#34d399", kind: "crystal", depth: 1.0 },
+  { id: "center", label: "CORE", sub: "Account Center", icon: "◎", angle: 4, lane: 0.04, size: 190, color: "#67e8f9", kind: "core", depth: 1.13 },
+  { id: "wallet", label: "WALLET", sub: "UGT Vault", icon: "⇄", angle: 21, lane: 0.25, size: 120, color: "#fde68a", kind: "vault", depth: 1.05 },
+  { id: "squad", label: "SQUAD", sub: "Relay Array", icon: "⬡", angle: 39, lane: -0.23, size: 124, color: "#c084fc", kind: "relay", depth: 0.98 },
+  { id: "earn", label: "EARN", sub: "Mission Beacon", icon: "✦", angle: 57, lane: 0.22, size: 118, color: "#facc15", kind: "beacon", depth: 1.05 },
+  { id: "game", label: "ARENA", sub: "PvP Gate", icon: "⚔", angle: 77, lane: -0.03, size: 176, color: "#fb7185", kind: "gate", depth: 1.12 },
 ];
 
 const ALLOCATION_PACKS = [
@@ -38,9 +38,9 @@ export default function AccountStationPrototype({
   const [activeModule, setActiveModule] = useState(null);
   const [stationLevel, setStationLevel] = useState(1);
   const [showLabels, setShowLabels] = useState(true);
-  const [cameraX, setCameraX] = useState(124);
+  const [cameraYaw, setCameraYaw] = useState(48);
   const [dragging, setDragging] = useState(false);
-  const dragRef = useRef({ active: false, startX: 0, startCamera: 124, moved: 0, width: 1 });
+  const dragRef = useRef({ active: false, startX: 0, startYaw: 48, moved: 0, width: 1 });
   const suppressClickRef = useRef(false);
 
   const profileName = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
@@ -60,7 +60,7 @@ export default function AccountStationPrototype({
   function selectModule(id) {
     if (suppressClickRef.current) return;
     const module = MODULES.find((item) => item.id === id);
-    if (module) setCameraX(Math.max(0, Math.min(160, module.x * 2.6 - 50)));
+    if (module) setCameraYaw(module.angle);
     setActiveModule(id);
   }
 
@@ -72,25 +72,43 @@ export default function AccountStationPrototype({
     if (typeof onLaunchGame === "function") onLaunchGame();
   }
 
-  const worldOffset = -cameraX;
-  const cameraTransform = active
-    ? `translate3d(${worldOffset}vw, 0, 0) scale(1.18)`
-    : `translate3d(${worldOffset}vw, 0, 0) scale(1)`;
-  const panoramaProgress = cameraX / 160;
-  const gazeAngle = (panoramaProgress - 0.5) * 18;
+  const yawProgress = (cameraYaw + 88) / 176;
+  const yawRadians = cameraYaw * Math.PI / 180;
+  const horizonShift = Math.sin(yawRadians) * 7;
+
+  function projectModule(module) {
+    const delta = (module.angle - cameraYaw) * Math.PI / 180;
+    const forward = Math.cos(delta);
+    const visible = forward > 0.16;
+    const screenX = 50 + Math.sin(delta) * 69;
+    const edgeCompression = Math.max(0.48, forward);
+    const perspectiveScale = module.depth * (0.62 + forward * 0.55);
+    const y = 48 + module.lane * 72 + (1 - forward) * 8;
+    return {
+      visible,
+      x: screenX,
+      y,
+      scale: perspectiveScale,
+      opacity: visible ? Math.max(0.18, Math.min(1, forward * 1.4)) : 0,
+      rotate: -Math.sin(delta) * 12,
+      blur: Math.max(0, (1 - forward) * 1.2),
+      z: Math.round(100 + forward * 100 + y),
+      side: Math.sin(delta),
+    };
+  }
 
   function beginPan(event) {
     if (active) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    dragRef.current = { active: true, startX: event.clientX, startCamera: cameraX, moved: 0, width: event.currentTarget.clientWidth || 1 };
+    dragRef.current = { active: true, startX: event.clientX, startYaw: cameraYaw, moved: 0, width: event.currentTarget.clientWidth || 1 };
     setDragging(true);
   }
   function movePan(event) {
     if (!dragRef.current.active || active) return;
     const delta = event.clientX - dragRef.current.startX;
     dragRef.current.moved = Math.max(dragRef.current.moved, Math.abs(delta));
-    const next = dragRef.current.startCamera - (delta / dragRef.current.width) * 115;
-    setCameraX(Math.max(0, Math.min(160, next)));
+    const next = dragRef.current.startYaw - (delta / dragRef.current.width) * 112;
+    setCameraYaw(Math.max(-88, Math.min(88, next)));
   }
   function endPan() {
     if (!dragRef.current.active) return;
@@ -113,7 +131,7 @@ export default function AccountStationPrototype({
         @keyframes auroraDrift { 0%,100% { transform:translate3d(-3%,0,0) scale(1); } 50% { transform:translate3d(3%,-2%,0) scale(1.08); } }
         @keyframes energyFlow { to { background-position:120px 0; } }
         .station-module:hover { filter:brightness(1.24); }
-        .station-module:active { transform:translate(-50%,-50%) scale(.95) !important; }
+        .station-module:active { filter:brightness(1.38) !important; }
         .station-scroll::-webkit-scrollbar { width:5px; }
         .station-scroll::-webkit-scrollbar-thumb { background:rgba(103,232,249,.28); border-radius:999px; }
       `}</style>
@@ -121,9 +139,9 @@ export default function AccountStationPrototype({
       <div style={styles.spaceBackdrop} />
       <div style={styles.nebulaOne} />
       <div style={styles.nebulaTwo} />
-      <div style={{ ...styles.starLayer, transform: `translate3d(${-cameraX * 0.055}vw,0,0) scale(1.08)` }} />
-      <div style={{ ...styles.deepNebula, transform: `translate3d(${-cameraX * 0.09}vw,0,0)` }} />
-      <div style={{ ...styles.distantArchitecture, transform: `translate3d(${-cameraX * 0.17}vw,0,0)` }} />
+      <div style={{ ...styles.starLayer, backgroundPosition: `${-cameraYaw * 2.2}px 0, ${-cameraYaw * 3.4 + 27}px 31px`, transform: `scale(${1.04 + Math.abs(cameraYaw) / 900})` }} />
+      <div style={{ ...styles.deepNebula, transform: `translate3d(${-cameraYaw * 0.22}vw,0,0) skewX(${cameraYaw * -0.035}deg)` }} />
+      <div style={{ ...styles.distantArchitecture, transform: `translate3d(${-cameraYaw * 0.32}vw,0,0) rotateY(${cameraYaw * -0.18}deg)` }} />
 
       <header style={styles.topHud}>
         <button style={styles.exitButton} onClick={onClose} title="Back to current Mini App">‹</button>
@@ -141,9 +159,9 @@ export default function AccountStationPrototype({
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
-        <div style={styles.horizonGlow} />
-        <div style={styles.stationShadow} />
-        <div style={{ ...styles.stationScene, transform: `${cameraTransform} rotateY(${gazeAngle}deg)`, transition: dragging ? "none" : styles.stationScene.transition }}>
+        <div style={{ ...styles.horizonGlow, transform: `translateX(${horizonShift}vw) rotate(${cameraYaw * -0.035}deg)` }} />
+        <div style={{ ...styles.stationShadow, transform: `translateX(${horizonShift * 0.5}vw) rotateX(66deg) rotateZ(${cameraYaw * -0.045}deg)` }} />
+        <div style={{ ...styles.stationScene, transform: `perspective(900px) rotateY(${cameraYaw * -0.18}deg) rotateX(1.5deg)`, transition: dragging ? "none" : styles.stationScene.transition }}>
           <div style={styles.stationDeck}>
             <div style={styles.deckGrid} />
             <div style={styles.deckRingOuter} />
@@ -160,6 +178,7 @@ export default function AccountStationPrototype({
             <StationModule
               key={module.id}
               module={module}
+              projection={projectModule(module)}
               active={activeModule === module.id}
               dimmed={Boolean(activeModule && activeModule !== module.id)}
               showLabels={showLabels}
@@ -173,12 +192,12 @@ export default function AccountStationPrototype({
           <>
             <div style={styles.panoramaTitle}>
               <small>PIXELGRID ORBITAL HABITAT</small>
-              <b>{cameraX < 54 ? "NATIVE QUARTER" : cameraX > 108 ? "ARENA QUARTER" : "ACCOUNT CITADEL"}</b>
+              <b>{cameraYaw < -30 ? "NATIVE QUARTER" : cameraYaw > 34 ? "ARENA QUARTER" : "ACCOUNT CITADEL"}</b>
               <span>Свободный обзор станции · удерживай и веди пальцем</span>
             </div>
             <div style={styles.panoramaRail}>
-              <div style={{ ...styles.panoramaRailFill, width: `${panoramaProgress * 100}%` }} />
-              <span style={{ ...styles.panoramaThumb, left: `${panoramaProgress * 100}%` }} />
+              <div style={{ ...styles.panoramaRailFill, width: `${yawProgress * 100}%` }} />
+              <span style={{ ...styles.panoramaThumb, left: `${yawProgress * 100}%` }} />
             </div>
             <div style={styles.swipeHint}><span>‹</span><b>DRAG THE CAMERA</b><span>›</span></div>
           </>
@@ -210,7 +229,7 @@ export default function AccountStationPrototype({
   );
 }
 
-function StationModule({ module, active, dimmed, showLabels, stationLevel, onSelect }) {
+function StationModule({ module, projection, active, dimmed, showLabels, stationLevel, onSelect }) {
   const scale = 1 + Math.min(4, stationLevel - 1) * 0.035;
   return (
     <button
@@ -218,13 +237,15 @@ function StationModule({ module, active, dimmed, showLabels, stationLevel, onSel
       onClick={() => onSelect(module.id)}
       style={{
         ...styles.moduleButton,
-        left: `${module.x}%`,
-        top: `${module.y}%`,
+        left: `${projection.x}%`,
+        top: `${projection.y}%`,
         width: module.size,
         height: module.size * 0.82,
-        opacity: dimmed ? 0.18 : 1,
-        transform: `translate(-50%,-50%) scale(${active ? 1.14 : scale})`,
-        zIndex: active ? 20 : Math.round(module.y),
+        display: projection.visible ? "block" : "none",
+        opacity: dimmed ? 0.16 : projection.opacity,
+        filter: `blur(${projection.blur}px) saturate(${0.72 + projection.opacity * 0.48})`,
+        transform: `translate(-50%,-50%) scale(${projection.scale * scale * (active ? 1.12 : 1)}) rotateY(${projection.rotate}deg)`,
+        zIndex: active ? 400 : projection.z,
         "--module-color": module.color,
       }}
       title={`${module.label} · ${module.sub}`}
@@ -367,8 +388,8 @@ const styles = {
   sceneViewport: { position: "absolute", inset: "58px 0 0", overflow: "hidden", perspective: 1200, touchAction: "pan-y", userSelect: "none" },
   horizonGlow: { position: "absolute", left: "8%", right: "8%", top: "42%", height: 2, background: "linear-gradient(90deg,transparent,#22d3ee,transparent)", boxShadow: "0 0 55px 17px rgba(34,211,238,.12)", opacity: .5 },
   stationShadow: { position: "absolute", width: "72vw", height: "30vw", left: "14vw", top: "46%", borderRadius: "50%", background: "rgba(0,0,0,.68)", filter: "blur(28px)", transform: "rotateX(66deg)" },
-  stationScene: { position: "absolute", left: 0, top: "7%", width: "260vw", height: "82%", transformOrigin: "50vw 50%", transition: "transform .42s cubic-bezier(.2,.72,.22,1)", transformStyle:"preserve-3d", willChange: "transform" },
-  stationDeck: { position: "absolute", left:"2%", width:"96%", top:"7%", bottom:"1%", transform: "rotateX(61deg) rotateZ(-1deg)", borderRadius: "48% 48% 42% 42% / 60% 60% 38% 38%", background: "radial-gradient(ellipse at 50% 48%,rgba(22,67,92,.96),rgba(5,18,38,.97) 48%,rgba(2,6,18,.25) 76%)", border: "1px solid rgba(103,232,249,.18)", boxShadow: "inset 0 0 70px rgba(34,211,238,.08),0 0 65px rgba(0,0,0,.58)" },
+  stationScene: { position: "absolute", left: "-8%", top: "5%", width: "116%", height: "84%", transformOrigin: "50% 48%", transition: "transform .3s cubic-bezier(.2,.72,.22,1)", transformStyle:"preserve-3d", willChange: "transform" },
+  stationDeck: { position: "absolute", left:"-32%", width:"164%", top:"4%", bottom:"-5%", transform: "rotateX(61deg) rotateZ(-1deg)", borderRadius: "48% 48% 42% 42% / 60% 60% 38% 38%", background: "radial-gradient(ellipse at 50% 44%,rgba(22,74,98,.96),rgba(4,19,40,.96) 43%,rgba(2,6,18,.12) 74%)", border: "1px solid rgba(103,232,249,.18)", boxShadow: "inset 0 0 70px rgba(34,211,238,.08),0 0 65px rgba(0,0,0,.58)" },
   deckGrid: { position: "absolute", inset: "8%", borderRadius: "50%", opacity: .34, backgroundImage: "linear-gradient(rgba(103,232,249,.11) 1px,transparent 1px),linear-gradient(90deg,rgba(103,232,249,.11) 1px,transparent 1px)", backgroundSize: "24px 24px", maskImage: "radial-gradient(circle,#000 38%,transparent 74%)" },
   deckRingOuter: { position: "absolute", inset: "4%", borderRadius: "50%", border: "2px solid rgba(103,232,249,.18)" },
   deckRingMiddle: { position: "absolute", inset: "23%", borderRadius: "50%", border: "1px dashed rgba(167,139,250,.28)", animation: "stationOrbit 30s linear infinite" },
@@ -407,6 +428,9 @@ const styles = {
   panoramaRail: { position:"absolute",left:22,right:22,bottom:45,height:3,zIndex:57,borderRadius:99,background:"rgba(255,255,255,.12)",overflow:"visible" },
   panoramaRailFill: { height:"100%",borderRadius:99,background:"linear-gradient(90deg,#22d3ee,#a78bfa,#fb7185)",boxShadow:"0 0 12px rgba(103,232,249,.45)" },
   panoramaThumb: { position:"absolute",top:"50%",width:11,height:11,borderRadius:"50%",transform:"translate(-50%,-50%)",background:"#e0f2fe",boxShadow:"0 0 12px #67e8f9" },
+  lensVignette: { position:"absolute",inset:0,pointerEvents:"none",background:"radial-gradient(ellipse at center,transparent 45%,rgba(0,2,10,.2) 72%,rgba(0,2,10,.68) 112%)",zIndex:40 },
+  curvedHUDLeft: { position:"absolute",left:-34,top:"18%",width:76,height:"55%",borderRadius:"50%",borderRight:"1px solid rgba(103,232,249,.18)",boxShadow:"12px 0 35px rgba(34,211,238,.06)",pointerEvents:"none",zIndex:41 },
+  curvedHUDRight: { position:"absolute",right:-34,top:"18%",width:76,height:"55%",borderRadius:"50%",borderLeft:"1px solid rgba(167,139,250,.18)",boxShadow:"-12px 0 35px rgba(139,92,246,.06)",pointerEvents:"none",zIndex:41 },
   panelBackdrop: { position: "absolute", inset: 0, zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "72px 10px 10px", boxSizing: "border-box", background: "linear-gradient(180deg,transparent 18%,rgba(0,3,12,.38) 47%,rgba(0,3,12,.9))" },
   panel: { position: "relative", width: "min(620px,100%)", maxHeight: "64vh", overflowY: "auto", padding: "12px", boxSizing: "border-box", borderRadius: "22px 22px 16px 16px", background: "linear-gradient(180deg,rgba(12,25,49,.97),rgba(3,8,20,.985))", border: "1px solid", boxShadow: "0 -18px 60px rgba(0,0,0,.58)", animation: "stationPanelIn .38s ease-out both" },
   panelAccent: { position: "absolute", left: "18%", right: "18%", top: 0, height: 2, boxShadow: "0 0 18px currentColor" },
