@@ -1,453 +1,139 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const MODULES = [
-  { id: "device", label: "DEVICE", sub: "Emulator Hangar", icon: "▣", angle: -76, lane: -0.12, size: 118, color: "#38bdf8", kind: "hangar", depth: 0.92 },
-  { id: "native", label: "NATIVE", sub: "Research Lab", icon: "◉", angle: -60, lane: 0.2, size: 132, color: "#22d3ee", kind: "lab", depth: 1.04 },
-  { id: "collab", label: "COLLAB", sub: "Link Hub", icon: "◈", angle: -43, lane: -0.24, size: 108, color: "#a78bfa", kind: "hub", depth: 0.96 },
-  { id: "market", label: "MARKET", sub: "Trade Dock", icon: "◍", angle: -27, lane: 0.24, size: 124, color: "#f472b6", kind: "dock", depth: 1.06 },
-  { id: "allocation", label: "ALLOCATION", sub: "Crystal Reactor", icon: "◇", angle: -12, lane: -0.22, size: 140, color: "#34d399", kind: "crystal", depth: 1.0 },
-  { id: "center", label: "CORE", sub: "Account Center", icon: "◎", angle: 4, lane: 0.04, size: 190, color: "#67e8f9", kind: "core", depth: 1.13 },
-  { id: "wallet", label: "WALLET", sub: "UGT Vault", icon: "⇄", angle: 21, lane: 0.25, size: 120, color: "#fde68a", kind: "vault", depth: 1.05 },
-  { id: "squad", label: "SQUAD", sub: "Relay Array", icon: "⬡", angle: 39, lane: -0.23, size: 124, color: "#c084fc", kind: "relay", depth: 0.98 },
-  { id: "earn", label: "EARN", sub: "Mission Beacon", icon: "✦", angle: 57, lane: 0.22, size: 118, color: "#facc15", kind: "beacon", depth: 1.05 },
-  { id: "game", label: "ARENA", sub: "PvP Gate", icon: "⚔", angle: 77, lane: -0.03, size: 176, color: "#fb7185", kind: "gate", depth: 1.12 },
+  { id:"device", name:"DEVICE", sub:"Emulator Hangar", angle:-76, ring:1.18, y:-.08, color:[56,189,248], glyph:"▣" },
+  { id:"native", name:"NATIVE", sub:"Research Lab", angle:-60, ring:.88, y:.18, color:[34,211,238], glyph:"◉" },
+  { id:"collab", name:"COLLAB", sub:"Link Hub", angle:-43, ring:1.16, y:-.22, color:[167,139,250], glyph:"◈" },
+  { id:"market", name:"MARKET", sub:"Trade Dock", angle:-27, ring:.91, y:.21, color:[244,114,182], glyph:"◍" },
+  { id:"allocation", name:"ALLOCATION", sub:"Crystal Reactor", angle:-11, ring:1.15, y:-.19, color:[52,211,153], glyph:"◇" },
+  { id:"center", name:"CORE", sub:"Account Citadel", angle:5, ring:.78, y:.03, color:[103,232,249], glyph:"◎", hero:true },
+  { id:"wallet", name:"WALLET", sub:"UGT Vault", angle:22, ring:1.04, y:.2, color:[253,230,138], glyph:"⇄" },
+  { id:"squad", name:"SQUAD", sub:"Relay Array", angle:40, ring:.9, y:-.2, color:[192,132,252], glyph:"⬡" },
+  { id:"earn", name:"EARN", sub:"Mission Beacon", angle:58, ring:1.18, y:.17, color:[250,204,21], glyph:"✦" },
+  { id:"game", name:"ARENA", sub:"PvP Rift", angle:77, ring:.82, y:-.02, color:[251,113,133], glyph:"⚔", hero:true },
 ];
 
-const ALLOCATION_PACKS = [
-  ["Starter", "25 000 UGT", "50 000 locked UGT"],
-  ["Builder", "100 000 UGT", "200 000 locked UGT"],
-  ["Pro", "400 000 UGT", "800 000 locked UGT"],
-  ["Founder", "1 600 000 UGT", "3 200 000 locked UGT"],
+const PACKS=[
+ ["Starter","25 000 UGT","50 000 locked UGT"],
+ ["Builder","100 000 UGT","200 000 locked UGT"],
+ ["Pro","400 000 UGT","800 000 locked UGT"],
+ ["Founder","1 600 000 UGT","3 200 000 locked UGT"],
 ];
-
-const MARKET_ITEMS = [
-  ["Project Scripts", "Projects", "Готовые macro-проекты и сценарии."],
-  ["Emulator Mirrors", "Rentals", "Аренда LDPlayer и emulator-зеркал."],
-  ["Premium Pixel Tools", "Premium", "Сканер, эталоны и плотность пикселей."],
-];
-
-export default function AccountStationPrototype({
-  open = true,
-  onClose,
-  onLaunchGame,
-  telegramUser,
-  t,
-}) {
-  const [activeModule, setActiveModule] = useState(null);
-  const [stationLevel, setStationLevel] = useState(1);
-  const [showLabels, setShowLabels] = useState(true);
-  const [cameraYaw, setCameraYaw] = useState(48);
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef({ active: false, startX: 0, startYaw: 48, moved: 0, width: 1 });
-  const suppressClickRef = useRef(false);
-
-  const profileName = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
-  const active = useMemo(
-    () => MODULES.find((module) => module.id === activeModule) || null,
-    [activeModule]
-  );
-
-  if (!open) return null;
-
-  function localize(key, fallback) {
-    if (typeof t !== "function") return fallback;
-    const value = t(key);
-    return value === key ? fallback : value;
-  }
-
-  function selectModule(id) {
-    if (suppressClickRef.current) return;
-    const module = MODULES.find((item) => item.id === id);
-    if (module) setCameraYaw(module.angle);
-    setActiveModule(id);
-  }
-
-  function closeModule() {
-    setActiveModule(null);
-  }
-
-  function launchArena() {
-    if (typeof onLaunchGame === "function") onLaunchGame();
-  }
-
-  const yawProgress = (cameraYaw + 88) / 176;
-  const yawRadians = cameraYaw * Math.PI / 180;
-  const horizonShift = Math.sin(yawRadians) * 7;
-
-  function projectModule(module) {
-    const delta = (module.angle - cameraYaw) * Math.PI / 180;
-    const forward = Math.cos(delta);
-    const visible = forward > 0.16;
-    const screenX = 50 + Math.sin(delta) * 69;
-    const edgeCompression = Math.max(0.48, forward);
-    const perspectiveScale = module.depth * (0.62 + forward * 0.55);
-    const y = 48 + module.lane * 72 + (1 - forward) * 8;
-    return {
-      visible,
-      x: screenX,
-      y,
-      scale: perspectiveScale,
-      opacity: visible ? Math.max(0.18, Math.min(1, forward * 1.4)) : 0,
-      rotate: -Math.sin(delta) * 12,
-      blur: Math.max(0, (1 - forward) * 1.2),
-      z: Math.round(100 + forward * 100 + y),
-      side: Math.sin(delta),
-    };
-  }
-
-  function beginPan(event) {
-    if (active) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    dragRef.current = { active: true, startX: event.clientX, startYaw: cameraYaw, moved: 0, width: event.currentTarget.clientWidth || 1 };
-    setDragging(true);
-  }
-  function movePan(event) {
-    if (!dragRef.current.active || active) return;
-    const delta = event.clientX - dragRef.current.startX;
-    dragRef.current.moved = Math.max(dragRef.current.moved, Math.abs(delta));
-    const next = dragRef.current.startYaw - (delta / dragRef.current.width) * 112;
-    setCameraYaw(Math.max(-88, Math.min(88, next)));
-  }
-  function endPan() {
-    if (!dragRef.current.active) return;
-    if (dragRef.current.moved > 7) {
-      suppressClickRef.current = true;
-      setTimeout(() => { suppressClickRef.current = false; }, 80);
-    }
-    dragRef.current.active = false;
-    setDragging(false);
-  }
-  return (
-    <main style={styles.root}>
-      <style>{`
-        @keyframes stationStars { from { transform: translate3d(0,0,0); } to { transform: translate3d(-42px,32px,0); } }
-        @keyframes stationPulse { 0%,100% { opacity:.48; transform:scale(.92); } 50% { opacity:1; transform:scale(1.06); } }
-        @keyframes stationOrbit { to { transform:rotate(360deg); } }
-        @keyframes stationFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }
-        @keyframes stationPanelIn { from { opacity:0; transform:translateY(22px) scale(.965); } to { opacity:1; transform:translateY(0) scale(1); } }
-        @keyframes stationScan { from { transform:translateY(-160%); } to { transform:translateY(500%); } }
-        @keyframes auroraDrift { 0%,100% { transform:translate3d(-3%,0,0) scale(1); } 50% { transform:translate3d(3%,-2%,0) scale(1.08); } }
-        @keyframes energyFlow { to { background-position:120px 0; } }
-        .station-module:hover { filter:brightness(1.24); }
-        .station-module:active { filter:brightness(1.38) !important; }
-        .station-scroll::-webkit-scrollbar { width:5px; }
-        .station-scroll::-webkit-scrollbar-thumb { background:rgba(103,232,249,.28); border-radius:999px; }
-      `}</style>
-
-      <div style={styles.spaceBackdrop} />
-      <div style={styles.nebulaOne} />
-      <div style={styles.nebulaTwo} />
-      <div style={{ ...styles.starLayer, backgroundPosition: `${-cameraYaw * 2.2}px 0, ${-cameraYaw * 3.4 + 27}px 31px`, transform: `scale(${1.04 + Math.abs(cameraYaw) / 900})` }} />
-      <div style={{ ...styles.deepNebula, transform: `translate3d(${-cameraYaw * 0.22}vw,0,0) skewX(${cameraYaw * -0.035}deg)` }} />
-      <div style={{ ...styles.distantArchitecture, transform: `translate3d(${-cameraYaw * 0.32}vw,0,0) rotateY(${cameraYaw * -0.18}deg)` }} />
-
-      <header style={styles.topHud}>
-        <button style={styles.exitButton} onClick={onClose} title="Back to current Mini App">‹</button>
-        <div style={styles.brandBlock}>
-          <small style={styles.eyebrow}>PIXELGRIDMACRO · ACCOUNT STATION</small>
-          <strong style={styles.brandTitle}>{profileName}</strong>
-        </div>
-        <div style={styles.levelBadge}><small>STATION</small><b>LV {stationLevel}</b></div>
-      </header>
-
-      <section
-        style={styles.sceneViewport}
-        onPointerDown={beginPan}
-        onPointerMove={movePan}
-        onPointerUp={endPan}
-        onPointerCancel={endPan}
-      >
-        <div style={{ ...styles.horizonGlow, transform: `translateX(${horizonShift}vw) rotate(${cameraYaw * -0.035}deg)` }} />
-        <div style={{ ...styles.stationShadow, transform: `translateX(${horizonShift * 0.5}vw) rotateX(66deg) rotateZ(${cameraYaw * -0.045}deg)` }} />
-        <div style={{ ...styles.stationScene, transform: `perspective(900px) rotateY(${cameraYaw * -0.18}deg) rotateX(1.5deg)`, transition: dragging ? "none" : styles.stationScene.transition }}>
-          <div style={styles.stationDeck}>
-            <div style={styles.deckGrid} />
-            <div style={styles.deckRingOuter} />
-            <div style={styles.deckRingMiddle} />
-            <div style={styles.deckRingInner} />
-            <div style={styles.deckArcNorth} />
-            <div style={styles.deckArcSouth} />
-          </div>
-          <div style={styles.energySpine} />
-          <div style={styles.skyBridgeOne} />
-          <div style={styles.skyBridgeTwo} />
-
-          {MODULES.map((module) => (
-            <StationModule
-              key={module.id}
-              module={module}
-              projection={projectModule(module)}
-              active={activeModule === module.id}
-              dimmed={Boolean(activeModule && activeModule !== module.id)}
-              showLabels={showLabels}
-              stationLevel={stationLevel}
-              onSelect={selectModule}
-            />
-          ))}
-        </div>
-
-        {!active && (
-          <>
-            <div style={styles.panoramaTitle}>
-              <small>PIXELGRID ORBITAL HABITAT</small>
-              <b>{cameraYaw < -30 ? "NATIVE QUARTER" : cameraYaw > 34 ? "ARENA QUARTER" : "ACCOUNT CITADEL"}</b>
-              <span>Свободный обзор станции · удерживай и веди пальцем</span>
-            </div>
-            <div style={styles.panoramaRail}>
-              <div style={{ ...styles.panoramaRailFill, width: `${yawProgress * 100}%` }} />
-              <span style={{ ...styles.panoramaThumb, left: `${yawProgress * 100}%` }} />
-            </div>
-            <div style={styles.swipeHint}><span>‹</span><b>DRAG THE CAMERA</b><span>›</span></div>
-          </>
-        )}
-      </section>
-
-      <aside style={styles.leftStats}>
-        <HudStat label="UGT" value="0" color="#fde68a" />
-        <HudStat label="ALLOCATION" value="0" color="#86efac" />
-        <HudStat label="EMULATORS" value="1 / 1" color="#7dd3fc" />
-      </aside>
-
-      <div style={styles.utilityControls}>
-        <button style={styles.utilityButton} onClick={() => setShowLabels((value) => !value)}>{showLabels ? "LABELS ON" : "LABELS OFF"}</button>
-        <button style={styles.utilityButton} onClick={() => setStationLevel((level) => (level >= 5 ? 1 : level + 1))}>DEV LEVEL +</button>
-      </div>
-
-      {active && (
-        <ModulePanel
-          module={active}
-          profileName={profileName}
-          stationLevel={stationLevel}
-          closeModule={closeModule}
-          launchArena={launchArena}
-          localize={localize}
-        />
-      )}
-    </main>
-  );
-}
-
-function StationModule({ module, projection, active, dimmed, showLabels, stationLevel, onSelect }) {
-  const scale = 1 + Math.min(4, stationLevel - 1) * 0.035;
-  return (
-    <button
-      className="station-module"
-      onClick={() => onSelect(module.id)}
-      style={{
-        ...styles.moduleButton,
-        left: `${projection.x}%`,
-        top: `${projection.y}%`,
-        width: module.size,
-        height: module.size * 0.82,
-        display: projection.visible ? "block" : "none",
-        opacity: dimmed ? 0.16 : projection.opacity,
-        filter: `blur(${projection.blur}px) saturate(${0.72 + projection.opacity * 0.48})`,
-        transform: `translate(-50%,-50%) scale(${projection.scale * scale * (active ? 1.12 : 1)}) rotateY(${projection.rotate}deg)`,
-        zIndex: active ? 400 : projection.z,
-        "--module-color": module.color,
-      }}
-      title={`${module.label} · ${module.sub}`}
-    >
-      <span style={{ ...styles.moduleGroundGlow, background: module.color }} />
-      <span style={{ ...styles.moduleBase, borderColor: `${module.color}88` }} />
-      <span style={{ ...styles.moduleTower, background: `linear-gradient(145deg, ${module.color}8a, #0b1530 55%, #030711)` }}>
-        <span style={{ ...styles.moduleDome, borderColor: `${module.color}cc`, boxShadow: `0 0 18px ${module.color}66, inset 0 0 13px ${module.color}42` }} />
-        <span style={{ ...styles.moduleIcon, color: module.color }}>{module.icon}</span>
-        {module.kind === "crystal" && <span style={{ ...styles.crystalSpire, borderBottomColor: module.color }} />}
-        {module.kind === "gate" && <span style={{ ...styles.gateRing, borderColor: module.color }} />}
-        {module.kind === "core" && <><span style={{ ...styles.coreOrbit, borderColor: `${module.color}88` }} /><span style={{ ...styles.coreOrbitSecond, borderColor: `${module.color}55` }} /></>}
-      </span>
-      <span style={{ ...styles.moduleLight, background: module.color }} />
-      {showLabels && (
-        <span style={styles.moduleLabel}>
-          <b>{module.label}</b>
-          <small>{module.sub}</small>
-        </span>
-      )}
-    </button>
-  );
-}
-
-function ModulePanel({ module, profileName, stationLevel, closeModule, launchArena, localize }) {
-  return (
-    <div style={styles.panelBackdrop} onPointerDown={(event) => { if (event.target === event.currentTarget) closeModule(); }}>
-      <section className="station-scroll" style={{ ...styles.panel, borderColor: `${module.color}66` }}>
-        <div style={{ ...styles.panelAccent, background: module.color }} />
-        <header style={styles.panelHeader}>
-          <button style={styles.panelBack} onClick={closeModule}>‹</button>
-          <div style={styles.panelIdentity}>
-            <span style={{ ...styles.panelIcon, color: module.color, borderColor: `${module.color}77` }}>{module.icon}</span>
-            <div><small>{module.sub}</small><h2>{module.label}</h2></div>
-          </div>
-          <span style={styles.panelLevel}>LV {stationLevel}</span>
-        </header>
-        <div style={{ ...styles.scanLine, background: module.color }} />
-        <ModuleContent id={module.id} profileName={profileName} launchArena={launchArena} localize={localize} />
-      </section>
-    </div>
-  );
-}
-
-function ModuleContent({ id, profileName, launchArena, localize }) {
-  if (id === "center") return <>
-    <PanelHero title={`Добро пожаловать, ${profileName}`} text="Центральный Core отражает уровень профиля, статус аккаунта и развитие всей станции." />
-    <MetricGrid items={[["PROFILE", "LV 1"], ["PVP GAMES", "0"], ["STATUS", "FREE"], ["RATING", "UNRANKED"]]} />
-    <PanelSection title="Account evolution"><Row label="Station generation" value="G1" /><Row label="Unlocked modules" value="10 / 10" /><Row label="Premium status" value="Inactive" /></PanelSection>
-  </>;
-
-  if (id === "game") return <>
-    <PanelHero title="Macro Swarm Arena" text="Вылет из станции с выбранным Core, легионами, игровыми эмуляторами и стартовыми ресурсами." />
-    <MetricGrid items={[["CORE", "G1"], ["LEGIONS", "1"], ["EMULATORS", "1"], ["SERVER", "1–5"]]} />
-    <PanelSection title="Launch configuration"><Row label="Starter legion" value="Core Guard" /><Row label="Sensor profile" value="1% pixels" /><Row label="Arena evolution" value="Enabled" /></PanelSection>
-    <button style={styles.launchButton} onClick={launchArena}>ENTER PVP ARENA</button>
-  </>;
-
-  if (id === "squad") return <>
-    <PanelHero title="Squad Relay Array" text="Реферальная сеть, игровые группы, будущие кланы и координация нескольких Core." />
-    <MetricGrid items={[["SQUAD", "0"], ["INVITED", "0"], ["ACTIVITY", "0"], ["REWARD", "0"]]} />
-    <PanelSection title="Relay branches"><Row label="Referral code" value="PGM-SCENE" /><Row label="Clan channel" value="Offline" /><Row label="Shared arena queue" value="Soon" /></PanelSection>
-  </>;
-
-  if (id === "earn") return <>
-    <PanelHero title="Mission Beacon" text="Ежедневные задания, rewarded ads, игровая активность и получение базовой аллокации." />
-    <PanelSection title="Today missions"><Row label="Open Mini App" value="DONE" /><Row label="Watch rewarded ad" value="SOON" /><Row label="Start PvP arena" value="0 / 1" /><Row label="Open Allocation Reactor" value="0 / 1" /></PanelSection>
-    <PanelSection title="Ad Vault"><Row label="Pending ad UGT" value="0" /><Row label="Confirmed promo UGT" value="0" /></PanelSection>
-  </>;
-
-  if (id === "allocation") return <>
-    <PanelHero title="Crystal Allocation Reactor" text="Аллокация аккаунта одновременно отражается как вычислительная энергия станции и стартовый ресурс PvP." />
-    <MetricGrid items={[["ACQUIRED", "0 UGT"], ["LOCKED", "0 UGT"], ["ADS", "0 UGT"], ["ROUND", "R1"]]} />
-    <div style={styles.packList}>{ALLOCATION_PACKS.map(([name, entry, bonus]) => <div key={name} style={styles.pack}><b>{name}</b><span>{entry}</span><small>Bonus · {bonus}</small></div>)}</div>
-  </>;
-
-  if (id === "wallet") return <>
-    <PanelHero title="UGT Energy Vault" text="Подключённые кошельки, backed UGT, promo UGT, locked allocation и будущий обмен." />
-    <PanelSection title="Connected wallets"><Row label="TON / Tonkeeper" value="Not connected" /><Row label="Solana / Phantom" value="Not connected" /></PanelSection>
-    <MetricGrid items={[["BACKED", "0"], ["PROMO", "0"], ["LOCKED", "0"], ["AVAILABLE", "0"]]} />
-    <PanelSection title="Swap preview"><Row label="You send" value="25 USDC" /><Row label="You receive" value="24 250 UGT" /></PanelSection>
-  </>;
-
-  if (id === "device") return <>
-    <PanelHero title="Device & Emulator Hangar" text="LDPlayer, PC и Android зеркала. В нативке здесь работают Remote Scanner, жесты и multi-device control." />
-    <MetricGrid items={[["LDPLAYER", "0"], ["PC", "0"], ["ANDROID", "0"], ["SLOTS", "1"]]} />
-    <PanelSection title="Native systems"><Row label="Remote Scanner" value="Native" /><Row label="Macro Recorder" value="Native" /><Row label="Device Emulator" value="Preview" /><Row label="Raw frames" value="Native only" /></PanelSection>
-  </>;
-
-  if (id === "collab") return <>
-    <PanelHero title="Collaboration Link Hub" text="Общие проекты, права управления, совместное редактирование сценариев и рабочие пространства." />
-    <MetricGrid items={[["ROOMS", "0"], ["PROJECTS", "0"], ["MEMBERS", "0"], ["LINKS", "0"]]} />
-    <PanelSection title="Native collaboration"><Row label="Shared workspaces" value="Soon" /><Row label="Access control" value="Soon" /><Row label="Scenario co-edit" value="Soon" /></PanelSection>
-  </>;
-
-  if (id === "market") return <>
-    <PanelHero title="PixelGrid Trade Dock" text="Рынок сценариев, зеркал, проектов автоматизации и premium-инструментов." />
-    <MetricGrid items={[["PROJECTS", "0"], ["RENTALS", "0"], ["TOOLS", "0"], ["STATUS", "SOON"]]} />
-    <div style={styles.marketList}>{MARKET_ITEMS.map(([title, tag, text]) => <div key={title} style={styles.marketItem}><div><b>{title}</b><small>{text}</small></div><span>{tag}</span></div>)}</div>
-  </>;
-
-  return <>
-    <PanelHero title="Native Research Laboratory" text="Scenario Constructor, эталоны, плотность пикселей, сравнитель, scanner и project mindmap." />
-    <MetricGrid items={[["PIXELS", "1%"], ["ETALONS", "0"], ["PROJECTS", "0"], ["PREMIUM", "OFF"]]} />
-    <PanelSection title="Research systems"><Row label="Scenario Constructor" value="Soon" /><Row label="Pixel Comparator" value="Premium" /><Row label="Density above 1%" value="Premium" /><Row label="Project Mindmap" value="Native" /></PanelSection>
-  </>;
-}
-
-function PanelHero({ title, text }) { return <section style={styles.panelHero}><h3>{title}</h3><p>{text}</p></section>; }
-function PanelSection({ title, children }) { return <section style={styles.panelSection}><h3>{title}</h3>{children}</section>; }
-function Row({ label, value }) { return <div style={styles.row}><span>{label}</span><b>{value}</b></div>; }
-function MetricGrid({ items }) { return <div style={styles.metricGrid}>{items.map(([label, value]) => <div key={label} style={styles.metric}><small>{label}</small><b>{value}</b></div>)}</div>; }
-function HudStat({ label, value, color }) { return <div style={styles.hudStat}><small>{label}</small><b style={{ color }}>{value}</b></div>; }
-
-function connectorStyle(module) {
-  const dx = module.x - 50;
-  const dy = module.y - 49;
-  const length = Math.sqrt(dx * dx + dy * dy);
-  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-  return {
-    position: "absolute", left: "50%", top: "49%", width: `${length}%`, height: 2,
-    transformOrigin: "0 50%", transform: `rotate(${angle}deg)`,
-    background: "linear-gradient(90deg, rgba(103,232,249,.62), rgba(129,140,248,.12))",
-    boxShadow: "0 0 10px rgba(34,211,238,.2)", opacity: .58,
-  };
-}
-
-const styles = {
-  root: { position: "fixed", inset: 0, overflow: "hidden", background: "#02040c", color: "#eefcff", fontFamily: "Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", zIndex: 180 },
-  spaceBackdrop: { position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 42%,rgba(14,116,144,.24),transparent 26%),radial-gradient(circle at 18% 15%,rgba(124,58,237,.21),transparent 30%),linear-gradient(180deg,#071426,#030619 48%,#010107)" },
-  nebulaOne: { position: "absolute", width: "58vw", height: "58vw", left: "-28vw", top: "10vh", borderRadius: "50%", background: "rgba(14,165,233,.12)", filter: "blur(70px)" },
-  nebulaTwo: { position: "absolute", width: "52vw", height: "52vw", right: "-25vw", bottom: "-20vh", borderRadius: "50%", background: "rgba(168,85,247,.12)", filter: "blur(74px)" },
-  starLayer: { position: "absolute", inset: -80, transition:"transform .16s linear", opacity: .55, backgroundImage: "radial-gradient(circle,#fff 0 1px,transparent 1.3px),radial-gradient(circle,#67e8f9 0 1px,transparent 1.4px)", backgroundPosition: "0 0,27px 31px", backgroundSize: "71px 71px,103px 103px", animation: "stationStars 28s linear infinite" },
-  topHud: { position: "absolute", left: 10, right: 10, top: 9, height: 52, zIndex: 80, display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 9, padding: "0 9px", borderRadius: 17, background: "rgba(5,12,28,.74)", border: "1px solid rgba(103,232,249,.18)", backdropFilter: "blur(16px)", boxShadow: "0 12px 38px rgba(0,0,0,.35)" },
-  exitButton: { width: 36, height: 36, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.055)", color: "#fff", fontSize: 28, lineHeight: 1, cursor: "pointer" },
-  brandBlock: { minWidth: 0, display: "flex", flexDirection: "column", gap: 2 },
-  eyebrow: { color: "#67e8f9", fontSize: 7, fontWeight: 900, letterSpacing: ".12em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  brandTitle: { fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  levelBadge: { minWidth: 58, height: 35, padding: "0 10px", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(103,232,249,.08)", border: "1px solid rgba(103,232,249,.22)" },
-  sceneViewport: { position: "absolute", inset: "58px 0 0", overflow: "hidden", perspective: 1200, touchAction: "pan-y", userSelect: "none" },
-  horizonGlow: { position: "absolute", left: "8%", right: "8%", top: "42%", height: 2, background: "linear-gradient(90deg,transparent,#22d3ee,transparent)", boxShadow: "0 0 55px 17px rgba(34,211,238,.12)", opacity: .5 },
-  stationShadow: { position: "absolute", width: "72vw", height: "30vw", left: "14vw", top: "46%", borderRadius: "50%", background: "rgba(0,0,0,.68)", filter: "blur(28px)", transform: "rotateX(66deg)" },
-  stationScene: { position: "absolute", left: "-8%", top: "5%", width: "116%", height: "84%", transformOrigin: "50% 48%", transition: "transform .3s cubic-bezier(.2,.72,.22,1)", transformStyle:"preserve-3d", willChange: "transform" },
-  stationDeck: { position: "absolute", left:"-32%", width:"164%", top:"4%", bottom:"-5%", transform: "rotateX(61deg) rotateZ(-1deg)", borderRadius: "48% 48% 42% 42% / 60% 60% 38% 38%", background: "radial-gradient(ellipse at 50% 44%,rgba(22,74,98,.96),rgba(4,19,40,.96) 43%,rgba(2,6,18,.12) 74%)", border: "1px solid rgba(103,232,249,.18)", boxShadow: "inset 0 0 70px rgba(34,211,238,.08),0 0 65px rgba(0,0,0,.58)" },
-  deckGrid: { position: "absolute", inset: "8%", borderRadius: "50%", opacity: .34, backgroundImage: "linear-gradient(rgba(103,232,249,.11) 1px,transparent 1px),linear-gradient(90deg,rgba(103,232,249,.11) 1px,transparent 1px)", backgroundSize: "24px 24px", maskImage: "radial-gradient(circle,#000 38%,transparent 74%)" },
-  deckRingOuter: { position: "absolute", inset: "4%", borderRadius: "50%", border: "2px solid rgba(103,232,249,.18)" },
-  deckRingMiddle: { position: "absolute", inset: "23%", borderRadius: "50%", border: "1px dashed rgba(167,139,250,.28)", animation: "stationOrbit 30s linear infinite" },
-  deckRingInner: { position: "absolute", inset: "38%", borderRadius: "50%", border: "2px solid rgba(103,232,249,.24)", boxShadow: "0 0 28px rgba(34,211,238,.12)" },
-  moduleButton: { position: "absolute", padding: 0, border: 0, background: "transparent", color: "#fff", cursor: "pointer", transition: "opacity .55s ease,transform .35s ease,filter .25s ease", animation: "stationFloat 4.2s ease-in-out infinite", transformOrigin: "50% 70%" },
-  moduleGroundGlow: { position: "absolute", left: "7%", right: "7%", bottom: "4%", height: "25%", borderRadius: "50%", opacity: .19, filter: "blur(8px)" },
-  moduleBase: { position: "absolute", left: "8%", right: "8%", bottom: "7%", height: "30%", transform: "skewX(-12deg)", borderRadius: "50% 50% 32% 32%", background: "linear-gradient(180deg,#1e3351,#07101f)", border: "1px solid", boxShadow: "0 10px 18px rgba(0,0,0,.55),inset 0 3px 5px rgba(255,255,255,.08)" },
-  moduleTower: { position: "absolute", width: "54%", height: "58%", left: "23%", top: "12%", borderRadius: "46% 46% 22% 22% / 35% 35% 18% 18%", border: "1px solid rgba(255,255,255,.13)", boxShadow: "inset -9px -12px 18px rgba(0,0,0,.45),0 10px 18px rgba(0,0,0,.38)", display: "grid", placeItems: "center" },
-  moduleDome: { position: "absolute", width: "68%", height: "42%", top: "-8%", left: "16%", borderRadius: "50% 50% 28% 28%", border: "1px solid", background: "linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,.025))" },
-  moduleIcon: { position: "relative", zIndex: 3, fontSize: 22, fontWeight: 900, textShadow: "0 0 14px currentColor" },
-  moduleLight: { position: "absolute", width: 6, height: 6, borderRadius: "50%", left: "48%", bottom: "17%", boxShadow: "0 0 14px currentColor", animation: "stationPulse 1.5s ease-in-out infinite" },
-  moduleLabel: { position: "absolute", left: "50%", bottom: -24, transform: "translateX(-50%)", minWidth: 86, padding: "5px 7px", borderRadius: 9, background: "rgba(2,8,20,.75)", border: "1px solid rgba(255,255,255,.1)", backdropFilter: "blur(7px)", display: "flex", flexDirection: "column", gap: 1, pointerEvents: "none" },
-  crystalSpire: { position: "absolute", width: 0, height: 0, top: "-25%", left: "37%", borderLeft: "12px solid transparent", borderRight: "12px solid transparent", borderBottom: "34px solid", filter: "drop-shadow(0 0 7px currentColor)" },
-  gateRing: { position: "absolute", width: "92%", height: "92%", left: "4%", top: "-34%", borderRadius: "50%", border: "4px solid", boxShadow: "0 0 16px currentColor,inset 0 0 12px currentColor", animation: "stationOrbit 9s linear infinite" },
-  coreOrbit: { position: "absolute", width: "145%", height: "62%", left: "-23%", top: "18%", borderRadius: "50%", border: "1px solid", transform: "rotate(-14deg)", animation: "stationOrbit 11s linear infinite" },
-  coreOrbitSecond: { position: "absolute", width: "128%", height: "72%", left: "-14%", top: "13%", borderRadius: "50%", border: "1px dashed", transform: "rotate(22deg)", animation: "stationOrbit 15s linear infinite reverse" },
-  sceneHint: { position: "absolute", left: "50%", bottom: 27, transform: "translateX(-50%)", width: "min(340px,calc(100% - 34px))", padding: "9px 12px", borderRadius: 14, background: "rgba(5,12,28,.72)", border: "1px solid rgba(103,232,249,.18)", backdropFilter: "blur(13px)", display: "flex", flexDirection: "column", gap: 3, textAlign: "center", fontSize: 9 },
-  leftStats: { position: "absolute", left: 10, top: 72, zIndex: 60, display: "flex", gap: 5 },
-  hudStat: { minWidth: 62, padding: "6px 8px", borderRadius: 10, background: "rgba(5,12,28,.72)", border: "1px solid rgba(255,255,255,.08)", backdropFilter: "blur(9px)", display: "flex", flexDirection: "column", gap: 1 },
-  utilityControls: { position: "absolute", right: 10, top: 72, zIndex: 60, display: "grid", gap: 5 },
-  utilityButton: { minWidth: 76, height: 28, borderRadius: 9, border: "1px solid rgba(167,139,250,.25)", background: "rgba(20,16,43,.74)", color: "#ddd6fe", fontSize: 8, fontWeight: 900, cursor: "pointer", backdropFilter: "blur(9px)" },
-  distantArchitecture: { position:"absolute",left:"-12%",right:"-12%",bottom:"11%",height:"32%",opacity:.26,background:"repeating-linear-gradient(118deg,transparent 0 8%,rgba(34,211,238,.11) 8.2% 8.5%,transparent 8.7% 16%)",filter:"blur(.4px)",transition:"transform .18s linear" },
-  energySpine: { position:"absolute",left:"3%",right:"3%",top:"53%",height:3,background:"repeating-linear-gradient(90deg,#22d3ee 0 24px,transparent 24px 42px)",backgroundSize:"120px 3px",boxShadow:"0 0 18px rgba(34,211,238,.58)",opacity:.66,animation:"energyFlow 2.5s linear infinite" },
-  sectorMonolith: { position:"absolute",left:"49%",top:"8%",width:2,height:"84%",background:"linear-gradient(transparent,rgba(103,232,249,.2),transparent)",boxShadow:"0 0 25px rgba(34,211,238,.16)" },
-  sectorCaption: { position:"absolute",left:18,right:18,bottom:72,zIndex:55,padding:"13px 15px",borderRadius:18,background:"linear-gradient(135deg,rgba(5,14,34,.82),rgba(22,12,52,.68))",border:"1px solid rgba(103,232,249,.2)",backdropFilter:"blur(18px)",boxShadow:"0 18px 45px rgba(0,0,0,.4)",display:"flex",flexDirection:"column",gap:3,pointerEvents:"none" },
-  viewDots: { position:"absolute",left:"50%",bottom:49,transform:"translateX(-50%)",zIndex:58,display:"flex",gap:8 },
-  viewDot: { width:7,height:7,borderRadius:999,border:0,padding:0,background:"rgba(255,255,255,.25)",cursor:"pointer",transition:"all .3s ease" },
-  viewDotActive: { width:27,background:"linear-gradient(90deg,#67e8f9,#a78bfa)",boxShadow:"0 0 12px rgba(103,232,249,.55)" },
-  swipeHint: { position:"absolute",left:"50%",bottom:20,transform:"translateX(-50%)",zIndex:55,display:"flex",alignItems:"center",gap:13,color:"rgba(226,232,240,.62)",fontSize:8,letterSpacing:".15em",pointerEvents:"none" },
-  deepNebula: { position:"absolute",left:"-20%",top:"8%",width:"180%",height:"68%",background:"radial-gradient(ellipse at 28% 35%,rgba(14,165,233,.15),transparent 25%),radial-gradient(ellipse at 67% 28%,rgba(168,85,247,.17),transparent 28%),radial-gradient(ellipse at 88% 62%,rgba(244,63,94,.1),transparent 23%)",filter:"blur(22px)",transition:"transform .12s linear",pointerEvents:"none" },
-  deckArcNorth: { position:"absolute",left:"6%",right:"6%",top:"8%",height:"23%",borderRadius:"50%",borderTop:"5px solid rgba(103,232,249,.22)",boxShadow:"0 -8px 30px rgba(34,211,238,.08)" },
-  deckArcSouth: { position:"absolute",left:"3%",right:"3%",bottom:"8%",height:"28%",borderRadius:"50%",borderBottom:"6px solid rgba(167,139,250,.2)",boxShadow:"0 10px 34px rgba(139,92,246,.09)" },
-  skyBridgeOne: { position:"absolute",left:"18%",top:"30%",width:"31%",height:3,transform:"rotate(-5deg)",background:"linear-gradient(90deg,transparent,#67e8f9,transparent)",boxShadow:"0 0 16px rgba(103,232,249,.55)",opacity:.6 },
-  skyBridgeTwo: { position:"absolute",left:"52%",top:"68%",width:"32%",height:3,transform:"rotate(4deg)",background:"linear-gradient(90deg,transparent,#c084fc,transparent)",boxShadow:"0 0 16px rgba(192,132,252,.48)",opacity:.55 },
-  panoramaTitle: { position:"absolute",left:16,bottom:68,zIndex:55,maxWidth:"72%",padding:"11px 13px",borderRadius:16,background:"linear-gradient(135deg,rgba(4,15,35,.72),rgba(18,12,45,.55))",border:"1px solid rgba(103,232,249,.17)",backdropFilter:"blur(18px)",display:"flex",flexDirection:"column",gap:2,pointerEvents:"none" },
-  panoramaRail: { position:"absolute",left:22,right:22,bottom:45,height:3,zIndex:57,borderRadius:99,background:"rgba(255,255,255,.12)",overflow:"visible" },
-  panoramaRailFill: { height:"100%",borderRadius:99,background:"linear-gradient(90deg,#22d3ee,#a78bfa,#fb7185)",boxShadow:"0 0 12px rgba(103,232,249,.45)" },
-  panoramaThumb: { position:"absolute",top:"50%",width:11,height:11,borderRadius:"50%",transform:"translate(-50%,-50%)",background:"#e0f2fe",boxShadow:"0 0 12px #67e8f9" },
-  lensVignette: { position:"absolute",inset:0,pointerEvents:"none",background:"radial-gradient(ellipse at center,transparent 45%,rgba(0,2,10,.2) 72%,rgba(0,2,10,.68) 112%)",zIndex:40 },
-  curvedHUDLeft: { position:"absolute",left:-34,top:"18%",width:76,height:"55%",borderRadius:"50%",borderRight:"1px solid rgba(103,232,249,.18)",boxShadow:"12px 0 35px rgba(34,211,238,.06)",pointerEvents:"none",zIndex:41 },
-  curvedHUDRight: { position:"absolute",right:-34,top:"18%",width:76,height:"55%",borderRadius:"50%",borderLeft:"1px solid rgba(167,139,250,.18)",boxShadow:"-12px 0 35px rgba(139,92,246,.06)",pointerEvents:"none",zIndex:41 },
-  panelBackdrop: { position: "absolute", inset: 0, zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "72px 10px 10px", boxSizing: "border-box", background: "linear-gradient(180deg,transparent 18%,rgba(0,3,12,.38) 47%,rgba(0,3,12,.9))" },
-  panel: { position: "relative", width: "min(620px,100%)", maxHeight: "64vh", overflowY: "auto", padding: "12px", boxSizing: "border-box", borderRadius: "22px 22px 16px 16px", background: "linear-gradient(180deg,rgba(12,25,49,.97),rgba(3,8,20,.985))", border: "1px solid", boxShadow: "0 -18px 60px rgba(0,0,0,.58)", animation: "stationPanelIn .38s ease-out both" },
-  panelAccent: { position: "absolute", left: "18%", right: "18%", top: 0, height: 2, boxShadow: "0 0 18px currentColor" },
-  panelHeader: { position: "sticky", top: -12, zIndex: 5, margin: "-12px -12px 10px", padding: "12px", display: "grid", gridTemplateColumns: "38px 1fr auto", alignItems: "center", gap: 9, background: "rgba(5,13,29,.94)", borderBottom: "1px solid rgba(255,255,255,.08)", backdropFilter: "blur(12px)" },
-  panelBack: { width: 34, height: 34, borderRadius: 11, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.05)", color: "#fff", fontSize: 27, cursor: "pointer" },
-  panelIdentity: { minWidth: 0, display: "flex", alignItems: "center", gap: 9 },
-  panelIcon: { width: 37, height: 37, borderRadius: 12, border: "1px solid", display: "grid", placeItems: "center", background: "rgba(255,255,255,.04)", fontSize: 18, flexShrink: 0 },
-  panelLevel: { padding: "7px 9px", borderRadius: 10, background: "rgba(255,255,255,.055)", color: "#cbd5e1", fontSize: 9, fontWeight: 900 },
-  scanLine: { position: "absolute", left: 14, right: 14, top: 60, height: 1, opacity: .35, boxShadow: "0 0 12px currentColor", animation: "stationScan 5s linear infinite", pointerEvents: "none" },
-  panelHero: { padding: 13, borderRadius: 16, background: "radial-gradient(circle at 100% 0%,rgba(34,211,238,.12),transparent 36%),rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.075)", marginBottom: 9 },
-  metricGrid: { display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6, marginBottom: 9 },
-  metric: { minHeight: 54, padding: 8, borderRadius: 13, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)", display: "flex", flexDirection: "column", justifyContent: "center", gap: 3 },
-  panelSection: { padding: 12, borderRadius: 16, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.07)", marginBottom: 9 },
-  row: { minHeight: 35, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, borderBottom: "1px solid rgba(255,255,255,.055)", color: "#94a3b8", fontSize: 11 },
-  launchButton: { width: "100%", minHeight: 48, border: 0, borderRadius: 15, background: "linear-gradient(135deg,#e11d48,#7c3aed,#0891b2)", color: "#fff", fontWeight: 950, letterSpacing: ".08em", cursor: "pointer", boxShadow: "0 0 25px rgba(244,63,94,.22)" },
-  packList: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 7 },
-  pack: { minHeight: 76, padding: 10, borderRadius: 14, background: "radial-gradient(circle at 0 0,rgba(52,211,153,.16),transparent 42%),rgba(255,255,255,.035)", border: "1px solid rgba(52,211,153,.16)", display: "flex", flexDirection: "column", gap: 4 },
-  marketList: { display: "grid", gap: 7 },
-  marketItem: { minHeight: 60, padding: 10, borderRadius: 14, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+const DETAIL_ROWS={
+ center:[["Station generation","G1"],["Unlocked modules","10 / 10"],["Premium status","Inactive"]],
+ device:[["Remote Scanner","Native"],["Macro Recorder","Native"],["Device Emulator","Preview"],["Raw frames","Native only"]],
+ native:[["Scenario Constructor","Soon"],["Pixel Comparator","Premium"],["Density above 1%","Premium"],["Project Mindmap","Native"]],
+ collab:[["Shared workspaces","Soon"],["Access control","Soon"],["Scenario co-edit","Soon"]],
+ market:[["Project Scripts","Soon"],["Emulator Mirrors","Soon"],["Premium Pixel Tools","Soon"]],
+ wallet:[["TON / Tonkeeper","Not connected"],["Solana / Phantom","Not connected"],["Swap preview","25 USDC → 24 250 UGT"]],
+ squad:[["Referral code","PGM-SCENE"],["Clan channel","Offline"],["Shared arena queue","Soon"]],
+ earn:[["Open Mini App","DONE"],["Watch rewarded ad","SOON"],["Start PvP arena","0 / 1"],["Pending ad UGT","0"]],
+ game:[["Starter legion","Core Guard"],["Sensor profile","1% pixels"],["Arena evolution","Enabled"]],
 };
+
+export default function AccountStationPrototype({open=true,onClose,onLaunchGame,telegramUser}) {
+  const canvasRef=useRef(null), frameRef=useRef(0), dragRef=useRef({down:false,x:0,yaw:34,v:0,t:0,moved:0});
+  const yawRef=useRef(34), targetYawRef=useRef(34), projectionRef=useRef({});
+  const [yaw,setYaw]=useState(34), [activeId,setActiveId]=useState(null), [labels,setLabels]=useState(true), [level,setLevel]=useState(1);
+  const active=useMemo(()=>MODULES.find(m=>m.id===activeId),[activeId]);
+  const name=telegramUser?.first_name||telegramUser?.username||"SceneAgent";
+
+  useEffect(()=>{ yawRef.current=yaw; },[yaw]);
+  useEffect(()=>{ if(!open)return; const canvas=canvasRef.current,ctx=canvas?.getContext("2d"); if(!ctx)return;
+    let alive=true,last=performance.now(); const stars=makeStars(190), dust=makeStars(70);
+    function resize(){const d=Math.min(devicePixelRatio||1,2),r=canvas.getBoundingClientRect();canvas.width=r.width*d;canvas.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);}
+    resize(); const ro=new ResizeObserver(resize);ro.observe(canvas);
+    function loop(now){if(!alive)return; const dt=Math.min(.034,(now-last)/1000);last=now;
+      const drag=dragRef.current;
+      if(!drag.down){const difference=targetYawRef.current-yawRef.current; yawRef.current+=difference*Math.min(1,dt*8); if(Math.abs(drag.v)>.01){yawRef.current+=drag.v*dt;drag.v*=Math.pow(.045,dt);} yawRef.current=clamp(yawRef.current,-88,88); targetYawRef.current=yawRef.current;}
+      drawScene(ctx,canvas.clientWidth,canvas.clientHeight,yawRef.current,now/1000,stars,dust,level,projectionRef.current);
+      frameRef.current=requestAnimationFrame(loop);
+    } loop(last); return()=>{alive=false;ro.disconnect();cancelAnimationFrame(frameRef.current);};
+  },[open,level]);
+
+  if(!open)return null;
+  function down(e){if(active)return; e.currentTarget.setPointerCapture?.(e.pointerId);dragRef.current={down:true,x:e.clientX,yaw:yawRef.current,v:0,t:performance.now(),moved:0};}
+  function move(e){const d=dragRef.current;if(!d.down||active)return;const dx=e.clientX-d.x; d.moved=Math.max(d.moved,Math.abs(dx)); const next=clamp(d.yaw-dx*.23,-88,88); const now=performance.now();d.v=(next-yawRef.current)/Math.max(.012,(now-d.t)/1000);d.t=now;yawRef.current=next;targetYawRef.current=next;setYaw(next);}
+  function up(){const d=dragRef.current;if(!d.down)return;d.down=false;setYaw(yawRef.current);}
+  function openModule(module){if(dragRef.current.moved>8)return;targetYawRef.current=module.angle;setYaw(module.angle);setTimeout(()=>setActiveId(module.id),220);}
+
+  return <main style={S.root}>
+    <style>{CSS}</style>
+    <canvas ref={canvasRef} style={S.canvas}/>
+    <div style={S.filmGrain}/><div style={S.cinemaMask}/>
+    <header style={S.header}>
+      <button style={S.iconButton} onClick={onClose}>‹</button>
+      <div style={S.identity}><small>PIXELGRID // ORBITAL ACCOUNT</small><b>{name}</b></div>
+      <button style={S.level} onClick={()=>setLevel(v=>v===5?1:v+1)}><small>GENERATION</small><b>G{level}</b></button>
+    </header>
+    <section style={S.viewport} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      {MODULES.map(module=>{
+        const p=projectDOM(module,yaw); if(!p.visible)return null;
+        return <button key={module.id} className="hotspot" onClick={()=>openModule(module)} style={{...S.hotspot,left:`${p.x}%`,top:`${p.y}%`,opacity:p.alpha,transform:`translate(-50%,-50%) scale(${p.scale})`,zIndex:p.z}}>
+          <span style={{...S.reticle,borderColor:`rgba(${module.color.join(",")},.58)`,boxShadow:`0 0 22px rgba(${module.color.join(",")},.3)`}}><i>{module.glyph}</i></span>
+          {labels&&<span style={S.tag}><b>{module.name}</b><small>{module.sub}</small></span>}
+        </button>;
+      })}
+    </section>
+    <div style={S.stats}><Data label="UGT" value="0"/><Data label="ALLOCATION" value="0"/><Data label="EMULATORS" value="1 / 1"/></div>
+    <div style={S.tools}><button onClick={()=>setLabels(v=>!v)}>{labels?"HIDE ID":"SHOW ID"}</button></div>
+    {!active&&<>
+      <div style={S.title}><small>{yaw<-30?"NATIVE HEMISPHERE":yaw>35?"ARENA HEMISPHERE":"ACCOUNT NEXUS"}</small><b>ORBITAL HABITAT</b><span>Проведи пальцем. Камера вращается вокруг станции.</span></div>
+      <div style={S.compass}><span>NATIVE</span><div><i style={{left:`${((yaw+88)/176)*100}%`}}/></div><span>ARENA</span></div>
+    </>}
+    {active&&<Panel module={active} name={name} level={level} close={()=>setActiveId(null)} launch={onLaunchGame}/>} 
+  </main>;
+}
+
+function Panel({module,name,level,close,launch}){
+ const content={
+ center:["ACCOUNT CITADEL",`Постоянный профиль ${name}, развитие станции и статус аккаунта.`],
+ game:["MACRO SWARM ARENA","Вылет в PvP с выбранным Core, легионами и игровыми эмуляторами."],
+ device:["EMULATOR HANGAR","LDPlayer, PC, Android, Remote Scanner и multi-device control."],
+ native:["RESEARCH LAB","Эталоны, плотность пикселей, сравнитель и Scenario Constructor."],
+ collab:["COLLABORATION HUB","Общие проекты, права доступа и совместное редактирование."],
+ market:["MARKET DOCK","Сценарии, зеркала, проекты и premium-инструменты."],
+ allocation:["ALLOCATION REACTOR","Аллокация, locked UGT и стартовая энергия PvP."],
+ wallet:["UGT VAULT","Кошельки, backed UGT, promo UGT и обмен."],
+ squad:["SQUAD ARRAY","Реферальная сеть, игровые группы и будущие кланы."],
+ earn:["MISSION BEACON","Задания, rewarded ads и получение базовой аллокации."],
+ }[module.id];
+ return <div style={S.panelShade} onPointerDown={e=>{if(e.target===e.currentTarget)close();}}><section style={{...S.panel,borderColor:`rgba(${module.color.join(",")},.35)`}}>
+  <header style={S.panelHead}><button style={S.iconButton} onClick={close}>‹</button><span style={{...S.panelGlyph,color:`rgb(${module.color.join(",")})`}}>{module.glyph}</span><div><small>{module.sub}</small><b>{module.name}</b></div><em>G{level}</em></header>
+  <div style={S.hero}><small>ACTIVE MODULE</small><h2>{content[0]}</h2><p>{content[1]}</p></div>
+  {module.id==="allocation" ? <>
+    <Metrics id={module.id}/>
+    <div style={S.packGrid}>{PACKS.map(p=><div key={p[0]} style={S.pack}><b>{p[0]}</b><span>{p[1]}</span><small>Bonus · {p[2]}</small></div>)}</div>
+  </> : <><Metrics id={module.id}/><DetailRows id={module.id}/></>}
+  {module.id==="game"&&<button style={S.launch} onClick={launch}>ENTER PVP RIFT</button>}
+ </section></div>;
+}
+function DetailRows({id}){const rows=DETAIL_ROWS[id]||[];if(!rows.length)return null;return <section style={S.detail}>{rows.map(r=><div key={r[0]}><span>{r[0]}</span><b>{r[1]}</b></div>)}</section>}
+function Metrics({id}){const rows={center:[["PROFILE","LV 1"],["PVP GAMES","0"],["STATUS","FREE"],["RATING","—"]],device:[["LDPLAYER","0"],["PC","0"],["ANDROID","0"],["SLOTS","1"]],native:[["PIXELS","1%"],["ETALONS","0"],["PROJECTS","0"],["PREMIUM","OFF"]],collab:[["ROOMS","0"],["PROJECTS","0"],["MEMBERS","0"],["LINKS","0"]],market:[["PROJECTS","0"],["RENTALS","0"],["TOOLS","0"],["STATUS","SOON"]],wallet:[["BACKED","0"],["PROMO","0"],["LOCKED","0"],["AVAILABLE","0"]],squad:[["SQUAD","0"],["INVITED","0"],["ACTIVITY","0"],["REWARD","0"]],earn:[["MISSIONS","1/4"],["ADS","0"],["PROMO","0"],["STREAK","1"]],allocation:[["ACQUIRED","0 UGT"],["LOCKED","0 UGT"],["ADS","0 UGT"],["ROUND","R1"]],game:[["CORE","G1"],["LEGIONS","1"],["EMULATORS","1"],["SERVER","1–5"]]}[id]||[];return <div style={S.metrics}>{rows.map(r=><div key={r[0]}><small>{r[0]}</small><b>{r[1]}</b></div>)}</div>}
+function Data({label,value}){return <div><small>{label}</small><b>{value}</b></div>}
+function projectDOM(m,yaw){const d=(m.angle-yaw)*Math.PI/180,f=Math.cos(d),s=Math.sin(d);return{visible:f>.18,x:50+s*44,y:48+m.y*36+(1-f)*9,scale:.55+f*.68,alpha:clamp(f*1.6,.18,1),z:Math.round(f*100+m.y*10)}}
+function makeStars(n){let seed=918273;return Array.from({length:n},()=>{seed=(seed*1664525+1013904223)>>>0;const a=seed/4294967296;seed=(seed*1664525+1013904223)>>>0;const b=seed/4294967296;seed=(seed*1664525+1013904223)>>>0;const c=seed/4294967296;return{x:a,y:b,z:.2+c*.8,r:.35+c*1.25}})}
+function drawScene(ctx,w,h,yaw,t,stars,dust,level,out){ctx.clearRect(0,0,w,h);const g=ctx.createRadialGradient(w*.48,h*.42,0,w*.48,h*.42,Math.max(w,h));g.addColorStop(0,"#10304b");g.addColorStop(.28,"#090c2c");g.addColorStop(.62,"#030615");g.addColorStop(1,"#010208");ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+ drawNebula(ctx,w,h,yaw,t); drawStars(ctx,w,h,yaw,t,stars); drawPlanet(ctx,w,h,yaw); drawHabitat(ctx,w,h,yaw,t,level); drawParticles(ctx,w,h,yaw,t,dust);
+}
+function drawNebula(c,w,h,yaw,t){const shift=yaw/88*w*.18;for(const n of [[.18,.29,190,"52,211,153"],[.66,.23,220,"124,58,237"],[.88,.58,180,"244,63,94"]]){const x=w*n[0]-shift,y=h*n[1]+Math.sin(t*.08+n[0]*6)*12,r=Math.min(w,h)*n[2]/420,g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,`rgba(${n[3]},.16)`);g.addColorStop(1,`rgba(${n[3]},0)`);c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2)}}
+function drawStars(c,w,h,yaw,t,arr){for(const s of arr){let x=((s.x*w*1.7-yaw*s.z*2.2)%(w*1.7)+w*1.7)%(w*1.7)-w*.35,y=s.y*h;c.globalAlpha=.25+s.z*.65;c.fillStyle=s.z>.75?"#b9f5ff":"#fff";c.beginPath();c.arc(x,y,s.r*(.7+s.z),0,7);c.fill()}c.globalAlpha=1}
+function drawPlanet(c,w,h,yaw){const x=w*.14-yaw*w*.003,y=h*.18,r=Math.min(w,h)*.12,g=c.createRadialGradient(x-r*.35,y-r*.45,r*.04,x,y,r);g.addColorStop(0,"rgba(184,245,255,.65)");g.addColorStop(.22,"rgba(31,83,125,.5)");g.addColorStop(.72,"rgba(9,22,50,.22)");g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.beginPath();c.arc(x,y,r,0,7);c.fill()}
+function drawHabitat(c,w,h,yaw,t,level){const cx=w*.5,cy=h*.54,R=Math.min(w,h)*.62,yr=Math.min(w,h)*.24;c.save();c.translate(cx,cy);c.rotate(-yaw*.0007);for(let k=0;k<5;k++){c.beginPath();c.ellipse(0,k*3,R*(1-k*.055),yr*(1-k*.05),0,Math.PI,Math.PI*2);c.strokeStyle=`rgba(${70+k*22},${170+k*10},220,${.1+k*.025})`;c.lineWidth=1.2+k*.3;c.stroke()}c.beginPath();c.ellipse(0,0,R,yr,0,0,Math.PI*2);c.strokeStyle="rgba(103,232,249,.28)";c.lineWidth=2;c.stroke();for(let a=0;a<20;a++){const q=a/20*Math.PI*2;c.beginPath();c.moveTo(Math.cos(q)*R*.18,Math.sin(q)*yr*.18);c.lineTo(Math.cos(q)*R*.98,Math.sin(q)*yr*.98);c.strokeStyle="rgba(103,232,249,.055)";c.stroke()}c.restore();
+ for(const m of MODULES){const p=projectDOM(m,yaw);if(!p.visible)continue;drawModule(c,w*p.x/100,h*p.y/100,28*p.scale*(m.hero?1.25:1),m,t,level,p.alpha)} }
+function drawModule(c,x,y,r,m,t,level,a){const col=m.color.join(",");c.save();c.globalAlpha=a;c.shadowColor=`rgba(${col},.8)`;c.shadowBlur=22;c.fillStyle=`rgba(${col},.09)`;c.beginPath();c.ellipse(x,y+r*.78,r*1.15,r*.32,0,0,7);c.fill();c.shadowBlur=8;c.fillStyle="#071426";c.strokeStyle=`rgba(${col},.72)`;c.lineWidth=1.3;c.beginPath();c.moveTo(x-r*.72,y+r*.45);c.lineTo(x-r*.48,y-r*.12);c.quadraticCurveTo(x,y-r*.82,x+r*.48,y-r*.12);c.lineTo(x+r*.72,y+r*.45);c.quadraticCurveTo(x,y+r*.77,x-r*.72,y+r*.45);c.fill();c.stroke();const g=c.createRadialGradient(x-r*.2,y-r*.28,1,x,y,r*.85);g.addColorStop(0,`rgba(${col},.88)`);g.addColorStop(.45,`rgba(${col},.24)`);g.addColorStop(1,"rgba(2,7,18,.95)");c.fillStyle=g;c.beginPath();c.ellipse(x,y-r*.05,r*.55,r*.43,0,0,7);c.fill();c.stroke();for(let i=0;i<level;i++){c.strokeStyle=`rgba(${col},${.18+i*.05})`;c.beginPath();c.ellipse(x,y+r*(.58+i*.08),r*(.78+i*.12),r*(.18+i*.025),0,0,7);c.stroke()}if(m.id==="allocation"){c.fillStyle=`rgba(${col},.72)`;c.beginPath();c.moveTo(x,y-r*1.25);c.lineTo(x+r*.34,y-r*.28);c.lineTo(x,y+r*.16);c.lineTo(x-r*.34,y-r*.28);c.closePath();c.fill();c.stroke()}
+if(m.id==="device"){for(let q=-1;q<=1;q++){c.strokeStyle=`rgba(${col},.58)`;c.strokeRect(x+q*r*.43-r*.18,y-r*.72,r*.36,r*.47)}}
+if(m.id==="native"){c.strokeStyle=`rgba(${col},.7)`;for(let q=0;q<3;q++){c.beginPath();c.arc(x,y-r*.12,r*(.34+q*.18),Math.PI*1.08,Math.PI*1.92);c.stroke()}}
+if(m.id==="market"){c.strokeStyle=`rgba(${col},.68)`;c.beginPath();c.moveTo(x-r*.86,y+r*.1);c.lineTo(x-r*.35,y-r*.65);c.lineTo(x+r*.35,y-r*.65);c.lineTo(x+r*.86,y+r*.1);c.stroke()}
+if(m.id==="collab"||m.id==="squad"){for(let q=0;q<3;q++){const a=q*Math.PI*2/3;c.fillStyle=`rgba(${col},.55)`;c.beginPath();c.arc(x+Math.cos(a)*r*.62,y-r*.14+Math.sin(a)*r*.42,r*.13,0,7);c.fill()}}
+if(m.id==="wallet"){c.strokeStyle=`rgba(${col},.72)`;c.lineWidth=2;c.beginPath();c.arc(x,y-r*.18,r*.6,Math.PI*.15,Math.PI*1.35);c.stroke();c.beginPath();c.arc(x,y-r*.18,r*.6,Math.PI*1.15,Math.PI*2.35);c.stroke()}
+if(m.id==="earn"){c.fillStyle=`rgba(${col},.72)`;for(let q=0;q<4;q++){c.save();c.translate(x,y-r*.25);c.rotate(q*Math.PI/2);c.fillRect(-r*.07,-r*.78,r*.14,r*.42);c.restore()}}
+if(m.kind==="gate"){c.lineWidth=4;c.strokeStyle=`rgba(${col},.85)`;c.beginPath();c.arc(x,y-r*.2,r*.92,0,7);c.stroke();c.lineWidth=1;c.save();c.translate(x,y-r*.2);c.rotate(t*.4);for(let i=0;i<6;i++){c.rotate(Math.PI/3);c.beginPath();c.moveTo(r*.72,0);c.lineTo(r*.97,0);c.stroke()}c.restore()}
+c.restore()}
+function drawParticles(c,w,h,yaw,t,arr){for(const p of arr){const x=((p.x*w*1.4-yaw*p.z*3+t*4*p.z)%(w*1.4)+w*1.4)%(w*1.4)-w*.2,y=p.y*h;c.fillStyle=`rgba(103,232,249,${.04+p.z*.12})`;c.fillRect(x,y,p.r*2,p.r*.5)}}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+const CSS=`@keyframes breathe{50%{opacity:.65;transform:scale(1.06)}}@keyframes panelIn{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:none}}@keyframes hudSweep{from{transform:translateX(-140%) skewX(-18deg)}to{transform:translateX(340%) skewX(-18deg)}}.hotspot{transition:left .08s linear,top .08s linear,opacity .12s,transform .12s;touch-action:none}.hotspot:active .reticle{transform:scale(.88)}.reticle{transition:.2s}.reticle:before{content:"";position:absolute;inset:5px;border-top:1px solid currentColor;border-bottom:1px solid currentColor;border-radius:50%;opacity:.32}.reticle:after{content:"";position:absolute;inset:-9px;border:1px dashed currentColor;border-radius:50%;opacity:.38;animation:breathe 2.2s ease-in-out infinite}.identity small,.level small,.stats small,.title small,.hero small,.metrics small,.pack small,.panelHead small{font-size:7px;letter-spacing:.1em;color:rgba(203,213,225,.58);font-weight:900}.identity b{font-size:14px}.level b{font-size:13px}.stats>div{min-width:59px;padding:6px 8px;border-radius:11px;background:rgba(3,12,28,.64);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(14px);display:flex;flex-direction:column}.stats b{font-size:12px}.tools button{height:30px;padding:0 10px;border-radius:10px;border:1px solid rgba(103,232,249,.16);background:rgba(3,12,28,.62);color:#dffcff;font-size:8px;font-weight:900}.tag b{font-size:9px}.tag small{font-size:7px;color:rgba(226,232,240,.63)}.reticle i{font-style:normal;font-size:20px;text-shadow:0 0 15px currentColor}.title b{font-size:16px;letter-spacing:.06em}.title span{font-size:9px;color:rgba(226,232,240,.58)}.compass>div{position:relative;height:3px;border-radius:99px;background:rgba(255,255,255,.12)}.compass>div:before{content:"";position:absolute;inset:0;border-radius:99px;background:linear-gradient(90deg,#22d3ee,#a78bfa,#fb7185);opacity:.58}.compass i{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;transform:translate(-50%,-50%);background:#e0f2fe;box-shadow:0 0 13px #67e8f9}.panelHead>div{display:flex;flex-direction:column}.panelHead em{font-style:normal;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.05);font-size:9px}.hero h2{margin:5px 0 6px;font-size:20px}.hero p{margin:0;color:rgba(226,232,240,.63);font-size:12px;line-height:1.5}.metrics>div{min-height:52px;padding:8px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;justify-content:center;gap:3px}.metrics b{font-size:11px}.pack b{font-size:11px}.pack span{font-size:10px;color:#d1fae5}.detail>div{min-height:35px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.055);font-size:10px}.detail span{color:#94a3b8}.detail b{font-size:10px}`;
+const S={root:{position:"fixed",inset:0,zIndex:180,overflow:"hidden",background:"#010208",color:"#effcff",fontFamily:"Inter,system-ui,sans-serif"},canvas:{position:"absolute",inset:0,width:"100%",height:"100%",touchAction:"none"},filmGrain:{position:"absolute",inset:-60,pointerEvents:"none",opacity:.055,backgroundImage:"url(data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E)"},cinemaMask:{position:"absolute",inset:0,pointerEvents:"none",background:"radial-gradient(ellipse at 50% 48%,transparent 43%,rgba(0,1,7,.24) 76%,rgba(0,1,7,.72) 120%)"},header:{position:"absolute",zIndex:70,top:10,left:10,right:10,height:54,display:"grid",gridTemplateColumns:"42px 1fr auto",alignItems:"center",gap:10,padding:"0 10px",borderRadius:18,background:"linear-gradient(135deg,rgba(3,12,28,.68),rgba(11,8,33,.55))",border:"1px solid rgba(137,230,255,.16)",backdropFilter:"blur(22px)"},iconButton:{width:36,height:36,borderRadius:12,border:"1px solid rgba(255,255,255,.14)",background:"rgba(255,255,255,.055)",color:"white",fontSize:27,cursor:"pointer"},identity:{minWidth:0,display:"flex",flexDirection:"column"},level:{minWidth:64,height:38,borderRadius:12,border:"1px solid rgba(103,232,249,.2)",background:"rgba(9,38,55,.42)",color:"#dffcff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"},viewport:{position:"absolute",inset:"64px 0 0",touchAction:"none",userSelect:"none"},hotspot:{position:"absolute",width:82,height:82,padding:0,border:0,background:"transparent",color:"white",cursor:"pointer",transformOrigin:"center"},reticle:{position:"absolute",left:"50%",top:"45%",width:45,height:45,transform:"translate(-50%,-50%)",border:"1px solid",borderRadius:"50%",display:"grid",placeItems:"center",background:"rgba(2,8,22,.42)",backdropFilter:"blur(5px)"},tag:{position:"absolute",left:"50%",top:"71%",transform:"translateX(-50%)",minWidth:96,padding:"6px 9px",borderRadius:10,background:"rgba(2,7,18,.72)",border:"1px solid rgba(255,255,255,.1)",backdropFilter:"blur(10px)",display:"flex",flexDirection:"column",pointerEvents:"none"},stats:{position:"absolute",zIndex:75,top:73,left:10,display:"flex",gap:5},tools:{position:"absolute",zIndex:75,top:73,right:10},title:{position:"absolute",zIndex:60,left:15,bottom:67,maxWidth:"68%",padding:"11px 13px",borderRadius:16,background:"linear-gradient(135deg,rgba(3,14,33,.72),rgba(17,9,43,.55))",border:"1px solid rgba(103,232,249,.16)",backdropFilter:"blur(18px)",display:"flex",flexDirection:"column"},compass:{position:"absolute",zIndex:60,left:20,right:20,bottom:28,display:"grid",gridTemplateColumns:"auto 1fr auto",gap:9,alignItems:"center",fontSize:7,color:"rgba(226,232,240,.5)"},panelShade:{position:"absolute",inset:0,zIndex:100,display:"flex",alignItems:"flex-end",padding:10,background:"linear-gradient(180deg,transparent 12%,rgba(0,2,10,.32) 45%,rgba(0,2,10,.96))"},panel:{width:"100%",maxHeight:"68vh",overflowY:"auto",padding:12,borderRadius:"24px 24px 16px 16px",background:"linear-gradient(180deg,rgba(8,24,45,.97),rgba(2,7,18,.99))",border:"1px solid",boxShadow:"0 -26px 80px rgba(0,0,0,.75)",animation:"panelIn .38s ease-out"},panelHead:{display:"grid",gridTemplateColumns:"38px 40px 1fr auto",gap:8,alignItems:"center",marginBottom:10},panelGlyph:{width:38,height:38,borderRadius:12,display:"grid",placeItems:"center",background:"rgba(255,255,255,.05)",fontSize:20},hero:{padding:14,borderRadius:17,background:"radial-gradient(circle at 100% 0,rgba(103,232,249,.15),transparent 38%),rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.075)",marginBottom:9},metrics:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6},packGrid:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:7},pack:{padding:11,borderRadius:14,background:"rgba(52,211,153,.06)",border:"1px solid rgba(52,211,153,.17)",display:"flex",flexDirection:"column"},detail:{marginTop:9,padding:"4px 12px",borderRadius:15,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)"},launch:{width:"100%",height:50,marginTop:10,border:0,borderRadius:15,background:"linear-gradient(135deg,#e11d48,#7c3aed,#0891b2)",color:"white",fontWeight:950,letterSpacing:".08em",boxShadow:"0 0 34px rgba(225,29,72,.22)"}};
