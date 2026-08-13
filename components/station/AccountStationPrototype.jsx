@@ -97,6 +97,17 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
   const accountName = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
 
   useEffect(() => {
+    if (customElements.get("model-viewer")) return;
+    const existing = document.querySelector('script[data-model-viewer="true"]');
+    if (existing) return;
+    const script = document.createElement("script");
+    script.type = "module";
+    script.src = "https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js";
+    script.dataset.modelViewer = "true";
+    document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
     if (!open || !viewportRef.current) return;
     const node = viewportRef.current;
     const update = () => {
@@ -154,23 +165,29 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       <section
         ref={viewportRef}
         style={styles.viewport}
-        onPointerDown={beginCamera}
-        onPointerMove={moveCamera}
-        onPointerUp={endCamera}
-        onPointerCancel={endCamera}
       >
         <div
           style={{
             ...styles.world,
-            width: `${metrics.worldWidth}px`,
-            transform: `translate3d(${-panX}px,0,0)`,
+            width: "100%",
+            transform: "none",
           }}
         >
-          <img
-            src="/account-station-panorama.png"
-            alt=""
-            draggable="false"
-            style={styles.panoramaImage}
+          <model-viewer
+            src="/orbital_station_edge_view.glb"
+            poster="/account-station-panorama.png"
+            alt="Интерактивная 3D-модель орбитальной станции"
+            camera-controls
+            disable-pan
+            interaction-prompt="none"
+            loading="eager"
+            reveal="auto"
+            camera-orbit="32deg 63deg 27m"
+            min-camera-orbit="auto 32deg 18m"
+            max-camera-orbit="auto 82deg 42m"
+            shadow-intensity="0.25"
+            exposure="0.85"
+            style={styles.stationModel}
           />
 
           {MODULES.map((module) => (
@@ -213,11 +230,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraRail}>
-          <span>TOOLS</span>
-          <div><i style={{ left: `${progress * 100}%` }} /></div>
-          <span>ARENA</span>
-        </div>
+        <div style={styles.cameraHint}>ПОВОРАЧИВАЙТЕ СТАНЦИЮ ПАЛЬЦЕМ</div>
       )}
 
       {active && (
@@ -318,14 +331,14 @@ const styles = {
   root:{ position:"fixed", inset:0, zIndex:180, overflow:"hidden", background:"#010207", color:"#f2fbff", fontFamily:"Inter,system-ui,-apple-system,'Segoe UI',sans-serif" },
   viewport:{ position:"absolute", inset:0, overflow:"hidden", touchAction:"none", userSelect:"none", background:"#010207" },
   world:{ position:"absolute", top:0, bottom:0, left:0, height:"100%", transformOrigin:"left center", transition:"transform .08s linear", willChange:"transform" },
-  panoramaImage:{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill", pointerEvents:"none", userSelect:"none" },
+  stationModel:{ position:"absolute", inset:0, width:"100%", height:"100%", background:"radial-gradient(circle at 48% 42%,#07152b 0,#020713 42%,#010207 76%)", touchAction:"none" },
   sector:{ position:"absolute", width:68, height:68, transform:"translate(-50%,-50%)", padding:0, border:"1px solid", borderRadius:"50%", background:"rgba(2,8,18,.08)", color:"white", cursor:"pointer" },
   header:{ position:"absolute", zIndex:70, top:"max(10px, env(safe-area-inset-top))", left:10, right:10, height:54, display:"grid", gridTemplateColumns:"42px 1fr auto", gap:10, alignItems:"center", padding:"0 10px", borderRadius:18, background:"linear-gradient(135deg,rgba(2,10,23,.78),rgba(11,8,30,.64))", border:"1px solid rgba(175,232,255,.16)", backdropFilter:"blur(22px)", boxShadow:"0 18px 55px rgba(0,0,0,.3)" },
   backButton:{ width:36, height:36, padding:0, borderRadius:12, border:"1px solid rgba(255,255,255,.14)", background:"rgba(255,255,255,.055)", color:"white", fontSize:27, cursor:"pointer" },
   identity:{ minWidth:0, display:"flex", flexDirection:"column" },
   generation:{ minWidth:66, height:39, borderRadius:12, border:"1px solid rgba(103,232,249,.2)", background:"rgba(4,31,46,.5)", color:"#e0fbff", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer" },
   stats:{ position:"absolute", zIndex:75, top:"calc(max(10px, env(safe-area-inset-top)) + 64px)", left:10, display:"flex", gap:5 },
-  cameraRail:{ position:"absolute", zIndex:60, left:20, right:20, bottom:"max(18px, env(safe-area-inset-bottom))", display:"grid", gridTemplateColumns:"auto 1fr auto", gap:9, alignItems:"center", color:"rgba(226,232,240,.58)", fontSize:7 },
+  cameraHint:{ position:"absolute", zIndex:60, left:"50%", bottom:"max(18px, env(safe-area-inset-bottom))", transform:"translateX(-50%)", padding:"7px 11px", borderRadius:10, background:"rgba(2,10,23,.62)", border:"1px solid rgba(103,232,249,.13)", color:"rgba(226,232,240,.58)", fontSize:7, letterSpacing:".1em", pointerEvents:"none" },
   panelShade:{ position:"absolute", inset:0, zIndex:100, display:"flex", alignItems:"flex-end", padding:10, background:"linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))" },
   panel:{ width:"100%", maxHeight:"68vh", overflowY:"auto", padding:12, borderRadius:"24px 24px 16px 16px", background:"linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))", border:"1px solid", boxShadow:"0 -28px 90px rgba(0,0,0,.8)", animation:"panelOpen .38s ease-out" },
   panelHeader:{ display:"grid", gridTemplateColumns:"38px 40px 1fr auto", gap:8, alignItems:"center", marginBottom:10 },
