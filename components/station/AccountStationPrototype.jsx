@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const MODULES = [
   { id: "device", title: "DEVICE", subtitle: "Emulator Hangar", x: 15.2, y: 56.5, color: "#5ee7ff", icon: "▣", shape: "hangar" },
@@ -107,9 +107,15 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       setPanX((value) => clamp(value, 0, Math.max(0, worldWidth - viewportWidth)));
     };
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => observer.disconnect();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(update);
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, [open]);
 
   if (!open) return null;
