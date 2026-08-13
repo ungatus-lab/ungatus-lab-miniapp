@@ -182,11 +182,15 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             interaction-prompt="none"
             loading="eager"
             reveal="auto"
-            camera-orbit="32deg 63deg 27m"
-            min-camera-orbit="auto 32deg 18m"
-            max-camera-orbit="auto 82deg 42m"
-            shadow-intensity="0.25"
-            exposure="0.85"
+            camera-orbit="28deg 42deg 34m"
+            min-camera-orbit="auto 24deg 28m"
+            max-camera-orbit="auto 68deg 44m"
+            camera-target="0m 1.2m 0m"
+            field-of-view="30deg"
+            min-field-of-view="24deg"
+            max-field-of-view="38deg"
+            shadow-intensity="0.38"
+            exposure="0.72"
             style={styles.stationModel}
           />
 
@@ -230,7 +234,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПОВОРАЧИВАЙТЕ СТАНЦИЮ ПАЛЬЦЕМ</div>
+        <div style={styles.cameraHint}>ВЕДИТЕ ВЛЕВО И ВПРАВО ДЛЯ ОБЗОРА</div>
       )}
 
       {active && (
@@ -322,7 +326,7 @@ const css = `
 .sector-citadel .sector-building { transform:scale(1.18); }
 .identity small,.generation small,.stats small,.panelHeader small,.hero small,.metricGrid small,.pack small{font-size:7px;letter-spacing:.1em;color:rgba(203,213,225,.62);font-weight:900}
 .identity strong{font-size:14px}.generation b{font-size:13px}
-.stats>div{min-width:59px;padding:6px 8px;border-radius:11px;background:rgba(2,10,23,.72);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(15px);display:flex;flex-direction:column}.stats b{font-size:12px}
+.stats>div{min-width:0;padding:6px 8px;border-radius:11px;background:rgba(2,10,23,.72);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(15px);display:flex;flex-direction:column}.stats b{font-size:12px}
 .cameraRail>div{height:3px;position:relative;border-radius:99px;background:linear-gradient(90deg,rgba(34,211,238,.5),rgba(167,139,250,.6),rgba(251,113,133,.5))}.cameraRail i{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;transform:translate(-50%,-50%);background:#e0f2fe;box-shadow:0 0 14px #67e8f9}
 .panelHeader>div{display:flex;flex-direction:column}.panelHeader em{font-style:normal;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.05);font-size:9px}.hero h2{margin:5px 0 6px;font-size:20px}.hero p{margin:0;color:rgba(226,232,240,.66);font-size:12px;line-height:1.5}.metricGrid>div{min-height:52px;padding:8px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;justify-content:center}.metricGrid b{font-size:11px}.detailRows>div{min-height:35px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.055);font-size:10px}.detailRows span{color:#94a3b8}.pack b{font-size:11px}.pack span{font-size:10px;color:#d1fae5}
 `;
@@ -337,7 +341,7 @@ const styles = {
   backButton:{ width:36, height:36, padding:0, borderRadius:12, border:"1px solid rgba(255,255,255,.14)", background:"rgba(255,255,255,.055)", color:"white", fontSize:27, cursor:"pointer" },
   identity:{ minWidth:0, display:"flex", flexDirection:"column" },
   generation:{ minWidth:66, height:39, borderRadius:12, border:"1px solid rgba(103,232,249,.2)", background:"rgba(4,31,46,.5)", color:"#e0fbff", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer" },
-  stats:{ position:"absolute", zIndex:75, top:"calc(max(10px, env(safe-area-inset-top)) + 64px)", left:10, display:"flex", gap:5 },
+  stats:{ position:"absolute", zIndex:75, top:"calc(max(10px, env(safe-area-inset-top)) + 64px)", left:10, right:10, display:"grid", gridTemplateColumns:"repeat(3,minmax(0,1fr))", gap:5 },
   cameraHint:{ position:"absolute", zIndex:60, left:"50%", bottom:"max(18px, env(safe-area-inset-bottom))", transform:"translateX(-50%)", padding:"7px 11px", borderRadius:10, background:"rgba(2,10,23,.62)", border:"1px solid rgba(103,232,249,.13)", color:"rgba(226,232,240,.58)", fontSize:7, letterSpacing:".1em", pointerEvents:"none" },
   panelShade:{ position:"absolute", inset:0, zIndex:100, display:"flex", alignItems:"flex-end", padding:10, background:"linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))" },
   panel:{ width:"100%", maxHeight:"68vh", overflowY:"auto", padding:12, borderRadius:"24px 24px 16px 16px", background:"linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))", border:"1px solid", boxShadow:"0 -28px 90px rgba(0,0,0,.8)", animation:"panelOpen .38s ease-out" },
