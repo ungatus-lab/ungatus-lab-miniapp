@@ -177,17 +177,13 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             src="/orbital_station_edge_view.glb"
             poster="/account-station-panorama.png"
             alt="Интерактивная 3D-модель орбитальной станции"
-            camera-controls
-            disable-pan
-            disable-zoom
             interaction-prompt="none"
             loading="eager"
             reveal="auto"
-            camera-orbit="18deg 90deg 27m"
-            min-camera-orbit="auto 90deg 27m"
-            max-camera-orbit="auto 90deg 27m"
-            camera-target="0m 1.2m 0m"
-            field-of-view="35deg"
+            orientation="-90deg 0deg 0deg"
+            camera-orbit="-18deg 62deg 27m"
+            camera-target="0m 1.7m 0m"
+            field-of-view="32deg"
             shadow-intensity="0.25"
             exposure="0.85"
             style={styles.stationModel}
@@ -233,7 +229,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>КРУТИТЕ СТАНЦИЮ ВЛЕВО И ВПРАВО</div>
+        <div style={styles.cameraHint}>СНАЧАЛА ПРОВЕРЯЕМ ПРАВИЛЬНОЕ ПОЛОЖЕНИЕ</div>
       )}
 
       {active && (
