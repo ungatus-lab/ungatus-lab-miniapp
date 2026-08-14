@@ -204,7 +204,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПРОВЕРКА: НАБЛЮДАТЕЛЬ СПРАВА ПО РАЗМЕРУ GLB</div>
+        <div style={styles.cameraHint}>КАЛИБРОВКА: ЖЕЛТЫЙ МАРКЕР = КАМЕРА</div>
       )}
 
       {active && (
@@ -222,6 +222,30 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
 
 function StationThreeView() {
   const hostRef = useRef(null);
+  const rigRef = useRef(null);
+  const [coords, setCoords] = useState({ x: 82, y: 46, z: 235, tx: 18, ty: 12, tz: 0 });
+
+  function move(axis, delta) {
+    const rig = rigRef.current;
+    if (!rig) return;
+    rig.cameraPct[axis] += delta;
+    rig.apply();
+  }
+
+  function aim(axis, delta) {
+    const rig = rigRef.current;
+    if (!rig) return;
+    rig.targetPct[axis] += delta;
+    rig.apply();
+  }
+
+  function resetCalibration() {
+    const rig = rigRef.current;
+    if (!rig) return;
+    rig.cameraPct = { x: 82, y: 46, z: 235 };
+    rig.targetPct = { x: 18, y: 12, z: 0 };
+    rig.apply();
+  }
 
   useEffect(() => {
     let disposed = false;
@@ -237,15 +261,15 @@ function StationThreeView() {
 
       const host = hostRef.current;
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x010207);
+      scene.background = null;
 
       const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 500);
       camera.up.set(0, 1, 0);
-      // Safe position until the rotated GLB has been measured.
       camera.position.set(0, 8, 30);
       camera.lookAt(0, 1, 0);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+      renderer.setClearColor(0x010207, 0.18);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -268,37 +292,78 @@ function StationThreeView() {
       loader.load("/orbital_station_edge_view.glb", (gltf) => {
         if (disposed) return;
         const station = gltf.scene;
-
-        // Fix model orientation once: disk in XZ, tower along world +Y.
         station.rotation.x = -Math.PI / 2;
         scene.add(station);
         station.updateMatrixWorld(true);
 
-        // Measure the actual rotated GLB instead of guessing world metres.
         const bounds = new THREE.Box3().setFromObject(station);
         const center = bounds.getCenter(new THREE.Vector3());
         const sphere = bounds.getBoundingSphere(new THREE.Sphere());
         const radius = sphere.radius;
 
-        // Observer is physically on the right-side balcony, above and in front.
-        const observer = center.clone().add(new THREE.Vector3(
-          radius * 0.82,
-          radius * 0.46,
-          radius * 2.35
-        ));
+        // Three perpendicular calibration planes. The model stays fixed at all times.
+        const gridSize = radius * 6;
+        const divisions = 24;
+        const floorGrid = new THREE.GridHelper(gridSize, divisions, 0x43d9ff, 0x24506a);
+        floorGrid.position.set(center.x, bounds.min.y - radius * 0.05, center.z);
+        floorGrid.material.transparent = true;
+        floorGrid.material.opacity = 0.28;
+        scene.add(floorGrid);
 
-        // The head looks left across the near-right sector toward the inner city.
-        const target = center.clone().add(new THREE.Vector3(
-          radius * 0.18,
-          radius * 0.12,
-          0
-        ));
+        const backGrid = new THREE.GridHelper(gridSize, divisions, 0x9f7aea, 0x3c315b);
+        backGrid.rotation.x = Math.PI / 2;
+        backGrid.position.set(center.x, center.y, center.z - radius * 1.25);
+        backGrid.material.transparent = true;
+        backGrid.material.opacity = 0.18;
+        scene.add(backGrid);
 
-        camera.position.copy(observer);
-        camera.lookAt(target);
-        camera.near = Math.max(0.05, radius * 0.01);
-        camera.far = radius * 12;
-        camera.updateProjectionMatrix();
+        const sideGrid = new THREE.GridHelper(gridSize, divisions, 0x60f5c5, 0x28594d);
+        sideGrid.rotation.z = Math.PI / 2;
+        sideGrid.position.set(center.x - radius * 1.25, center.y, center.z);
+        sideGrid.material.transparent = true;
+        sideGrid.material.opacity = 0.14;
+        scene.add(sideGrid);
+
+        const cameraMarker = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 0.055, 18, 12),
+          new THREE.MeshBasicMaterial({ color: 0xffe45c })
+        );
+        scene.add(cameraMarker);
+
+        const targetMarker = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 0.035, 18, 12),
+          new THREE.MeshBasicMaterial({ color: 0x5ee7ff })
+        );
+        scene.add(targetMarker);
+
+        const rig = {
+          cameraPct: { x: 82, y: 46, z: 235 },
+          targetPct: { x: 18, y: 12, z: 0 },
+          apply() {
+            const cp = rig.cameraPct;
+            const tp = rig.targetPct;
+            const observer = center.clone().add(new THREE.Vector3(
+              radius * cp.x / 100,
+              radius * cp.y / 100,
+              radius * cp.z / 100
+            ));
+            const target = center.clone().add(new THREE.Vector3(
+              radius * tp.x / 100,
+              radius * tp.y / 100,
+              radius * tp.z / 100
+            ));
+            camera.position.copy(observer);
+            camera.lookAt(target);
+            camera.near = Math.max(0.05, radius * 0.01);
+            camera.far = radius * 12;
+            camera.updateProjectionMatrix();
+            cameraMarker.position.copy(observer);
+            targetMarker.position.copy(target);
+            setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
+          }
+        };
+        rigRef.current = rig;
+        rig.apply();
       });
 
       const resize = () => {
@@ -332,6 +397,7 @@ function StationThreeView() {
 
     return () => {
       disposed = true;
+      rigRef.current = null;
       if (frameId) cancelAnimationFrame(frameId);
       resizeObserver?.disconnect();
       cleanups.forEach((cleanup) => cleanup());
@@ -340,7 +406,32 @@ function StationThreeView() {
     };
   }, []);
 
-  return <div ref={hostRef} style={styles.stationModel} aria-label="3D-модель орбитальной станции" />;
+  return (
+    <>
+      <div ref={hostRef} style={styles.stationModel} aria-label="Калибровочная 3D-сцена станции" />
+      <div style={styles.calibrationPanel}>
+        <div style={styles.coordinateReadout}>
+          <b>CAMERA %</b><span>X {coords.x}</span><span>Y {coords.y}</span><span>Z {coords.z}</span>
+          <b>TARGET %</b><span>X {coords.tx}</span><span>Y {coords.ty}</span><span>Z {coords.tz}</span>
+        </div>
+        <div style={styles.calibrationControls}>
+          <button onClick={() => move("y", 5)}>↑</button>
+          <button onClick={() => move("z", -5)}>＋</button>
+          <button onClick={() => move("x", -5)}>←</button>
+          <button onClick={() => move("x", 5)}>→</button>
+          <button onClick={() => move("z", 5)}>−</button>
+          <button onClick={() => move("y", -5)}>↓</button>
+        </div>
+        <div style={styles.aimControls}>
+          <button onClick={() => aim("x", -2)}>LOOK ←</button>
+          <button onClick={() => aim("y", 2)}>LOOK ↑</button>
+          <button onClick={() => aim("y", -2)}>LOOK ↓</button>
+          <button onClick={() => aim("x", 2)}>LOOK →</button>
+          <button onClick={resetCalibration}>RESET</button>
+        </div>
+      </div>
+    </>
+  );
 }
 
 function ModulePanel({ module, generation, onClose, onLaunchGame }) {
@@ -402,6 +493,8 @@ function clamp(value, min, max) {
 }
 
 const css = `
+button { touch-action:manipulation; }
+
 @keyframes sectorPulse { 50% { filter:brightness(1.25); } }
 @keyframes panelOpen { from { opacity:0; transform:translateY(24px) scale(.98); } to { opacity:1; transform:none; } }
 .station-sector { transition:filter .2s ease, transform .2s ease, border-color .2s ease; }
@@ -437,6 +530,10 @@ const styles = {
   generation:{ minWidth:66, height:39, borderRadius:12, border:"1px solid rgba(103,232,249,.2)", background:"rgba(4,31,46,.5)", color:"#e0fbff", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer" },
   stats:{ position:"absolute", zIndex:75, top:"calc(max(10px, env(safe-area-inset-top)) + 64px)", left:10, display:"flex", gap:5 },
   cameraHint:{ position:"absolute", zIndex:60, left:"50%", bottom:"max(18px, env(safe-area-inset-bottom))", transform:"translateX(-50%)", padding:"7px 11px", borderRadius:10, background:"rgba(2,10,23,.62)", border:"1px solid rgba(103,232,249,.13)", color:"rgba(226,232,240,.58)", fontSize:7, letterSpacing:".1em", pointerEvents:"none" },
+  calibrationPanel:{ position:"absolute", zIndex:85, left:10, right:10, bottom:"calc(max(18px, env(safe-area-inset-bottom)) + 48px)", display:"grid", gap:6, padding:8, borderRadius:14, background:"rgba(1,7,17,.82)", border:"1px solid rgba(94,231,255,.25)", backdropFilter:"blur(10px)" },
+  coordinateReadout:{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:4, fontSize:8, color:"#bcecff" },
+  calibrationControls:{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4 },
+  aimControls:{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4 },
   panelShade:{ position:"absolute", inset:0, zIndex:100, display:"flex", alignItems:"flex-end", padding:10, background:"linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))" },
   panel:{ width:"100%", maxHeight:"68vh", overflowY:"auto", padding:12, borderRadius:"24px 24px 16px 16px", background:"linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))", border:"1px solid", boxShadow:"0 -28px 90px rgba(0,0,0,.8)", animation:"panelOpen .38s ease-out" },
   panelHeader:{ display:"grid", gridTemplateColumns:"38px 40px 1fr auto", gap:8, alignItems:"center", marginBottom:10 },
