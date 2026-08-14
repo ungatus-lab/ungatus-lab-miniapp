@@ -204,7 +204,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПРОВЕРКА: НЕЗАВИСИМАЯ КАМЕРА СПРАВА</div>
+        <div style={styles.cameraHint}>ПРОВЕРКА: НАБЛЮДАТЕЛЬ СПРАВА ПО РАЗМЕРУ GLB</div>
       )}
 
       {active && (
@@ -239,13 +239,11 @@ function StationThreeView() {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x010207);
 
-      const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
-      // Observer is physically to the station's right, slightly above it and at a stable distance.
-      // Position and look direction are deliberately independent.
-      const observer = new THREE.Vector3(14.5, 8.5, 25.5);
-      const baseTarget = new THREE.Vector3(2.2, 2.0, 0.0);
-      camera.position.copy(observer);
-      camera.lookAt(baseTarget);
+      const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 500);
+      camera.up.set(0, 1, 0);
+      // Safe position until the rotated GLB has been measured.
+      camera.position.set(0, 8, 30);
+      camera.lookAt(0, 1, 0);
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -270,9 +268,37 @@ function StationThreeView() {
       loader.load("/orbital_station_edge_view.glb", (gltf) => {
         if (disposed) return;
         const station = gltf.scene;
-        // Same correction that previously made the tower vertical in model-viewer.
+
+        // Fix model orientation once: disk in XZ, tower along world +Y.
         station.rotation.x = -Math.PI / 2;
         scene.add(station);
+        station.updateMatrixWorld(true);
+
+        // Measure the actual rotated GLB instead of guessing world metres.
+        const bounds = new THREE.Box3().setFromObject(station);
+        const center = bounds.getCenter(new THREE.Vector3());
+        const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+        const radius = sphere.radius;
+
+        // Observer is physically on the right-side balcony, above and in front.
+        const observer = center.clone().add(new THREE.Vector3(
+          radius * 0.82,
+          radius * 0.46,
+          radius * 2.35
+        ));
+
+        // The head looks left across the near-right sector toward the inner city.
+        const target = center.clone().add(new THREE.Vector3(
+          radius * 0.18,
+          radius * 0.12,
+          0
+        ));
+
+        camera.position.copy(observer);
+        camera.lookAt(target);
+        camera.near = Math.max(0.05, radius * 0.01);
+        camera.far = radius * 12;
+        camera.updateProjectionMatrix();
       });
 
       const resize = () => {
