@@ -182,7 +182,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             reveal="auto"
             orientation="0deg -90deg 0deg"
             camera-orbit="-18deg 67deg 29m"
-            camera-target="0m 0.8m -7m"
+            camera-target="0m 0.8m 7m"
             field-of-view="32deg"
             shadow-intensity="0.25"
             exposure="0.85"
@@ -229,7 +229,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПРОВЕРКА: КАМЕРА СДВИНУТА К ЖЕЛТОЙ ТОЧКЕ</div>
+        <div style={styles.cameraHint}>ПРОВЕРКА: НАБЛЮДАТЕЛЬ СПРАВА, ВЗГЛЯД ПРЯМО</div>
       )}
 
       {active && (
