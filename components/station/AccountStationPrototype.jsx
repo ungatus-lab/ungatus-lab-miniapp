@@ -181,9 +181,9 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             loading="eager"
             reveal="auto"
             orientation="0deg -90deg 0deg"
-            camera-orbit="-18deg 67deg 29m"
-            camera-target="0m 0.8m 0m"
-            field-of-view="32deg"
+            camera-orbit="-20deg 67deg 29m"
+            camera-target="10.9m 0.8m 0m"
+            field-of-view="22deg"
             shadow-intensity="0.25"
             exposure="0.85"
             style={styles.stationModel}
@@ -229,7 +229,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПРОВЕРКА: УБРАНО КАДРИРОВАНИЕ ХОЛСТА</div>
+        <div style={styles.cameraHint}>ПРОВЕРКА: ВОЗВРАТ К УДАЧНОМУ РАКУРСУ</div>
       )}
 
       {active && (
@@ -330,7 +330,7 @@ const styles = {
   root:{ position:"fixed", inset:0, zIndex:180, overflow:"hidden", background:"#010207", color:"#f2fbff", fontFamily:"Inter,system-ui,-apple-system,'Segoe UI',sans-serif" },
   viewport:{ position:"absolute", inset:0, overflow:"hidden", touchAction:"none", userSelect:"none", background:"#010207" },
   world:{ position:"absolute", top:0, bottom:0, left:0, height:"100%", transformOrigin:"left center", transition:"transform .08s linear", willChange:"transform" },
-  stationModel:{ position:"absolute", top:0, bottom:0, left:"-100vw", width:"200vw", height:"100%", transform:"scale(1.6)", transformOrigin:"50% 55%", background:"radial-gradient(circle at 48% 42%,#07152b 0,#020713 42%,#010207 76%)", touchAction:"none" },
+  stationModel:{ position:"absolute", inset:0, width:"100%", height:"100%", background:"radial-gradient(circle at 48% 42%,#07152b 0,#020713 42%,#010207 76%)", touchAction:"none" },
   sector:{ position:"absolute", width:68, height:68, transform:"translate(-50%,-50%)", padding:0, border:"1px solid", borderRadius:"50%", background:"rgba(2,8,18,.08)", color:"white", cursor:"pointer" },
   header:{ position:"absolute", zIndex:70, top:"max(10px, env(safe-area-inset-top))", left:10, right:10, height:54, display:"grid", gridTemplateColumns:"42px 1fr auto", gap:10, alignItems:"center", padding:"0 10px", borderRadius:18, background:"linear-gradient(135deg,rgba(2,10,23,.78),rgba(11,8,30,.64))", border:"1px solid rgba(175,232,255,.16)", backdropFilter:"blur(22px)", boxShadow:"0 18px 55px rgba(0,0,0,.3)" },
   backButton:{ width:36, height:36, padding:0, borderRadius:12, border:"1px solid rgba(255,255,255,.14)", background:"rgba(255,255,255,.055)", color:"white", fontSize:27, cursor:"pointer" },
