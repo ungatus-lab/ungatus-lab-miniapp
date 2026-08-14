@@ -97,17 +97,6 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
   const accountName = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
 
   useEffect(() => {
-    if (customElements.get("model-viewer")) return;
-    const existing = document.querySelector('script[data-model-viewer="true"]');
-    if (existing) return;
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = "https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js";
-    script.dataset.modelViewer = "true";
-    document.head.appendChild(script);
-  }, []);
-
-  useEffect(() => {
     if (!open || !viewportRef.current) return;
     const node = viewportRef.current;
     const update = () => {
@@ -173,21 +162,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             transform: "none",
           }}
         >
-          <model-viewer
-            src="/orbital_station_edge_view.glb"
-            poster="/account-station-panorama.png"
-            alt="Интерактивная 3D-модель орбитальной станции"
-            interaction-prompt="none"
-            loading="eager"
-            reveal="auto"
-            orientation="0deg -90deg 0deg"
-            camera-orbit="-18deg 67deg 29m"
-            camera-target="0m 0.8m 7m"
-            field-of-view="32deg"
-            shadow-intensity="0.25"
-            exposure="0.85"
-            style={styles.stationModel}
-          />
+          <StationThreeView />
 
           {MODULES.map((module) => (
             <button
@@ -229,7 +204,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПРОВЕРКА: НАБЛЮДАТЕЛЬ СПРАВА, ВЗГЛЯД ПРЯМО</div>
+        <div style={styles.cameraHint}>ПРОВЕРКА: НЕЗАВИСИМАЯ КАМЕРА СПРАВА</div>
       )}
 
       {active && (
@@ -242,6 +217,104 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       )}
     </main>
   );
+}
+
+
+function StationThreeView() {
+  const hostRef = useRef(null);
+
+  useEffect(() => {
+    let disposed = false;
+    let renderer;
+    let frameId;
+    let resizeObserver;
+    const cleanups = [];
+
+    (async () => {
+      const THREE = await import(/* webpackIgnore: true */ "https://esm.sh/three@0.167.1");
+      const { GLTFLoader } = await import(/* webpackIgnore: true */ "https://esm.sh/three@0.167.1/examples/jsm/loaders/GLTFLoader.js");
+      if (disposed || !hostRef.current) return;
+
+      const host = hostRef.current;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x010207);
+
+      const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+      // Observer is physically to the station's right, slightly above it and at a stable distance.
+      // Position and look direction are deliberately independent.
+      const observer = new THREE.Vector3(14.5, 8.5, 25.5);
+      const baseTarget = new THREE.Vector3(2.2, 2.0, 0.0);
+      camera.position.copy(observer);
+      camera.lookAt(baseTarget);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      renderer.domElement.style.width = "100%";
+      renderer.domElement.style.height = "100%";
+      renderer.domElement.style.display = "block";
+      renderer.domElement.style.touchAction = "none";
+      host.appendChild(renderer.domElement);
+
+      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 2.1));
+      const key = new THREE.DirectionalLight(0xffffff, 3.2);
+      key.position.set(8, 18, 16);
+      scene.add(key);
+      const rim = new THREE.DirectionalLight(0x65baff, 2.0);
+      rim.position.set(-14, 7, -10);
+      scene.add(rim);
+
+      const loader = new GLTFLoader();
+      loader.load("/orbital_station_edge_view.glb", (gltf) => {
+        if (disposed) return;
+        const station = gltf.scene;
+        // Same correction that previously made the tower vertical in model-viewer.
+        station.rotation.x = -Math.PI / 2;
+        scene.add(station);
+      });
+
+      const resize = () => {
+        if (!host.isConnected) return;
+        const width = Math.max(1, host.clientWidth);
+        const height = Math.max(1, host.clientHeight);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height, false);
+      };
+      resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(host);
+      resize();
+
+      const render = () => {
+        renderer.render(scene, camera);
+        frameId = requestAnimationFrame(render);
+      };
+      render();
+
+      cleanups.push(() => {
+        scene.traverse((item) => {
+          item.geometry?.dispose?.();
+          if (item.material) {
+            const materials = Array.isArray(item.material) ? item.material : [item.material];
+            materials.forEach((material) => material.dispose?.());
+          }
+        });
+      });
+    })();
+
+    return () => {
+      disposed = true;
+      if (frameId) cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      cleanups.forEach((cleanup) => cleanup());
+      renderer?.dispose();
+      if (hostRef.current) hostRef.current.replaceChildren();
+    };
+  }, []);
+
+  return <div ref={hostRef} style={styles.stationModel} aria-label="3D-модель орбитальной станции" />;
 }
 
 function ModulePanel({ module, generation, onClose, onLaunchGame }) {
