@@ -204,7 +204,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>КАЛИБРОВКА: ЖЕЛТЫЙ МАРКЕР = КАМЕРА</div>
+        <div style={styles.cameraHint}>ПАНОРАМА: ТРИ ФИКСИРОВАННЫХ РАКУРСА</div>
       )}
 
       {active && (
@@ -223,7 +223,8 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
 function StationThreeView() {
   const hostRef = useRef(null);
   const rigRef = useRef(null);
-  const [coords, setCoords] = useState({ x: 82, y: 46, z: 235, tx: 18, ty: 12, tz: 0 });
+  const [coords, setCoords] = useState({ x: 192, y: 66, z: 70, tx: 60, ty: 0, tz: 0 });
+  const [panoramaFrame, setPanoramaFrame] = useState(1);
 
   function move(axis, delta) {
     const rig = rigRef.current;
@@ -242,9 +243,7 @@ function StationThreeView() {
   function resetCalibration() {
     const rig = rigRef.current;
     if (!rig) return;
-    rig.cameraPct = { x: 82, y: 46, z: 235 };
-    rig.targetPct = { x: 18, y: 12, z: 0 };
-    rig.apply();
+    rig.setProgress(0, true);
   }
 
   useEffect(() => {
@@ -336,10 +335,34 @@ function StationThreeView() {
         );
         scene.add(targetMarker);
 
+        const POSE_A = { camera: { x: 192, y: 66, z: 70 }, target: { x: 60, y: 0, z: 0 } };
+        const POSE_B = { camera: { x: 217, y: 66, z: 175 }, target: { x: -82, y: -8, z: 0 } };
+        const lerp = (a, b, t) => a + (b - a) * t;
         const rig = {
-          cameraPct: { x: 82, y: 46, z: 235 },
-          targetPct: { x: 18, y: 12, z: 0 },
-          apply() {
+          cameraPct: { ...POSE_A.camera },
+          targetPct: { ...POSE_A.target },
+          progress: 0,
+          goal: 0,
+          setProgress(value, immediate = false) {
+            rig.goal = clamp(value, 0, 1);
+            if (immediate) rig.progress = rig.goal;
+          },
+          update() {
+            rig.progress += (rig.goal - rig.progress) * 0.16;
+            const t = rig.progress;
+            rig.cameraPct = {
+              x: lerp(POSE_A.camera.x, POSE_B.camera.x, t),
+              y: lerp(POSE_A.camera.y, POSE_B.camera.y, t),
+              z: lerp(POSE_A.camera.z, POSE_B.camera.z, t)
+            };
+            rig.targetPct = {
+              x: lerp(POSE_A.target.x, POSE_B.target.x, t),
+              y: lerp(POSE_A.target.y, POSE_B.target.y, t),
+              z: lerp(POSE_A.target.z, POSE_B.target.z, t)
+            };
+            rig.apply(false);
+          },
+          apply(syncUi = true) {
             const cp = rig.cameraPct;
             const tp = rig.targetPct;
             const observer = center.clone().add(new THREE.Vector3(
@@ -359,11 +382,53 @@ function StationThreeView() {
             camera.updateProjectionMatrix();
             cameraMarker.position.copy(observer);
             targetMarker.position.copy(target);
-            setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
+            if (syncUi) setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
           }
         };
         rigRef.current = rig;
         rig.apply();
+
+        const swipe = { down: false, startX: 0, startProgress: 0 };
+        const onDown = (event) => {
+          swipe.down = true;
+          swipe.startX = event.clientX;
+          swipe.startProgress = rig.goal;
+          renderer.domElement.setPointerCapture?.(event.pointerId);
+        };
+        const onMove = (event) => {
+          if (!swipe.down) return;
+          const width = Math.max(1, host.clientWidth);
+          const delta = (event.clientX - swipe.startX) / (width * 0.72);
+          rig.setProgress(swipe.startProgress + delta);
+        };
+        const onUp = () => {
+          if (!swipe.down) return;
+          swipe.down = false;
+          const snap = rig.goal < 0.25 ? 0 : rig.goal < 0.75 ? 0.5 : 1;
+          rig.setProgress(snap);
+          setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
+          const cp = {
+            x: lerp(POSE_A.camera.x, POSE_B.camera.x, snap),
+            y: lerp(POSE_A.camera.y, POSE_B.camera.y, snap),
+            z: lerp(POSE_A.camera.z, POSE_B.camera.z, snap)
+          };
+          const tp = {
+            x: lerp(POSE_A.target.x, POSE_B.target.x, snap),
+            y: lerp(POSE_A.target.y, POSE_B.target.y, snap),
+            z: lerp(POSE_A.target.z, POSE_B.target.z, snap)
+          };
+          setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
+        };
+        renderer.domElement.addEventListener("pointerdown", onDown);
+        renderer.domElement.addEventListener("pointermove", onMove);
+        renderer.domElement.addEventListener("pointerup", onUp);
+        renderer.domElement.addEventListener("pointercancel", onUp);
+        cleanups.push(() => {
+          renderer.domElement.removeEventListener("pointerdown", onDown);
+          renderer.domElement.removeEventListener("pointermove", onMove);
+          renderer.domElement.removeEventListener("pointerup", onUp);
+          renderer.domElement.removeEventListener("pointercancel", onUp);
+        });
       });
 
       const resize = () => {
@@ -379,6 +444,7 @@ function StationThreeView() {
       resize();
 
       const render = () => {
+        rigRef.current?.update?.();
         renderer.render(scene, camera);
         frameId = requestAnimationFrame(render);
       };
@@ -409,26 +475,11 @@ function StationThreeView() {
   return (
     <>
       <div ref={hostRef} style={styles.stationModel} aria-label="Калибровочная 3D-сцена станции" />
-      <div style={styles.calibrationPanel}>
-        <div style={styles.coordinateReadout}>
-          <b>CAMERA %</b><span>X {coords.x}</span><span>Y {coords.y}</span><span>Z {coords.z}</span>
-          <b>TARGET %</b><span>X {coords.tx}</span><span>Y {coords.ty}</span><span>Z {coords.tz}</span>
-        </div>
-        <div style={styles.calibrationControls}>
-          <button onClick={() => move("y", 5)}>↑</button>
-          <button onClick={() => move("z", -5)}>＋</button>
-          <button onClick={() => move("x", -5)}>←</button>
-          <button onClick={() => move("x", 5)}>→</button>
-          <button onClick={() => move("z", 5)}>−</button>
-          <button onClick={() => move("y", -5)}>↓</button>
-        </div>
-        <div style={styles.aimControls}>
-          <button onClick={() => aim("x", -2)}>LOOK ←</button>
-          <button onClick={() => aim("y", 2)}>LOOK ↑</button>
-          <button onClick={() => aim("y", -2)}>LOOK ↓</button>
-          <button onClick={() => aim("x", 2)}>LOOK →</button>
-          <button onClick={resetCalibration}>RESET</button>
-        </div>
+      <div style={styles.panoramaPanel}>
+        <b>ПАНОРАМА {panoramaFrame} / 3</b>
+        <span>СВАЙП ВПРАВО ИЛИ ВЛЕВО</span>
+        <small>CAM {Math.round(coords.x)} / {Math.round(coords.y)} / {Math.round(coords.z)} · LOOK {Math.round(coords.tx)} / {Math.round(coords.ty)} / {Math.round(coords.tz)}</small>
+        <div style={styles.frameDots}><i className={panoramaFrame === 1 ? "active" : ""}/><i className={panoramaFrame === 2 ? "active" : ""}/><i className={panoramaFrame === 3 ? "active" : ""}/></div>
       </div>
     </>
   );
@@ -495,6 +546,7 @@ function clamp(value, min, max) {
 const css = `
 button { touch-action:manipulation; }
 
+.frameDots i{width:7px;height:7px;border-radius:50%;background:#294354}.frameDots i.active{background:#67e8f9;box-shadow:0 0 10px #67e8f9}
 @keyframes sectorPulse { 50% { filter:brightness(1.25); } }
 @keyframes panelOpen { from { opacity:0; transform:translateY(24px) scale(.98); } to { opacity:1; transform:none; } }
 .station-sector { transition:filter .2s ease, transform .2s ease, border-color .2s ease; }
@@ -530,11 +582,6 @@ const styles = {
   generation:{ minWidth:66, height:39, borderRadius:12, border:"1px solid rgba(103,232,249,.2)", background:"rgba(4,31,46,.5)", color:"#e0fbff", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer" },
   stats:{ position:"absolute", zIndex:75, top:"calc(max(10px, env(safe-area-inset-top)) + 64px)", left:10, display:"flex", gap:5 },
   cameraHint:{ position:"absolute", zIndex:60, left:"50%", bottom:"max(18px, env(safe-area-inset-bottom))", transform:"translateX(-50%)", padding:"7px 11px", borderRadius:10, background:"rgba(2,10,23,.62)", border:"1px solid rgba(103,232,249,.13)", color:"rgba(226,232,240,.58)", fontSize:7, letterSpacing:".1em", pointerEvents:"none" },
-  calibrationPanel:{ position:"absolute", zIndex:85, left:10, right:10, bottom:"calc(max(18px, env(safe-area-inset-bottom)) + 48px)", display:"grid", gap:6, padding:8, borderRadius:14, background:"rgba(1,7,17,.82)", border:"1px solid rgba(94,231,255,.25)", backdropFilter:"blur(10px)" },
-  coordinateReadout:{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:4, fontSize:8, color:"#bcecff" },
-  calibrationControls:{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4 },
-  aimControls:{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4 },
-  panelShade:{ position:"absolute", inset:0, zIndex:100, display:"flex", alignItems:"flex-end", padding:10, background:"linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))" },
   panel:{ width:"100%", maxHeight:"68vh", overflowY:"auto", padding:12, borderRadius:"24px 24px 16px 16px", background:"linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))", border:"1px solid", boxShadow:"0 -28px 90px rgba(0,0,0,.8)", animation:"panelOpen .38s ease-out" },
   panelHeader:{ display:"grid", gridTemplateColumns:"38px 40px 1fr auto", gap:8, alignItems:"center", marginBottom:10 },
   panelIcon:{ width:38, height:38, borderRadius:12, display:"grid", placeItems:"center", background:"rgba(255,255,255,.05)", fontSize:20 },
