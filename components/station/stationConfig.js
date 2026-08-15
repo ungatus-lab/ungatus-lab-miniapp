@@ -105,10 +105,10 @@ export const MODULE_ANCHORS = [
   // Calibration stage: only the four authored circular platforms.
   // GLB platform centers were authored at radius 7.35 inside a disk radius about 11.12,
   // therefore the normalized ring is 0.661.
-  { id: "market", zone: "platform", platform: 1, angle: 22,  ring: 0.661, focusFrame: 1 },
-  { id: "scanner", zone: "platform", platform: 2, angle: 112, ring: 0.661, focusFrame: 2 },
-  { id: "device", zone: "platform", platform: 3, angle: 202, ring: 0.661, focusFrame: 2 },
-  { id: "game", zone: "platform", platform: 4, angle: 292, ring: 0.661, focusFrame: 3, action: "launch-game" },
+  { id: "market", zone: "platform", platform: 1, angle: 338, ring: 0.661, focusFrame: 1 },
+  { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 2 },
+  { id: "device", zone: "platform", platform: 3, angle: 158, ring: 0.661, focusFrame: 2 },
+  { id: "game", zone: "platform", platform: 4, angle: 68,  ring: 0.661, focusFrame: 3, action: "launch-game" },
 ];
 
 export const MODULE_FOCUS = {
