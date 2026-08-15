@@ -88,35 +88,27 @@ export const MODULE_DETAILS = {
 
 export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
-// Fixed observer near the right-front sector 9.
-// Position is expressed as percentages of the measured GLB bounding-sphere radius.
-export const OBSERVER_POSITION = { x: 235, y: 52, z: 82 };
-
-// Initial straight view. The panorama then rotates the head exactly 90 degrees left.
-export const INITIAL_LOOK_TARGET = { x: 72, y: -2, z: 12 };
+// Fixed observer placed very close to the right-front edge, sector 9.
+export const OBSERVER_POSITION = { x: 122, y: 46, z: 64 };
+export const INITIAL_LOOK_TARGET = { x: 70, y: -2, z: 18 };
 export const HEAD_ROTATION = {
   startYawDeg: 0,
-  endYawDeg: 90,
-  pitchLiftDeg: 3,
+  endYawDeg: -72,
+  pitchLiftDeg: 2,
 };
-
-// Compatibility data for the coordinate readout.
 export const LOOK_TARGETS = {
   right: INITIAL_LOOK_TARGET,
   center: { x: 0, y: 0, z: 0 },
   left: { x: -100, y: 0, z: 0 },
 };
 export const CAMERA_POSES = {
-  start: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.right },
+  start: { camera: OBSERVER_POSITION, target: INITIAL_LOOK_TARGET },
   end: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
 };
-
-// Camera-relative placement is calculated in StationThreeView after the GLB is measured.
 export const SPACE_OBJECTS = {
-  sun: { distance: 8.5, sideOffset: -1.75, heightOffset: 1.1, radius: 0.72 },
-  rift: { distance: 7.2, sideOffset: 1.4, heightOffset: -0.15, radius: 1.0 },
+  sun: { distance: 9.5, sideOffset: -1.2, heightOffset: 0.9, radius: 0.55 },
+  rift: { visible: false },
 };
-
 // Временно сохраняем текущие места. На следующем этапе заменим их
 // на точные точки крепления к деталям GLB.
 export const MODULE_ANCHORS = [
