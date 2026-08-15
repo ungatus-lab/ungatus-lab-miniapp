@@ -89,12 +89,12 @@ export const MODULE_DETAILS = {
 export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
 // Fixed observer placed very close to the right-front edge, sector 9.
-export const OBSERVER_POSITION = { x: 136, y: 50, z: 64 };
-export const INITIAL_LOOK_TARGET = { x: 88, y: 8, z: 20 };
+export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
+export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
 export const HEAD_ROTATION = {
   startYawDeg: 0,
-  endYawDeg: -84,
-  pitchLiftDeg: 7,
+  endYawDeg: 90,
+  pitchLiftDeg: 5,
 };
 export const LOOK_TARGETS = {
   right: INITIAL_LOOK_TARGET,
@@ -106,7 +106,7 @@ export const CAMERA_POSES = {
   end: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
 };
 export const SPACE_OBJECTS = {
-  sun: { distance: 11.5, sideOffset: -1.7, heightOffset: 0.75, radius: 0.42 },
+  sun: { distance: 12.5, sideOffset: -0.9, heightOffset: 0.7, radius: 0.36 },
   rift: { visible: false },
 };
 // Временно сохраняем текущие места. На следующем этапе заменим их
