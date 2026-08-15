@@ -88,15 +88,24 @@ export const MODULE_DETAILS = {
 
 export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
+// Observer stays fixed near sector 9. Swipe changes only the head direction.
+export const OBSERVER_POSITION = { x: 192, y: 66, z: 70 };
+
+export const LOOK_TARGETS = {
+  right:  { x: 60,  y: 0,  z: 0 },
+  center: { x: -11, y: -4, z: 0 },
+  left:   { x: -82, y: -8, z: 0 },
+};
+
+// Kept as a compatibility export while the camera is migrated.
 export const CAMERA_POSES = {
-  start: {
-    camera: { x: 192, y: 66, z: 70 },
-    target: { x: 60, y: 0, z: 0 },
-  },
-  end: {
-    camera: { x: 217, y: 66, z: 175 },
-    target: { x: -82, y: -8, z: 0 },
-  },
+  start: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.right },
+  end:   { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
+};
+
+export const SPACE_OBJECTS = {
+  sun: { x: -5.4, y: 2.8, z: -7.5, radius: 2.4 },
+  rift: { x: 5.8, y: 0.2, z: -8.8, radius: 1.25 },
 };
 
 // Временно сохраняем текущие места. На следующем этапе заменим их
