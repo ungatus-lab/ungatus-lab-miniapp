@@ -172,7 +172,7 @@ export default function StationThreeView({ onSelectModule }) {
       riftRoot.add(riftOuter, riftInner);
       spaceRoot.add(riftRoot);
 
-      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.85);
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.55);
       sunLight.position.copy(sunRoot.position);
       scene.add(sunLight);
 
@@ -308,7 +308,7 @@ export default function StationThreeView({ onSelectModule }) {
             const width = Math.max(1, host.clientWidth);
             rig.setProgress(
               swipe.startProgress +
-                dx / (width * SCENE_CONFIG.swipeDistanceFactor)
+                dx / (width * 0.58)
             );
           };
 
