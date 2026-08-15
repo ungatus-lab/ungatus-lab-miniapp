@@ -102,25 +102,15 @@ export const CAMERA_POSES = {
 // Временно сохраняем текущие места. На следующем этапе заменим их
 // на точные точки крепления к деталям GLB.
 export const MODULE_ANCHORS = [
-  // Four real large circular pads of the GLB. Angles match the authored station geometry.
-  { id: "market", zone: "platform", platform: 1, angle: 22, ring: 0.66, inset: 0.22, focusFrame: 1 },
-  { id: "scanner", zone: "platform", platform: 2, angle: 112, ring: 0.66, inset: 0.22, focusFrame: 2 },
-  { id: "device", zone: "platform", platform: 3, angle: 202, ring: 0.66, inset: 0.22, focusFrame: 2 },
-  { id: "game", zone: "platform", platform: 4, angle: 292, ring: 0.66, inset: 0.16, focusFrame: 3, action: "launch-game" },
-
-  // Five low-profile systems on the protected inner service ring.
-  { id: "collab", zone: "inner-ring", angle: 154, ring: 0.47, inset: 0.30, focusFrame: 2 },
-  { id: "wallet", zone: "inner-ring", angle: 226, ring: 0.47, inset: 0.30, focusFrame: 2 },
-  { id: "premium", zone: "inner-ring", angle: 334, ring: 0.47, inset: 0.30, focusFrame: 1 },
-  { id: "earn", zone: "inner-ring", angle: 46, ring: 0.47, inset: 0.30, focusFrame: 1 },
-  { id: "squad", zone: "inner-ring", angle: 82, ring: 0.47, inset: 0.30, focusFrame: 3 },
-
-  // CORE is the existing central dome and tower, not an extra generated building.
-  { id: "center", zone: "existing-core", useExisting: true, focusFrame: 2 },
+  // Calibration stage: only the four authored circular platforms.
+  // GLB platform centers were authored at radius 7.35 inside a disk radius about 11.12,
+  // therefore the normalized ring is 0.661.
+  { id: "market", zone: "platform", platform: 1, angle: 22,  ring: 0.661, focusFrame: 1 },
+  { id: "scanner", zone: "platform", platform: 2, angle: 112, ring: 0.661, focusFrame: 2 },
+  { id: "device", zone: "platform", platform: 3, angle: 202, ring: 0.661, focusFrame: 2 },
+  { id: "game", zone: "platform", platform: 4, angle: 292, ring: 0.661, focusFrame: 3, action: "launch-game" },
 ];
 
-// Future camera focus can use these values after the base placement is approved.
-// They are disabled for now so the current three-frame panorama stays unchanged.
 export const MODULE_FOCUS = {
   enabled: false,
   distanceScale: 1.35,
@@ -135,6 +125,6 @@ export const SCENE_CONFIG = {
   swipeDistanceFactor: 0.72,
   swipeSmoothing: 0.16,
   tapThresholdPx: 9,
-  buildingScale: 0.032,
-  buildingEmbed: 0.3,
+  buildingScale: 0.042,
+  buildingEmbed: 0.22,
 };
