@@ -99,7 +99,7 @@ export const OBSERVER_TO_BEAM_FRACTION = 0.2256;
 // One additional move toward the angular seam between:
 // frame 1 left edge and frame 2 right edge.
 // 0.1056 repeats the previous absolute approach step.
-export const OBSERVER_TO_FRAME_SEAM_STEP = 0.1056;
+export const OBSERVER_TO_FRAME_SEAM_STEP = 0.2112;
 export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
 export const HEAD_ROTATION = {
   startYawDeg: 55,
