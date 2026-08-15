@@ -3669,6 +3669,7 @@ const styles = {
 
 
 -
+
 2.3.2) components/station/StationThreeView.jsx
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/station/StationThreeView.jsx
@@ -3679,6 +3680,7 @@ ungatus-lab-miniapp/components/station/StationThreeView.jsx
 
 
 -
+
 2.3.3) components/station/stationBuildings.js
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/station/stationBuildings.js
@@ -3942,6 +3944,7 @@ export function pulseStationBuilding(moduleGroups, moduleId) {
   }, 180);
 } 
 
+-
 
 2.3.4) components/station/stationConfig.js
 таким образом расположение целиком:
