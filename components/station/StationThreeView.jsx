@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   CAMERA_POSES,
   OBSERVER_POSITION,
+  INITIAL_LOOK_TARGET,
+  HEAD_ROTATION,
   LOOK_TARGETS,
   SPACE_OBJECTS,
   SCENE_CONFIG,
@@ -35,9 +37,9 @@ export default function StationThreeView({ onSelectModule }) {
   const rigRef = useRef(null);
   const [coords, setCoords] = useState({
     ...OBSERVER_POSITION,
-    tx: LOOK_TARGETS.right.x,
-    ty: LOOK_TARGETS.right.y,
-    tz: LOOK_TARGETS.right.z,
+    tx: HEAD_ROTATION.startYawDeg,
+    ty: 0,
+    tz: 0,
   });
   const [panoramaFrame, setPanoramaFrame] = useState(1);
 
@@ -69,6 +71,11 @@ export default function StationThreeView({ onSelectModule }) {
         SCENE_CONFIG.cameraFar
       );
       camera.up.set(0, 1, 0);
+      const observerRig = new THREE.Group();
+      const headRig = new THREE.Group();
+      observerRig.add(headRig);
+      headRig.add(camera);
+      scene.add(observerRig);
 
       renderer = new THREE.WebGLRenderer({
         antialias: true,
@@ -199,10 +206,44 @@ export default function StationThreeView({ onSelectModule }) {
           const center = bounds.getCenter(new THREE.Vector3());
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
-          sunRoot.position.set(center.x + radius * SPACE_OBJECTS.sun.x, center.y + radius * SPACE_OBJECTS.sun.y, center.z + radius * SPACE_OBJECTS.sun.z);
+          const observerWorld = center.clone().add(new THREE.Vector3(
+            radius * OBSERVER_POSITION.x / 100,
+            radius * OBSERVER_POSITION.y / 100,
+            radius * OBSERVER_POSITION.z / 100
+          ));
+          observerRig.position.copy(observerWorld);
+          camera.position.set(0, 0, 0);
+
+          const initialTarget = center.clone().add(new THREE.Vector3(
+            radius * INITIAL_LOOK_TARGET.x / 100,
+            radius * INITIAL_LOOK_TARGET.y / 100,
+            radius * INITIAL_LOOK_TARGET.z / 100
+          ));
+          headRig.lookAt(initialTarget);
+          const startQuaternion = headRig.quaternion.clone();
+          const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.endYawDeg)
+          );
+          const endQuaternion = startQuaternion.clone().premultiply(yawQuaternion);
+
+          const endDirection = new THREE.Vector3(0, 0, -1)
+            .applyQuaternion(endQuaternion)
+            .normalize();
+          const endRight = new THREE.Vector3().crossVectors(endDirection, camera.up).normalize();
+          const endUp = new THREE.Vector3().crossVectors(endRight, endDirection).normalize();
+
+          sunRoot.position.copy(observerWorld)
+            .addScaledVector(endDirection, radius * SPACE_OBJECTS.sun.distance)
+            .addScaledVector(endRight, radius * SPACE_OBJECTS.sun.sideOffset)
+            .addScaledVector(endUp, radius * SPACE_OBJECTS.sun.heightOffset);
           sunRoot.scale.setScalar((radius * SPACE_OBJECTS.sun.radius) / 15);
           sunLight.position.copy(sunRoot.position);
-          riftRoot.position.set(center.x + radius * SPACE_OBJECTS.rift.x, center.y + radius * SPACE_OBJECTS.rift.y, center.z + radius * SPACE_OBJECTS.rift.z);
+
+          riftRoot.position.copy(observerWorld)
+            .addScaledVector(endDirection, radius * SPACE_OBJECTS.rift.distance)
+            .addScaledVector(endRight, radius * SPACE_OBJECTS.rift.sideOffset)
+            .addScaledVector(endUp, radius * SPACE_OBJECTS.rift.heightOffset);
           riftRoot.scale.setScalar((radius * SPACE_OBJECTS.rift.radius) / 12);
 
           const buildings = createStationBuildings({
@@ -216,63 +257,25 @@ export default function StationThreeView({ onSelectModule }) {
           const rig = {
             progress: 0,
             goal: 0,
-            cameraPct: { ...CAMERA_POSES.start.camera },
-            targetPct: { ...CAMERA_POSES.start.target },
-
             setProgress(value, immediate = false) {
               rig.goal = clamp(value, 0, 1);
               if (immediate) rig.progress = rig.goal;
             },
-
             update() {
               rig.progress +=
                 (rig.goal - rig.progress) * SCENE_CONFIG.swipeSmoothing;
-
-              rig.cameraPct = { ...OBSERVER_POSITION };
-              rig.targetPct = interpolatePose(LOOK_TARGETS.right, LOOK_TARGETS.left, rig.progress);
-              rig.apply(false);
-            },
-
-            apply(syncUi = true) {
-              const cp = rig.cameraPct;
-              const tp = rig.targetPct;
-
-              camera.position.copy(
-                center.clone().add(
-                  new THREE.Vector3(
-                    (radius * cp.x) / 100,
-                    (radius * cp.y) / 100,
-                    (radius * cp.z) / 100
-                  )
-                )
+              headRig.quaternion.slerpQuaternions(
+                startQuaternion,
+                endQuaternion,
+                rig.progress
               );
-
-              const target = center.clone().add(
-                new THREE.Vector3(
-                  (radius * tp.x) / 100,
-                  (radius * tp.y) / 100,
-                  (radius * tp.z) / 100
-                )
+              const pitch = THREE.MathUtils.degToRad(
+                HEAD_ROTATION.pitchLiftDeg * rig.progress
               );
-
-              camera.lookAt(target);
-              camera.near = Math.max(0.05, radius * 0.01);
-              camera.far = radius * 12;
-              camera.updateProjectionMatrix();
-
-              if (syncUi) {
-                setCoords({
-                  ...cp,
-                  tx: tp.x,
-                  ty: tp.y,
-                  tz: tp.z,
-                });
-              }
+              headRig.rotateX(pitch);
             },
           };
-
           rigRef.current = rig;
-          rig.apply();
 
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
@@ -334,9 +337,12 @@ export default function StationThreeView({ onSelectModule }) {
             rig.setProgress(snap);
             setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
 
-            const cp = { ...OBSERVER_POSITION };
-            const tp = interpolatePose(LOOK_TARGETS.right, LOOK_TARGETS.left, snap);
-            setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
+            setCoords({
+              ...OBSERVER_POSITION,
+              tx: Math.round(HEAD_ROTATION.endYawDeg * snap),
+              ty: Math.round(HEAD_ROTATION.pitchLiftDeg * snap),
+              tz: 0,
+            });
           };
 
           renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -430,7 +436,7 @@ export default function StationThreeView({ onSelectModule }) {
         <span>СВАЙП ВПРАВО ИЛИ ВЛЕВО</span>
         <small>
           CAM {Math.round(coords.x)} / {Math.round(coords.y)} /{" "}
-          {Math.round(coords.z)} · LOOK {Math.round(coords.tx)} /{" "}
+          {Math.round(coords.z)} · YAW {Math.round(coords.tx)}° · PITCH {Math.round(coords.ty)}° /{" "}
           {Math.round(coords.ty)} / {Math.round(coords.tz)}
         </small>
         <div style={styles.frameDots}>
