@@ -2510,7 +2510,7 @@ ungatus-lab-miniapp/components
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/game/PixelFlowSurvival.jsx
 
-Файл и нас отдельно со своим содержимым. 
+Файл отдельно со своим содержимым потому что огромный...
 
 
 -
@@ -3029,7 +3029,14 @@ const styles = {
 
 -
 
-2.3) components/station/AccountStationPrototype.jsx
+
+2) папка 2.3 : components/station/
+расположение:
+ungatus-lab-miniapp/components/station/
+
+Содержит:
+
+2.3.1) components/station/AccountStationPrototype.jsx
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/station/AccountStationPrototype.jsx
 
@@ -3660,6 +3667,413 @@ const styles = {
   launchButton:{ width:"100%", height:50, marginTop:10, border:0, borderRadius:15, background:"linear-gradient(135deg,#e11d48,#7c3aed,#0891b2)", color:"white", fontWeight:950, letterSpacing:".08em", boxShadow:"0 0 34px rgba(225,29,72,.25)" },
 };
 
+
+-
+2.3.2) components/station/StationThreeView.jsx
+таким образом расположение целиком:
+ungatus-lab-miniapp/components/station/StationThreeView.jsx
+
+Содержимое документа: 
+
+(пока не сделан) 
+
+
+-
+2.3.3) components/station/stationBuildings.js
+таким образом расположение целиком:
+ungatus-lab-miniapp/components/station/stationBuildings.js
+
+Содержимое документа: 
+
+import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
+
+function createBodyMaterial(THREE, color) {
+  return new THREE.MeshStandardMaterial({
+    color: 0x0d1b2a,
+    metalness: 0.86,
+    roughness: 0.34,
+    emissive: color,
+    emissiveIntensity: 0.16,
+  });
+}
+
+function createGlowMaterial(THREE, color) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.66,
+    depthWrite: false,
+  });
+}
+
+function addMesh(group, geometry, material, y = 0) {
+  const mesh = new group.userData.THREE.Mesh(geometry, material);
+  mesh.position.y = y;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  group.add(mesh);
+  return mesh;
+}
+
+function markModule(group, moduleId) {
+  group.traverse((object) => {
+    object.userData.moduleId = moduleId;
+  });
+}
+
+function createModuleBuilding(THREE, module, modelScale) {
+  const group = new THREE.Group();
+  group.name = `Module_${module.id}`;
+  group.userData.THREE = THREE;
+  group.userData.moduleId = module.id;
+
+  const baseRadius = modelScale * SCENE_CONFIG.buildingScale;
+  const baseHeight = baseRadius * 0.22;
+  const body = createBodyMaterial(THREE, module.colorHex);
+  const glow = createGlowMaterial(THREE, module.colorHex);
+
+  // Основание намеренно опущено ниже локального нуля.
+  // После установки ноль группы совпадает с поверхностью станции,
+  // поэтому часть основания выглядит встроенной в корпус.
+  addMesh(
+    group,
+    new THREE.CylinderGeometry(baseRadius, baseRadius * 1.08, baseHeight, 24),
+    body,
+    -baseHeight * 0.18
+  );
+
+  const ring = addMesh(
+    group,
+    new THREE.TorusGeometry(baseRadius * 0.82, baseRadius * 0.055, 8, 28),
+    glow,
+    baseHeight * 0.38
+  );
+  ring.rotation.x = Math.PI / 2;
+
+  if (module.type === "hangar") {
+    addMesh(
+      group,
+      new THREE.BoxGeometry(baseRadius * 1.22, baseRadius * 0.38, baseRadius * 0.82),
+      body,
+      baseRadius * 0.18
+    );
+  } else if (module.type === "dish") {
+    addMesh(
+      group,
+      new THREE.CylinderGeometry(baseRadius * 0.15, baseRadius * 0.25, baseRadius * 0.42, 16),
+      body,
+      baseRadius * 0.21
+    );
+    const dish = addMesh(
+      group,
+      new THREE.SphereGeometry(baseRadius * 0.48, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2),
+      body,
+      baseRadius * 0.48
+    );
+    dish.scale.y = 0.25;
+  } else if (module.type === "twins") {
+    [-0.3, 0.3].forEach((offset) => {
+      const tower = addMesh(
+        group,
+        new THREE.CylinderGeometry(baseRadius * 0.17, baseRadius * 0.23, baseRadius * 0.65, 14),
+        body,
+        baseRadius * 0.32
+      );
+      tower.position.x = offset * baseRadius;
+    });
+    addMesh(
+      group,
+      new THREE.BoxGeometry(baseRadius * 0.78, baseRadius * 0.08, baseRadius * 0.08),
+      glow,
+      baseRadius * 0.4
+    );
+  } else if (module.type === "gate") {
+    [-0.36, 0.36].forEach((offset) => {
+      const post = addMesh(
+        group,
+        new THREE.BoxGeometry(baseRadius * 0.16, baseRadius * 0.72, baseRadius * 0.22),
+        body,
+        baseRadius * 0.36
+      );
+      post.position.x = offset * baseRadius;
+    });
+    addMesh(
+      group,
+      new THREE.BoxGeometry(baseRadius * 0.9, baseRadius * 0.14, baseRadius * 0.22),
+      glow,
+      baseRadius * 0.68
+    );
+  } else if (module.type === "reactor") {
+    addMesh(
+      group,
+      new THREE.CylinderGeometry(baseRadius * 0.38, baseRadius * 0.52, baseRadius * 0.42, 20),
+      body,
+      baseRadius * 0.2
+    );
+    addMesh(
+      group,
+      new THREE.IcosahedronGeometry(baseRadius * 0.27, 1),
+      glow,
+      baseRadius * 0.48
+    );
+  } else if (module.type === "vault") {
+    addMesh(
+      group,
+      new THREE.BoxGeometry(baseRadius * 0.92, baseRadius * 0.44, baseRadius * 0.74),
+      body,
+      baseRadius * 0.21
+    );
+  } else if (module.type === "citadel") {
+    addMesh(
+      group,
+      new THREE.CylinderGeometry(baseRadius * 0.24, baseRadius * 0.42, baseRadius * 0.72, 18),
+      body,
+      baseRadius * 0.35
+    );
+    addMesh(
+      group,
+      new THREE.ConeGeometry(baseRadius * 0.17, baseRadius * 0.4, 14),
+      glow,
+      baseRadius * 0.82
+    );
+  } else {
+    addMesh(
+      group,
+      new THREE.CylinderGeometry(baseRadius * 0.11, baseRadius * 0.25, baseRadius * 0.58, 14),
+      body,
+      baseRadius * 0.28
+    );
+    addMesh(
+      group,
+      new THREE.OctahedronGeometry(baseRadius * 0.2),
+      glow,
+      baseRadius * 0.66
+    );
+  }
+
+  const hitArea = addMesh(
+    group,
+    new THREE.CylinderGeometry(baseRadius * 1.18, baseRadius * 1.18, baseRadius * 1.15, 14),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    }),
+    baseRadius * 0.38
+  );
+  hitArea.name = `HitArea_${module.id}`;
+
+  markModule(group, module.id);
+  delete group.userData.THREE;
+  return group;
+}
+
+function getDiskRadius(bounds) {
+  const size = bounds.getSize(bounds.min.clone());
+  return Math.min(size.x, size.z) * 0.5;
+}
+
+function findSurfaceHit(THREE, station, x, z, bounds, diskRadius) {
+  const raycaster = new THREE.Raycaster();
+  const origin = new THREE.Vector3(x, bounds.max.y + diskRadius, z);
+  raycaster.set(origin, new THREE.Vector3(0, -1, 0));
+
+  return raycaster
+    .intersectObject(station, true)
+    .find((hit) => hit.face && hit.object.visible !== false);
+}
+
+export function createStationBuildings({ THREE, station, bounds, center }) {
+  const root = new THREE.Group();
+  root.name = "StationModuleBuildings";
+
+  const clickableBuildings = [];
+  const moduleGroups = new Map();
+  const diskRadius = getDiskRadius(bounds);
+
+  MODULE_ANCHORS.forEach((anchor) => {
+    const module = MODULE_BY_ID[anchor.id];
+    if (!module) return;
+
+    const angle = THREE.MathUtils.degToRad(anchor.angle);
+    const x = center.x + Math.cos(angle) * diskRadius * anchor.ring;
+    const z = center.z + Math.sin(angle) * diskRadius * anchor.ring;
+    const hit = findSurfaceHit(THREE, station, x, z, bounds, diskRadius);
+
+    // Не создаём объект без подтверждённой поверхности.
+    if (!hit) return;
+
+    const building = createModuleBuilding(THREE, module, diskRadius);
+    building.position.set(x, hit.point.y, z);
+    building.rotation.y = -angle + Math.PI / 2;
+    building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
+
+    root.add(building);
+    clickableBuildings.push(building);
+    moduleGroups.set(module.id, building);
+  });
+
+  return {
+    root,
+    clickableBuildings,
+    moduleGroups,
+    diskRadius,
+  };
+}
+
+export function pulseStationBuilding(moduleGroups, moduleId) {
+  const group = moduleGroups.get(moduleId);
+  if (!group) return;
+
+  group.traverse((object) => {
+    if (object.material?.emissiveIntensity !== undefined) {
+      object.userData.previousEmissiveIntensity = object.material.emissiveIntensity;
+      object.material.emissiveIntensity = 1.25;
+    }
+  });
+
+  window.setTimeout(() => {
+    group.traverse((object) => {
+      if (object.material?.emissiveIntensity !== undefined) {
+        object.material.emissiveIntensity =
+          object.userData.previousEmissiveIntensity ?? 0.16;
+      }
+    });
+  }, 180);
+} 
+
+
+2.3.4) components/station/stationConfig.js
+таким образом расположение целиком:
+ungatus-lab-miniapp/components/station/stationConfig.js
+
+Содержимое документа: 
+
+export const MODULES = [
+  { id: "device", title: "DEVICE", subtitle: "Emulator Hangar", color: "#5ee7ff", colorHex: 0x5ee7ff, icon: "▣", type: "hangar" },
+  { id: "scanner", title: "SCANNER", subtitle: "Etalon Laboratory", color: "#53f5df", colorHex: 0x53f5df, icon: "◉", type: "dish" },
+  { id: "collab", title: "COLLAB", subtitle: "Link Hub", color: "#b99cff", colorHex: 0xb99cff, icon: "◈", type: "twins" },
+  { id: "market", title: "MARKET", subtitle: "Trade Dock", color: "#ff8bc8", colorHex: 0xff8bc8, icon: "◍", type: "hangar" },
+  { id: "premium", title: "PREMIUM", subtitle: "Status Reactor", color: "#6df0ad", colorHex: 0x6df0ad, icon: "◇", type: "reactor" },
+  { id: "center", title: "CORE", subtitle: "Account Citadel", color: "#8cecff", colorHex: 0x8cecff, icon: "◎", type: "citadel" },
+  { id: "wallet", title: "WALLET", subtitle: "UGT Vault", color: "#ffe693", colorHex: 0xffe693, icon: "⇄", type: "vault" },
+  { id: "squad", title: "SQUAD", subtitle: "Relay Array", color: "#ca9cff", colorHex: 0xca9cff, icon: "⬡", type: "beacon" },
+  { id: "earn", title: "EARN", subtitle: "Mission Beacon", color: "#ffe45c", colorHex: 0xffe45c, icon: "✦", type: "beacon" },
+  { id: "game", title: "ARENA", subtitle: "PvP Rift", color: "#ff6f91", colorHex: 0xff6f91, icon: "⚔", type: "gate" },
+];
+
+export const MODULE_BY_ID = Object.fromEntries(
+  MODULES.map((module) => [module.id, module])
+);
+
+export const PREMIUM_TIERS = [
+  ["Free", "Базовый доступ", "1% scanner"],
+  ["Basic", "€9.99 / month", "Comparator trial"],
+  ["Advanced", "€24.99 / month", "More tools and slots"],
+  ["Pro", "€39.99 / month", "Extended scanner"],
+  ["Pro Plus", "€79.99 / month", "Maximum profile tier"],
+];
+
+export const MODULE_DETAILS = {
+  center: {
+    heading: "ACCOUNT CITADEL",
+    text: "Постоянный профиль, уровень аккаунта и развитие всей орбитальной станции.",
+    metrics: [["PROFILE", "LV 1"], ["PVP GAMES", "0"], ["STATUS", "FREE"], ["RATING", "—"]],
+    rows: [["Station generation", "G1"], ["Unlocked systems", "10 / 10"], ["Profile experience", "0 XP"]],
+  },
+  device: {
+    heading: "DEVICE & EMULATOR HANGAR",
+    text: "Подключённые компьютеры, Android-устройства, эмуляторы и зеркала с данными от бэкенда.",
+    metrics: [["PC", "0"], ["ANDROID", "0"], ["EMULATORS", "1"], ["ONLINE", "0"]],
+    rows: [["Remote mirrors", "0"], ["Available slots", "1 / 1"], ["Backend sync", "Offline"]],
+  },
+  scanner: {
+    heading: "SCANNER & ETALON LAB",
+    text: "Эталоны сцен, ROI, плотность пикселей и премиальный формирователь уникальных эталонов.",
+    metrics: [["PIXELS", "1%"], ["ETALONS", "0"], ["SCENES", "0"], ["COMPARATOR", "OFF"]],
+    rows: [["Macro Recorder", "Native"], ["Unique etalons", "Premium"], ["Pixel density above 1%", "Premium"], ["Project Mindmap", "Native"]],
+  },
+  collab: {
+    heading: "COLLABORATION HUB",
+    text: "Общие проекты, права управления и совместное редактирование сценариев.",
+    metrics: [["ROOMS", "0"], ["PROJECTS", "0"], ["MEMBERS", "0"], ["LINKS", "0"]],
+    rows: [["Shared workspaces", "Soon"], ["Access control", "Soon"], ["Scenario co-edit", "Soon"]],
+  },
+  market: {
+    heading: "PROJECT MARKET DOCK",
+    text: "Внутренний рынок проектов автоматизации, сценариев, зеркал и цифровых инструментов.",
+    metrics: [["PROJECTS", "0"], ["RENTALS", "0"], ["TOOLS", "0"], ["SALES", "0"]],
+    rows: [["Project scripts", "Soon"], ["Emulator mirrors", "Soon"], ["Premium tools", "Soon"]],
+  },
+  premium: {
+    heading: "PREMIUM STATUS REACTOR",
+    text: "Статус аккаунта, срок инструментов, временные trial-возможности и будущий ежедневный бонус.",
+    metrics: [["TIER", "FREE"], ["TOOLS", "BASE"], ["DROP", "INACTIVE"], ["TERM", "—"]],
+    rows: [],
+  },
+  wallet: {
+    heading: "UGT WALLET VAULT",
+    text: "Подключённые кошельки, баланс UGT и будущий обмен внутри платформы.",
+    metrics: [["UGT", "0"], ["PROMO", "0"], ["LOCKED", "0"], ["AVAILABLE", "0"]],
+    rows: [["TON / Tonkeeper", "Not connected"], ["Solana / Phantom", "Not connected"], ["Swap", "Soon"]],
+  },
+  squad: {
+    heading: "SQUAD RELAY ARRAY",
+    text: "Реферальная сеть, игровые отряды и будущие кланы.",
+    metrics: [["SQUAD", "0"], ["INVITED", "0"], ["ACTIVITY", "0"], ["REWARD", "0"]],
+    rows: [["Referral code", "PGM-SCENE"], ["Clan channel", "Offline"], ["Shared arena queue", "Soon"]],
+  },
+  earn: {
+    heading: "MISSION BEACON",
+    text: "Задания, rewarded ads, активность аккаунта и временный доступ к отдельным Premium-функциям.",
+    metrics: [["MISSIONS", "1 / 4"], ["ADS", "0"], ["PROMO", "0"], ["STREAK", "1"]],
+    rows: [["Open Mini App", "DONE"], ["Watch rewarded ad", "SOON"], ["Start PvP arena", "0 / 1"], ["Comparator trial", "Inactive"]],
+  },
+  game: {
+    heading: "MACRO SWARM ARENA",
+    text: "Вылет в PvP с развитым Core, легионами, игровыми эмуляторами и серверной эволюцией.",
+    metrics: [["CORE", "G1"], ["LEGIONS", "1"], ["EMULATORS", "1"], ["SERVER", "1–5"]],
+    rows: [["Starter legion", "Core Guard"], ["Sensor profile", "1% pixels"], ["Arena evolution", "Enabled"]],
+  },
+};
+
+export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
+
+export const CAMERA_POSES = {
+  start: {
+    camera: { x: 192, y: 66, z: 70 },
+    target: { x: 60, y: 0, z: 0 },
+  },
+  end: {
+    camera: { x: 217, y: 66, z: 175 },
+    target: { x: -82, y: -8, z: 0 },
+  },
+};
+
+// Временно сохраняем текущие места. На следующем этапе заменим их
+// на точные точки крепления к деталям GLB.
+export const MODULE_ANCHORS = [
+  { id: "device", angle: 198, ring: 0.64 },
+  { id: "scanner", angle: 156, ring: 0.57 },
+  { id: "collab", angle: 232, ring: 0.52 },
+  { id: "wallet", angle: 270, ring: 0.61 },
+  { id: "game", angle: 306, ring: 0.64 },
+  { id: "market", angle: 338, ring: 0.58 },
+  { id: "earn", angle: 18, ring: 0.64 },
+  { id: "squad", angle: 52, ring: 0.56 },
+  { id: "premium", angle: 84, ring: 0.48 },
+  { id: "center", angle: 122, ring: 0.43 },
+];
+
+export const SCENE_CONFIG = {
+  cameraFov: 34,
+  cameraNear: 0.1,
+  cameraFar: 500,
+  swipeDistanceFactor: 0.72,
+  swipeSmoothing: 0.16,
+  tapThresholdPx: 9,
+  buildingScale: 0.038,
+};
 
 
 ---
