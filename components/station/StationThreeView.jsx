@@ -71,11 +71,6 @@ export default function StationThreeView({ onSelectModule }) {
         SCENE_CONFIG.cameraFar
       );
       camera.up.set(0, 1, 0);
-      const observerRig = new THREE.Group();
-      const headRig = new THREE.Group();
-      observerRig.add(headRig);
-      headRig.add(camera);
-      scene.add(observerRig);
 
       renderer = new THREE.WebGLRenderer({
         antialias: true,
@@ -206,32 +201,46 @@ export default function StationThreeView({ onSelectModule }) {
           const center = bounds.getCenter(new THREE.Vector3());
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
+
+          // Fixed world-space observer, close to sector 9.
           const observerWorld = center.clone().add(new THREE.Vector3(
             radius * OBSERVER_POSITION.x / 100,
             radius * OBSERVER_POSITION.y / 100,
             radius * OBSERVER_POSITION.z / 100
           ));
-          observerRig.position.copy(observerWorld);
-          camera.position.set(0, 0, 0);
+          camera.position.copy(observerWorld);
 
           const initialTarget = center.clone().add(new THREE.Vector3(
             radius * INITIAL_LOOK_TARGET.x / 100,
             radius * INITIAL_LOOK_TARGET.y / 100,
             radius * INITIAL_LOOK_TARGET.z / 100
           ));
-          headRig.lookAt(initialTarget);
-          const startQuaternion = headRig.quaternion.clone();
+          camera.lookAt(initialTarget);
+          const startQuaternion = camera.quaternion.clone();
+
+          // Rotate the view direction in world space. The camera itself never moves.
           const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(0, 1, 0),
             THREE.MathUtils.degToRad(HEAD_ROTATION.endYawDeg)
           );
-          const endQuaternion = startQuaternion.clone().premultiply(yawQuaternion);
+          const pitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg)
+          );
+          const endQuaternion = startQuaternion.clone()
+            .premultiply(yawQuaternion)
+            .multiply(pitchQuaternion);
 
+          // Place the sun in the final left-looking horizon. Hide the temporary rift.
           const endDirection = new THREE.Vector3(0, 0, -1)
             .applyQuaternion(endQuaternion)
             .normalize();
-          const endRight = new THREE.Vector3().crossVectors(endDirection, camera.up).normalize();
-          const endUp = new THREE.Vector3().crossVectors(endRight, endDirection).normalize();
+          const endRight = new THREE.Vector3()
+            .crossVectors(endDirection, camera.up)
+            .normalize();
+          const endUp = new THREE.Vector3()
+            .crossVectors(endRight, endDirection)
+            .normalize();
 
           sunRoot.position.copy(observerWorld)
             .addScaledVector(endDirection, radius * SPACE_OBJECTS.sun.distance)
@@ -239,12 +248,7 @@ export default function StationThreeView({ onSelectModule }) {
             .addScaledVector(endUp, radius * SPACE_OBJECTS.sun.heightOffset);
           sunRoot.scale.setScalar((radius * SPACE_OBJECTS.sun.radius) / 15);
           sunLight.position.copy(sunRoot.position);
-
-          riftRoot.position.copy(observerWorld)
-            .addScaledVector(endDirection, radius * SPACE_OBJECTS.rift.distance)
-            .addScaledVector(endRight, radius * SPACE_OBJECTS.rift.sideOffset)
-            .addScaledVector(endUp, radius * SPACE_OBJECTS.rift.heightOffset);
-          riftRoot.scale.setScalar((radius * SPACE_OBJECTS.rift.radius) / 12);
+          riftRoot.visible = false;
 
           const buildings = createStationBuildings({
             THREE,
@@ -264,18 +268,16 @@ export default function StationThreeView({ onSelectModule }) {
             update() {
               rig.progress +=
                 (rig.goal - rig.progress) * SCENE_CONFIG.swipeSmoothing;
-              headRig.quaternion.slerpQuaternions(
+              camera.position.copy(observerWorld);
+              camera.quaternion.slerpQuaternions(
                 startQuaternion,
                 endQuaternion,
                 rig.progress
               );
-              const pitch = THREE.MathUtils.degToRad(
-                HEAD_ROTATION.pitchLiftDeg * rig.progress
-              );
-              headRig.rotateX(pitch);
             },
           };
           rigRef.current = rig;
+          rig.apply();
 
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
@@ -436,8 +438,7 @@ export default function StationThreeView({ onSelectModule }) {
         <span>СВАЙП ВПРАВО ИЛИ ВЛЕВО</span>
         <small>
           CAM {Math.round(coords.x)} / {Math.round(coords.y)} /{" "}
-          {Math.round(coords.z)} · YAW {Math.round(coords.tx)}° · PITCH {Math.round(coords.ty)}° /{" "}
-          {Math.round(coords.ty)} / {Math.round(coords.tz)}
+          {Math.round(coords.z)} · YAW {Math.round(coords.tx)}° · PITCH {Math.round(coords.ty)}°
         </small>
         <div style={styles.frameDots}>
           <i className={panoramaFrame === 1 ? "active" : ""} />
