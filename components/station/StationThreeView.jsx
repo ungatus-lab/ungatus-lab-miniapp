@@ -216,20 +216,31 @@ export default function StationThreeView({ onSelectModule }) {
             radius * INITIAL_LOOK_TARGET.z / 100
           ));
           camera.lookAt(initialTarget);
-          const startQuaternion = camera.quaternion.clone();
+          const baseQuaternion = camera.quaternion.clone();
 
-          // Rotate the view direction in world space. The camera itself never moves.
-          const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(
+          // Exact old middle frame becomes the new start: yaw 45 degrees.
+          const startYawQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.startYawDeg)
+          );
+          const endYawQuaternion = new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(0, 1, 0),
             THREE.MathUtils.degToRad(HEAD_ROTATION.endYawDeg)
           );
-          const pitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
+          const startPitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg * 0.5)
+          );
+          const endPitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(1, 0, 0),
             THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg)
           );
-          const endQuaternion = startQuaternion.clone()
-            .premultiply(yawQuaternion)
-            .multiply(pitchQuaternion);
+          const startQuaternion = baseQuaternion.clone()
+            .premultiply(startYawQuaternion)
+            .multiply(startPitchQuaternion);
+          const endQuaternion = baseQuaternion.clone()
+            .premultiply(endYawQuaternion)
+            .multiply(endPitchQuaternion);
 
           // Place the sun in the final left-looking horizon. Hide the temporary rift.
           const endDirection = new THREE.Vector3(0, 0, -1)
@@ -341,8 +352,13 @@ export default function StationThreeView({ onSelectModule }) {
 
             setCoords({
               ...OBSERVER_POSITION,
-              tx: Math.round(HEAD_ROTATION.endYawDeg * snap),
-              ty: Math.round(HEAD_ROTATION.pitchLiftDeg * snap),
+              tx: Math.round(
+                HEAD_ROTATION.startYawDeg +
+                (HEAD_ROTATION.endYawDeg - HEAD_ROTATION.startYawDeg) * snap
+              ),
+              ty: Math.round(
+                HEAD_ROTATION.pitchLiftDeg * (0.5 + 0.5 * snap)
+              ),
               tz: 0,
             });
           };
