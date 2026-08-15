@@ -4229,17 +4229,31 @@ export const CAMERA_POSES = {
 // Временно сохраняем текущие места. На следующем этапе заменим их
 // на точные точки крепления к деталям GLB.
 export const MODULE_ANCHORS = [
-  { id: "device", angle: 198, ring: 0.64 },
-  { id: "scanner", angle: 156, ring: 0.57 },
-  { id: "collab", angle: 232, ring: 0.52 },
-  { id: "wallet", angle: 270, ring: 0.61 },
-  { id: "game", angle: 306, ring: 0.64 },
-  { id: "market", angle: 338, ring: 0.58 },
-  { id: "earn", angle: 18, ring: 0.64 },
-  { id: "squad", angle: 52, ring: 0.56 },
-  { id: "premium", angle: 84, ring: 0.48 },
-  { id: "center", angle: 122, ring: 0.43 },
+  // Four real large circular pads of the GLB. Angles match the authored station geometry.
+  { id: "market", zone: "platform", platform: 1, angle: 22, ring: 0.66, inset: 0.22, focusFrame: 1 },
+  { id: "scanner", zone: "platform", platform: 2, angle: 112, ring: 0.66, inset: 0.22, focusFrame: 2 },
+  { id: "device", zone: "platform", platform: 3, angle: 202, ring: 0.66, inset: 0.22, focusFrame: 2 },
+  { id: "game", zone: "platform", platform: 4, angle: 292, ring: 0.66, inset: 0.16, focusFrame: 3, action: "launch-game" },
+
+  // Five low-profile systems on the protected inner service ring.
+  { id: "collab", zone: "inner-ring", angle: 154, ring: 0.47, inset: 0.30, focusFrame: 2 },
+  { id: "wallet", zone: "inner-ring", angle: 226, ring: 0.47, inset: 0.30, focusFrame: 2 },
+  { id: "premium", zone: "inner-ring", angle: 334, ring: 0.47, inset: 0.30, focusFrame: 1 },
+  { id: "earn", zone: "inner-ring", angle: 46, ring: 0.47, inset: 0.30, focusFrame: 1 },
+  { id: "squad", zone: "inner-ring", angle: 82, ring: 0.47, inset: 0.30, focusFrame: 3 },
+
+  // CORE is the existing central dome and tower, not an extra generated building.
+  { id: "center", zone: "existing-core", useExisting: true, focusFrame: 2 },
 ];
+
+// Future camera focus can use these values after the base placement is approved.
+// They are disabled for now so the current three-frame panorama stays unchanged.
+export const MODULE_FOCUS = {
+  enabled: false,
+  distanceScale: 1.35,
+  heightScale: 0.38,
+  durationMs: 520,
+};
 
 export const SCENE_CONFIG = {
   cameraFov: 34,
@@ -4248,8 +4262,10 @@ export const SCENE_CONFIG = {
   swipeDistanceFactor: 0.72,
   swipeSmoothing: 0.16,
   tapThresholdPx: 9,
-  buildingScale: 0.038,
+  buildingScale: 0.032,
+  buildingEmbed: 0.3,
 };
+
 
 
 ---
