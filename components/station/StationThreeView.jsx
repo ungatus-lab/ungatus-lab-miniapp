@@ -5,6 +5,7 @@ import {
   CAMERA_POSES,
   OBSERVER_POSITION,
   OBSERVER_LATERAL_SHIFT,
+  OBSERVER_TO_BEAM_FRACTION,
   INITIAL_LOOK_TARGET,
   HEAD_ROTATION,
   LOOK_TARGETS,
@@ -228,6 +229,10 @@ export default function StationThreeView({ onSelectModule }) {
           );
           observerWorld.add(lateralShift);
           initialTarget.add(lateralShift);
+
+          // Exact A -> B move from the observer toward the marked beam center.
+          // The target stays fixed. No orbit, no sideways drift and no radius-based direction.
+          observerWorld.lerp(initialTarget, OBSERVER_TO_BEAM_FRACTION);
 
           camera.position.copy(observerWorld);
           camera.lookAt(initialTarget);
