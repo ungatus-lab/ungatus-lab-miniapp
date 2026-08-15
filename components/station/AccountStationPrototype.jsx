@@ -164,25 +164,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
         >
           <StationThreeView />
 
-          {MODULES.map((module) => (
-            <button
-              key={module.id}
-              className={`station-sector sector-${module.shape}`}
-              style={{
-                ...styles.sector,
-                left: `${module.x}%`,
-                top: `${module.y}%`,
-                color: module.color,
-                borderColor: `${module.color}88`,
-                boxShadow: `0 0 22px ${module.color}33, inset 0 0 18px ${module.color}1f`,
-              }}
-              onClick={() => openModule(module)}
-              aria-label={`${module.title}: ${module.subtitle}`}
-            >
-              <span className="sector-building"><i>{module.icon}</i></span>
-              <span className="sector-name"><b>{module.title}</b><small>{module.subtitle}</small></span>
-            </button>
-          ))}
+          {/* Modules will return as 3D buildings in the next stage. */}
         </div>
       </section>
 
@@ -204,7 +186,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПАНОРАМА: ТРИ ФИКСИРОВАННЫХ РАКУРСА</div>
+        <div style={styles.cameraHint}>ПАНОРАМА СТАНЦИИ · СВАЙП ДЛЯ ОБЗОРА</div>
       )}
 
       {active && (
@@ -226,25 +208,8 @@ function StationThreeView() {
   const [coords, setCoords] = useState({ x: 192, y: 66, z: 70, tx: 60, ty: 0, tz: 0 });
   const [panoramaFrame, setPanoramaFrame] = useState(1);
 
-  function move(axis, delta) {
-    const rig = rigRef.current;
-    if (!rig) return;
-    rig.cameraPct[axis] += delta;
-    rig.apply();
-  }
 
-  function aim(axis, delta) {
-    const rig = rigRef.current;
-    if (!rig) return;
-    rig.targetPct[axis] += delta;
-    rig.apply();
-  }
 
-  function resetCalibration() {
-    const rig = rigRef.current;
-    if (!rig) return;
-    rig.setProgress(0, true);
-  }
 
   useEffect(() => {
     let disposed = false;
@@ -306,33 +271,38 @@ function StationThreeView() {
         const floorGrid = new THREE.GridHelper(gridSize, divisions, 0x43d9ff, 0x24506a);
         floorGrid.position.set(center.x, bounds.min.y - radius * 0.05, center.z);
         floorGrid.material.transparent = true;
-        floorGrid.material.opacity = 0.28;
+        floorGrid.material.opacity = 0;
+        floorGrid.visible = false;
         scene.add(floorGrid);
 
         const backGrid = new THREE.GridHelper(gridSize, divisions, 0x9f7aea, 0x3c315b);
         backGrid.rotation.x = Math.PI / 2;
         backGrid.position.set(center.x, center.y, center.z - radius * 1.25);
         backGrid.material.transparent = true;
-        backGrid.material.opacity = 0.18;
+        backGrid.material.opacity = 0;
+        backGrid.visible = false;
         scene.add(backGrid);
 
         const sideGrid = new THREE.GridHelper(gridSize, divisions, 0x60f5c5, 0x28594d);
         sideGrid.rotation.z = Math.PI / 2;
         sideGrid.position.set(center.x - radius * 1.25, center.y, center.z);
         sideGrid.material.transparent = true;
-        sideGrid.material.opacity = 0.14;
+        sideGrid.material.opacity = 0;
+        sideGrid.visible = false;
         scene.add(sideGrid);
 
         const cameraMarker = new THREE.Mesh(
           new THREE.SphereGeometry(radius * 0.055, 18, 12),
           new THREE.MeshBasicMaterial({ color: 0xffe45c })
         );
+        cameraMarker.visible = false;
         scene.add(cameraMarker);
 
         const targetMarker = new THREE.Mesh(
           new THREE.SphereGeometry(radius * 0.035, 18, 12),
           new THREE.MeshBasicMaterial({ color: 0x5ee7ff })
         );
+        targetMarker.visible = false;
         scene.add(targetMarker);
 
         const POSE_A = { camera: { x: 192, y: 66, z: 70 }, target: { x: 60, y: 0, z: 0 } };
