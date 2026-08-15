@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   CAMERA_POSES,
   OBSERVER_POSITION,
+  OBSERVER_LATERAL_SHIFT,
   INITIAL_LOOK_TARGET,
   HEAD_ROTATION,
   LOOK_TARGETS,
@@ -208,13 +209,27 @@ export default function StationThreeView({ onSelectModule }) {
             radius * OBSERVER_POSITION.y / 100,
             radius * OBSERVER_POSITION.z / 100
           ));
-          camera.position.copy(observerWorld);
-
           const initialTarget = center.clone().add(new THREE.Vector3(
             radius * INITIAL_LOOK_TARGET.x / 100,
             radius * INITIAL_LOOK_TARGET.y / 100,
             radius * INITIAL_LOOK_TARGET.z / 100
           ));
+
+          // Parallel translation to screen-right. Target follows by the same amount,
+          // preserving direction, distance, height and all panorama angles.
+          const initialDirection = initialTarget.clone()
+            .sub(observerWorld)
+            .normalize();
+          const screenRight = new THREE.Vector3()
+            .crossVectors(initialDirection, camera.up)
+            .normalize();
+          const lateralShift = screenRight.multiplyScalar(
+            radius * OBSERVER_LATERAL_SHIFT
+          );
+          observerWorld.add(lateralShift);
+          initialTarget.add(lateralShift);
+
+          camera.position.copy(observerWorld);
           camera.lookAt(initialTarget);
           const baseQuaternion = camera.quaternion.clone();
 
