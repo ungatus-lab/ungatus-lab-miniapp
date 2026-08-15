@@ -186,7 +186,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>КОСМОГОРОД · СВАЙП ИЛИ НАЖМИТЕ ЗДАНИЕ</div>
+        <div style={styles.cameraHint}>КОСМОГОРОД · ЗДАНИЯ ЗАКРЕПЛЕНЫ НА ПОВЕРХНОСТИ</div>
       )}
 
       {active && (
@@ -268,15 +268,15 @@ function StationThreeView({ onSelectModule }) {
         const moduleRoot = new THREE.Group();
         scene.add(moduleRoot);
         const specs = [
-          ["device",205,.72,0x5ee7ff,"hangar"],["scanner",150,.70,0x53f5df,"dish"],
-          ["collab",235,.60,0xb99cff,"twins"],["wallet",275,.69,0xffe693,"vault"],
-          ["game",315,.74,0xff6f91,"gate"],["market",342,.70,0xff8bc8,"hangar"],
-          ["earn",18,.72,0xffe45c,"beacon"],["squad",48,.67,0xca9cff,"beacon"],
-          ["premium",78,.61,0x6df0ad,"reactor"],["center",110,.52,0x8cecff,"citadel"]
+          ["device",198,.64,0x5ee7ff,"hangar"], ["scanner",156,.57,0x53f5df,"dish"],
+          ["collab",232,.52,0xb99cff,"twins"], ["wallet",270,.61,0xffe693,"vault"],
+          ["game",306,.64,0xff6f91,"gate"], ["market",338,.58,0xff8bc8,"hangar"],
+          ["earn",18,.64,0xffe45c,"beacon"], ["squad",52,.56,0xca9cff,"beacon"],
+          ["premium",84,.48,0x6df0ad,"reactor"], ["center",122,.43,0x8cecff,"citadel"]
         ];
-        const baseR = radius*.055;
-        const dark = (color) => new THREE.MeshStandardMaterial({color:0x17283a,metalness:.8,roughness:.28,emissive:color,emissiveIntensity:.2});
-        const glow = (color) => new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92,depthWrite:false});
+        const baseR = radius*.038;
+        const dark = (color) => new THREE.MeshStandardMaterial({color:0x0d1b2a,metalness:.86,roughness:.34,emissive:color,emissiveIntensity:.2});
+        const glow = (color) => new THREE.MeshBasicMaterial({color,transparent:true,opacity:.72,depthWrite:false});
         const addMesh = (group,geometry,mat,y=0) => { const m=new THREE.Mesh(geometry,mat); m.position.y=y; group.add(m); return m; };
         function building(id,color,type) {
           const g=new THREE.Group(); g.name=`Module_${id}`;
@@ -294,8 +294,23 @@ function StationThreeView({ onSelectModule }) {
           const hit=addMesh(g,new THREE.CylinderGeometry(baseR*1.3,baseR*1.3,baseR*1.9,14),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}),baseR*.95);
           g.traverse(o=>o.userData.moduleId=id); clickableBuildings.push(g); return g;
         }
-        const platformY=bounds.min.y+radius*.10;
-        specs.forEach(([id,deg,ring,color,type])=>{const a=THREE.MathUtils.degToRad(deg),g=building(id,color,type);g.position.set(center.x+Math.cos(a)*radius*ring,platformY,center.z+Math.sin(a)*radius*ring);g.rotation.y=-a+Math.PI/2;moduleRoot.add(g);});
+        // Determine the real station surface under every module with a vertical ray.
+        // This prevents buildings from floating outside the disk or sinking below it.
+        const surfaceRay = new THREE.Raycaster();
+        const down = new THREE.Vector3(0,-1,0);
+        const rayStartY = bounds.max.y + radius;
+        specs.forEach(([id,deg,ring,color,type])=>{
+          const a=THREE.MathUtils.degToRad(deg);
+          const x=center.x+Math.cos(a)*radius*ring;
+          const z=center.z+Math.sin(a)*radius*ring;
+          surfaceRay.set(new THREE.Vector3(x,rayStartY,z),down);
+          const surfaceHit=surfaceRay.intersectObject(station,true).find(hit=>hit.face);
+          const surfaceY=surfaceHit ? surfaceHit.point.y + radius*.006 : center.y;
+          const g=building(id,color,type);
+          g.position.set(x,surfaceY,z);
+          g.rotation.y=-a+Math.PI/2;
+          moduleRoot.add(g);
+        });
 
 
         // Three perpendicular calibration planes. The model stays fixed at all times.
