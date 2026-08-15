@@ -92,8 +92,8 @@ export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
 export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
 export const HEAD_ROTATION = {
-  startYawDeg: 45,
-  endYawDeg: 90,
+  startYawDeg: 55,
+  endYawDeg: 100,
   pitchLiftDeg: 5,
 };
 export const LOOK_TARGETS = {
