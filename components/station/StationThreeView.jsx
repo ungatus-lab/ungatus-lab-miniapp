@@ -83,7 +83,95 @@ export default function StationThreeView({ onSelectModule }) {
       renderer.domElement.style.touchAction = "none";
       host.appendChild(renderer.domElement);
 
-      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 2.1));
+      // Deep-space environment: layered stars, giant sun and a distant PvP rift.
+      const spaceRoot = new THREE.Group();
+      scene.add(spaceRoot);
+
+      function createStarLayer(count, spread, size, color, opacity) {
+        const positions = new Float32Array(count * 3);
+        for (let i = 0; i < count; i += 1) {
+          const r = spread * (0.55 + Math.random() * 0.45);
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+          positions[i * 3 + 1] = r * Math.cos(phi);
+          positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        const material = new THREE.PointsMaterial({
+          color,
+          size,
+          transparent: true,
+          opacity,
+          sizeAttenuation: true,
+          depthWrite: false,
+        });
+        return new THREE.Points(geometry, material);
+      }
+
+      const farStars = createStarLayer(900, 175, 0.28, 0xb8d7ff, 0.72);
+      const nearStars = createStarLayer(260, 105, 0.48, 0xffffff, 0.88);
+      spaceRoot.add(farStars, nearStars);
+
+      const sunRoot = new THREE.Group();
+      sunRoot.position.set(-78, 48, -96);
+      const sunCore = new THREE.Mesh(
+        new THREE.SphereGeometry(15, 48, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffe0a0 })
+      );
+      const sunHalo = new THREE.Mesh(
+        new THREE.SphereGeometry(22, 40, 28),
+        new THREE.MeshBasicMaterial({
+          color: 0xff8a35,
+          transparent: true,
+          opacity: 0.11,
+          depthWrite: false,
+          side: THREE.BackSide,
+        })
+      );
+      const sunCorona = new THREE.Mesh(
+        new THREE.SphereGeometry(30, 36, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0xff5d57,
+          transparent: true,
+          opacity: 0.035,
+          depthWrite: false,
+          side: THREE.BackSide,
+        })
+      );
+      sunRoot.add(sunCore, sunHalo, sunCorona);
+      spaceRoot.add(sunRoot);
+
+      const riftRoot = new THREE.Group();
+      riftRoot.position.set(68, 5, -115);
+      riftRoot.rotation.x = Math.PI / 2.35;
+      const riftOuter = new THREE.Mesh(
+        new THREE.TorusGeometry(12, 1.15, 18, 72),
+        new THREE.MeshBasicMaterial({
+          color: 0xff416c,
+          transparent: true,
+          opacity: 0.62,
+          depthWrite: false,
+        })
+      );
+      const riftInner = new THREE.Mesh(
+        new THREE.TorusGeometry(8.7, 0.34, 12, 64),
+        new THREE.MeshBasicMaterial({
+          color: 0x8f6bff,
+          transparent: true,
+          opacity: 0.72,
+          depthWrite: false,
+        })
+      );
+      riftRoot.add(riftOuter, riftInner);
+      spaceRoot.add(riftRoot);
+
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 2.15);
+      sunLight.position.copy(sunRoot.position);
+      scene.add(sunLight);
+
+      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 1.45));
 
       const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
       keyLight.position.set(8, 18, 16);
@@ -301,6 +389,15 @@ export default function StationThreeView({ onSelectModule }) {
 
       const render = () => {
         rigRef.current?.update?.();
+        const panorama = rigRef.current?.progress || 0;
+        farStars.rotation.y = panorama * 0.035;
+        nearStars.rotation.y = panorama * 0.08;
+        sunRoot.position.x = -78 + panorama * 8;
+        riftRoot.position.x = 68 - panorama * 12;
+        riftOuter.rotation.z += 0.0018;
+        riftInner.rotation.z -= 0.0026;
+        const pulse = 1 + Math.sin(performance.now() * 0.0015) * 0.035;
+        sunHalo.scale.setScalar(pulse);
         renderer.render(scene, camera);
         frameId = requestAnimationFrame(render);
       };
@@ -363,7 +460,7 @@ const styles = {
     width: "100%",
     height: "100%",
     background:
-      "radial-gradient(circle at 48% 42%,#07152b 0,#020713 42%,#010207 76%)",
+      "radial-gradient(circle at 18% 28%,rgba(79,32,97,.32),transparent 28%), radial-gradient(circle at 78% 48%,rgba(13,69,105,.24),transparent 36%), linear-gradient(180deg,#020611 0%,#010207 72%)",
     touchAction: "none",
   },
   panoramaPanel: {
