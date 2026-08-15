@@ -162,7 +162,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
             transform: "none",
           }}
         >
-          <StationThreeView />
+          <StationThreeView onSelectModule={setActiveId} />
 
           {/* Modules will return as 3D buildings in the next stage. */}
         </div>
@@ -186,7 +186,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
       </div>
 
       {!active && (
-        <div style={styles.cameraHint}>ПАНОРАМА СТАНЦИИ · СВАЙП ДЛЯ ОБЗОРА</div>
+        <div style={styles.cameraHint}>КОСМОГОРОД · СВАЙП ИЛИ НАЖМИТЕ ЗДАНИЕ</div>
       )}
 
       {active && (
@@ -202,7 +202,7 @@ export default function AccountStationPrototype({ open = true, onClose, onLaunch
 }
 
 
-function StationThreeView() {
+function StationThreeView({ onSelectModule }) {
   const hostRef = useRef(null);
   const rigRef = useRef(null);
   const [coords, setCoords] = useState({ x: 192, y: 66, z: 70, tx: 60, ty: 0, tz: 0 });
@@ -264,6 +264,39 @@ function StationThreeView() {
         const center = bounds.getCenter(new THREE.Vector3());
         const sphere = bounds.getBoundingSphere(new THREE.Sphere());
         const radius = sphere.radius;
+        const clickableBuildings = [];
+        const moduleRoot = new THREE.Group();
+        scene.add(moduleRoot);
+        const specs = [
+          ["device",205,.72,0x5ee7ff,"hangar"],["scanner",150,.70,0x53f5df,"dish"],
+          ["collab",235,.60,0xb99cff,"twins"],["wallet",275,.69,0xffe693,"vault"],
+          ["game",315,.74,0xff6f91,"gate"],["market",342,.70,0xff8bc8,"hangar"],
+          ["earn",18,.72,0xffe45c,"beacon"],["squad",48,.67,0xca9cff,"beacon"],
+          ["premium",78,.61,0x6df0ad,"reactor"],["center",110,.52,0x8cecff,"citadel"]
+        ];
+        const baseR = radius*.055;
+        const dark = (color) => new THREE.MeshStandardMaterial({color:0x17283a,metalness:.8,roughness:.28,emissive:color,emissiveIntensity:.2});
+        const glow = (color) => new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92,depthWrite:false});
+        const addMesh = (group,geometry,mat,y=0) => { const m=new THREE.Mesh(geometry,mat); m.position.y=y; group.add(m); return m; };
+        function building(id,color,type) {
+          const g=new THREE.Group(); g.name=`Module_${id}`;
+          const body=dark(color), light=glow(color), bh=radius*.018;
+          addMesh(g,new THREE.CylinderGeometry(baseR,baseR*1.12,bh,24),body,bh/2);
+          const ring=addMesh(g,new THREE.TorusGeometry(baseR*.88,baseR*.08,8,28),light,bh*1.1); ring.rotation.x=Math.PI/2;
+          if(type==="hangar") { addMesh(g,new THREE.BoxGeometry(baseR*1.35,baseR*.7,baseR),body,bh+baseR*.35); }
+          else if(type==="dish") { addMesh(g,new THREE.CylinderGeometry(baseR*.2,baseR*.34,baseR*.8,16),body,bh+baseR*.4); const d=addMesh(g,new THREE.SphereGeometry(baseR*.58,18,9,0,Math.PI*2,0,Math.PI/2),body,bh+baseR*.9); d.scale.y=.32; }
+          else if(type==="twins") { [-.35,.35].forEach(x=>{const t=addMesh(g,new THREE.CylinderGeometry(baseR*.22,baseR*.3,baseR*1.2,14),body,bh+baseR*.6);t.position.x=x*baseR;}); addMesh(g,new THREE.BoxGeometry(baseR,baseR*.12,baseR*.12),light,bh+baseR*.75); }
+          else if(type==="gate") { [-.42,.42].forEach(x=>{const t=addMesh(g,new THREE.BoxGeometry(baseR*.22,baseR*1.3,baseR*.3),body,bh+baseR*.65);t.position.x=x*baseR;}); addMesh(g,new THREE.BoxGeometry(baseR*1.05,baseR*.2,baseR*.3),light,bh+baseR*1.22); }
+          else if(type==="reactor") { addMesh(g,new THREE.CylinderGeometry(baseR*.45,baseR*.62,baseR*.72,20),body,bh+baseR*.36); addMesh(g,new THREE.IcosahedronGeometry(baseR*.36,1),light,bh+baseR*.82); }
+          else if(type==="vault") { addMesh(g,new THREE.BoxGeometry(baseR*1.05,baseR*.8,baseR*.95),body,bh+baseR*.4); }
+          else if(type==="citadel") { addMesh(g,new THREE.CylinderGeometry(baseR*.3,baseR*.5,baseR*1.35,18),body,bh+baseR*.68); addMesh(g,new THREE.ConeGeometry(baseR*.22,baseR*.7,14),light,bh+baseR*1.7); }
+          else { addMesh(g,new THREE.CylinderGeometry(baseR*.14,baseR*.32,baseR*1.05,14),body,bh+baseR*.52); addMesh(g,new THREE.OctahedronGeometry(baseR*.28),light,bh+baseR*1.18); }
+          const hit=addMesh(g,new THREE.CylinderGeometry(baseR*1.3,baseR*1.3,baseR*1.9,14),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}),baseR*.95);
+          g.traverse(o=>o.userData.moduleId=id); clickableBuildings.push(g); return g;
+        }
+        const platformY=bounds.min.y+radius*.10;
+        specs.forEach(([id,deg,ring,color,type])=>{const a=THREE.MathUtils.degToRad(deg),g=building(id,color,type);g.position.set(center.x+Math.cos(a)*radius*ring,platformY,center.z+Math.sin(a)*radius*ring);g.rotation.y=-a+Math.PI/2;moduleRoot.add(g);});
+
 
         // Three perpendicular calibration planes. The model stays fixed at all times.
         const gridSize = radius * 6;
@@ -358,22 +391,34 @@ function StationThreeView() {
         rigRef.current = rig;
         rig.apply();
 
-        const swipe = { down: false, startX: 0, startProgress: 0 };
+        const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
+        const swipe = { down: false, startX: 0, startY:0, moved:0, startProgress: 0 };
         const onDown = (event) => {
           swipe.down = true;
           swipe.startX = event.clientX;
+          swipe.startY = event.clientY;
+          swipe.moved = 0;
           swipe.startProgress = rig.goal;
           renderer.domElement.setPointerCapture?.(event.pointerId);
         };
         const onMove = (event) => {
           if (!swipe.down) return;
           const width = Math.max(1, host.clientWidth);
-          const delta = (event.clientX - swipe.startX) / (width * 0.72);
+          const dx=event.clientX-swipe.startX, dy=event.clientY-swipe.startY;
+          swipe.moved=Math.max(swipe.moved,Math.hypot(dx,dy));
+          const delta = dx / (width * 0.72);
           rig.setProgress(swipe.startProgress + delta);
         };
-        const onUp = () => {
+        const onUp = (event) => {
           if (!swipe.down) return;
           swipe.down = false;
+          if(swipe.moved<9){
+            const rect=renderer.domElement.getBoundingClientRect();
+            pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);
+            raycaster.setFromCamera(pointer,camera);
+            const hit=raycaster.intersectObjects(clickableBuildings,true).find(h=>h.object.userData.moduleId);
+            if(hit){ const id=hit.object.userData.moduleId; window.setTimeout(()=>onSelectModule?.(id),120); }
+          }
           const snap = rig.goal < 0.25 ? 0 : rig.goal < 0.75 ? 0.5 : 1;
           rig.setProgress(snap);
           setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
