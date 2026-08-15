@@ -172,7 +172,7 @@ export default function StationThreeView({ onSelectModule }) {
       riftRoot.add(riftOuter, riftInner);
       spaceRoot.add(riftRoot);
 
-      const sunLight = new THREE.DirectionalLight(0xffb56b, 2.15);
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.85);
       sunLight.position.copy(sunRoot.position);
       scene.add(sunLight);
 
@@ -277,7 +277,7 @@ export default function StationThreeView({ onSelectModule }) {
             },
           };
           rigRef.current = rig;
-          rig.apply();
+          rig.update();
 
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
