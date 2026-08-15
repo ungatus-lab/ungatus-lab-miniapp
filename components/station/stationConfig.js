@@ -90,6 +90,9 @@ export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
 // Fixed observer placed very close to the right-front edge, sector 9.
 export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
+// Parallel screen-right translation in model-radius units.
+// Observer and look target move together, so the gaze direction and distance do not change.
+export const OBSERVER_LATERAL_SHIFT = 0.18;
 export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
 export const HEAD_ROTATION = {
   startYawDeg: 55,
