@@ -95,7 +95,7 @@ export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
 export const OBSERVER_LATERAL_SHIFT = 0.36;
 // Move the observer along the exact straight segment from observer to the beam target.
 // 0.12 means 12% of the current observer-to-beam distance.
-export const OBSERVER_TO_BEAM_FRACTION = 0.12;
+export const OBSERVER_TO_BEAM_FRACTION = 0.2256;
 export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
 export const HEAD_ROTATION = {
   startYawDeg: 55,
