@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   CAMERA_POSES,
+  OBSERVER_POSITION,
+  LOOK_TARGETS,
+  SPACE_OBJECTS,
   SCENE_CONFIG,
   STATION_MODEL_URL,
 } from "./stationConfig";
@@ -31,10 +34,10 @@ export default function StationThreeView({ onSelectModule }) {
   const hostRef = useRef(null);
   const rigRef = useRef(null);
   const [coords, setCoords] = useState({
-    ...CAMERA_POSES.start.camera,
-    tx: CAMERA_POSES.start.target.x,
-    ty: CAMERA_POSES.start.target.y,
-    tz: CAMERA_POSES.start.target.z,
+    ...OBSERVER_POSITION,
+    tx: LOOK_TARGETS.right.x,
+    ty: LOOK_TARGETS.right.y,
+    tz: LOOK_TARGETS.right.z,
   });
   const [panoramaFrame, setPanoramaFrame] = useState(1);
 
@@ -196,6 +199,11 @@ export default function StationThreeView({ onSelectModule }) {
           const center = bounds.getCenter(new THREE.Vector3());
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
+          sunRoot.position.set(center.x + radius * SPACE_OBJECTS.sun.x, center.y + radius * SPACE_OBJECTS.sun.y, center.z + radius * SPACE_OBJECTS.sun.z);
+          sunRoot.scale.setScalar((radius * SPACE_OBJECTS.sun.radius) / 15);
+          sunLight.position.copy(sunRoot.position);
+          riftRoot.position.set(center.x + radius * SPACE_OBJECTS.rift.x, center.y + radius * SPACE_OBJECTS.rift.y, center.z + radius * SPACE_OBJECTS.rift.z);
+          riftRoot.scale.setScalar((radius * SPACE_OBJECTS.rift.radius) / 12);
 
           const buildings = createStationBuildings({
             THREE,
@@ -220,16 +228,8 @@ export default function StationThreeView({ onSelectModule }) {
               rig.progress +=
                 (rig.goal - rig.progress) * SCENE_CONFIG.swipeSmoothing;
 
-              rig.cameraPct = interpolatePose(
-                CAMERA_POSES.start.camera,
-                CAMERA_POSES.end.camera,
-                rig.progress
-              );
-              rig.targetPct = interpolatePose(
-                CAMERA_POSES.start.target,
-                CAMERA_POSES.end.target,
-                rig.progress
-              );
+              rig.cameraPct = { ...OBSERVER_POSITION };
+              rig.targetPct = interpolatePose(LOOK_TARGETS.right, LOOK_TARGETS.left, rig.progress);
               rig.apply(false);
             },
 
@@ -334,16 +334,8 @@ export default function StationThreeView({ onSelectModule }) {
             rig.setProgress(snap);
             setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
 
-            const cp = interpolatePose(
-              CAMERA_POSES.start.camera,
-              CAMERA_POSES.end.camera,
-              snap
-            );
-            const tp = interpolatePose(
-              CAMERA_POSES.start.target,
-              CAMERA_POSES.end.target,
-              snap
-            );
+            const cp = { ...OBSERVER_POSITION };
+            const tp = interpolatePose(LOOK_TARGETS.right, LOOK_TARGETS.left, snap);
             setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
           };
 
@@ -392,8 +384,6 @@ export default function StationThreeView({ onSelectModule }) {
         const panorama = rigRef.current?.progress || 0;
         farStars.rotation.y = panorama * 0.035;
         nearStars.rotation.y = panorama * 0.08;
-        sunRoot.position.x = -78 + panorama * 8;
-        riftRoot.position.x = 68 - panorama * 12;
         riftOuter.rotation.z += 0.0018;
         riftInner.rotation.z -= 0.0026;
         const pulse = 1 + Math.sin(performance.now() * 0.0015) * 0.035;
