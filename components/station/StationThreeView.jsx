@@ -6,6 +6,7 @@ import {
   OBSERVER_POSITION,
   OBSERVER_LATERAL_SHIFT,
   OBSERVER_TO_BEAM_FRACTION,
+  OBSERVER_TO_FRAME_SEAM_STEP,
   INITIAL_LOOK_TARGET,
   HEAD_ROTATION,
   LOOK_TARGETS,
@@ -261,6 +262,35 @@ export default function StationThreeView({ onSelectModule }) {
           const endQuaternion = baseQuaternion.clone()
             .premultiply(endYawQuaternion)
             .multiply(endPitchQuaternion);
+
+          // Destination is the angular seam between frame 1 left edge
+          // and frame 2 right edge. Move only the observer by the same
+          // absolute approach step used previously; keep gaze angles unchanged.
+          const middleQuaternion = new THREE.Quaternion().slerpQuaternions(
+            startQuaternion,
+            endQuaternion,
+            0.5
+          );
+          const halfVerticalFov = THREE.MathUtils.degToRad(camera.fov * 0.5);
+          const halfHorizontalFov = Math.atan(
+            Math.tan(halfVerticalFov) * camera.aspect
+          );
+          const frame1LeftDirection = new THREE.Vector3(
+            -Math.tan(halfHorizontalFov), 0, -1
+          ).normalize().applyQuaternion(startQuaternion);
+          const frame2RightDirection = new THREE.Vector3(
+            Math.tan(halfHorizontalFov), 0, -1
+          ).normalize().applyQuaternion(middleQuaternion);
+          const seamDirection = frame1LeftDirection
+            .add(frame2RightDirection)
+            .normalize();
+          const seamStepDistance =
+            observerWorld.distanceTo(initialTarget) * OBSERVER_TO_FRAME_SEAM_STEP;
+          observerWorld.addScaledVector(seamDirection, seamStepDistance);
+
+          // Preserve the approved gaze; only the observer position changes.
+          camera.position.copy(observerWorld);
+          camera.quaternion.copy(startQuaternion);
 
           // Place the sun in the final left-looking horizon. Hide the temporary rift.
           const endDirection = new THREE.Vector3(0, 0, -1)
