@@ -5,6 +5,7 @@ import {
   CAMERA_POSES,
   OBSERVER_POSITION,
   OBSERVER_LATERAL_SHIFT,
+  OBSERVER_SCREEN_DOWN_SHIFT,
   OBSERVER_TO_BEAM_FRACTION,
   OBSERVER_TO_FRAME_SEAM_STEP,
   INITIAL_LOOK_TARGET,
@@ -228,8 +229,15 @@ export default function StationThreeView({ onSelectModule }) {
           const lateralShift = screenRight.multiplyScalar(
             radius * OBSERVER_LATERAL_SHIFT
           );
-          observerWorld.add(lateralShift);
-          initialTarget.add(lateralShift);
+          const screenUp = new THREE.Vector3()
+            .crossVectors(screenRight, initialDirection)
+            .normalize();
+          const screenDownShift = screenUp.multiplyScalar(
+            -radius * OBSERVER_SCREEN_DOWN_SHIFT
+          );
+          const screenShift = lateralShift.add(screenDownShift);
+          observerWorld.add(screenShift);
+          initialTarget.add(screenShift);
 
           // Exact A -> B move from the observer toward the marked beam center.
           // The target stays fixed. No orbit, no sideways drift and no radius-based direction.
