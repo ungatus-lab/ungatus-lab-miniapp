@@ -3044,32 +3044,75 @@ ungatus-lab-miniapp/components/station/AccountStationPrototype.jsx
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import StationThreeView from "./StationThreeView";
+import StationHomeHUD from "./StationHomeHUD";
 import {
   MODULES,
   MODULE_DETAILS,
   PREMIUM_TIERS,
 } from "./stationConfig";
+import {
+  completeMission,
+  loadStationProgress,
+  subscribeStationProgress,
+} from "./stationProgress";
+
+const COMPLEX_TO_MODULE = {
+  nativeLab: "scanner",
+  projectVault: "market",
+  communityRelay: "collab",
+  economyDock: "wallet",
+};
 
 export default function AccountStationPrototype({
   open = true,
   onClose,
+  onOpenProfile,
   onLaunchGame,
+  onLaunchTraining,
   telegramUser,
 }) {
   const [activeId, setActiveId] = useState(null);
-  const [generation, setGeneration] = useState(1);
+  const [progress, setProgress] = useState(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    setProgress(loadStationProgress());
+    completeMission("openedStation");
+    return subscribeStationProgress(setProgress);
+  }, [open]);
 
   const active = useMemo(
     () => MODULES.find((module) => module.id === activeId) || null,
     [activeId]
   );
 
-  const accountName =
-    telegramUser?.first_name || telegramUser?.username || "SceneAgent";
-
   if (!open) return null;
+
+  function openComplex(complexId) {
+    const moduleId = COMPLEX_TO_MODULE[complexId];
+    if (!moduleId) return;
+
+    if (complexId === "nativeLab") completeMission("viewedNativeLab");
+    if (complexId === "projectVault") completeMission("viewedProjectVault");
+
+    setActiveId(moduleId);
+  }
+
+  function launchTraining() {
+    completeMission("viewedNativeLab");
+    if (typeof onLaunchTraining === "function") {
+      onLaunchTraining();
+      return;
+    }
+    setActiveId("scanner");
+  }
+
+  function launchArena() {
+    completeMission("playedArena");
+    if (typeof onLaunchGame === "function") onLaunchGame();
+  }
 
   return (
     <main style={styles.root}>
@@ -3079,45 +3122,32 @@ export default function AccountStationPrototype({
         <StationThreeView onSelectModule={setActiveId} />
       </section>
 
-      <header style={styles.header}>
-        <button style={styles.backButton} onClick={onClose} aria-label="Назад">
-          ‹
-        </button>
+      <StationHomeHUD
+        telegramUser={telegramUser}
+        onOpenProfile={onOpenProfile}
+        onOpenModule={openComplex}
+        onLaunchTraining={launchTraining}
+        onLaunchArena={launchArena}
+        compact={Boolean(active)}
+      />
 
-        <div style={styles.identity}>
-          <small>PIXELGRID // ORBITAL ACCOUNT</small>
-          <strong>{accountName}</strong>
-        </div>
-
+      {typeof onClose === "function" && !active && (
         <button
-          style={styles.generation}
-          onClick={() =>
-            setGeneration((value) => (value === 10 ? 1 : value + 1))
-          }
+          type="button"
+          style={styles.exitButton}
+          onClick={onClose}
+          aria-label="Закрыть станцию"
         >
-          <small>GENERATION</small>
-          <b>G{generation}</b>
+          ×
         </button>
-      </header>
-
-      <div style={styles.stats}>
-        <Stat label="UGT" value="0" />
-        <Stat label="STATUS" value="FREE" />
-        <Stat label="EMULATORS" value="1 / 1" />
-      </div>
-
-      {!active && (
-        <div style={styles.cameraHint}>
-          КОСМОГОРОД · СВАЙП ИЛИ НАЖМИТЕ ЗДАНИЕ
-        </div>
       )}
 
       {active && (
         <ModulePanel
           module={active}
-          generation={generation}
+          generation={progress?.station?.generation || 1}
           onClose={() => setActiveId(null)}
-          onLaunchGame={onLaunchGame}
+          onLaunchGame={launchArena}
         />
       )}
     </main>
@@ -3135,23 +3165,33 @@ function ModulePanel({ module, generation, onClose, onLaunchGame }) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section style={{ ...styles.panel, borderColor: `${module.color}66` }}>
+      <section style={{ ...styles.panel, borderColor: `${module.color}55` }}>
+        <div style={styles.sheetHandle} />
+
         <header style={styles.panelHeader}>
-          <button style={styles.backButton} onClick={onClose} aria-label="Закрыть">
-            ‹
+          <button
+            type="button"
+            style={styles.closeButton}
+            onClick={onClose}
+            aria-label="Закрыть раздел"
+          >
+            ×
           </button>
+
           <span style={{ ...styles.panelIcon, color: module.color }}>
             {module.icon}
           </span>
-          <div>
+
+          <div style={styles.panelIdentity}>
             <small>{module.subtitle}</small>
             <b>{module.title}</b>
           </div>
+
           <em>G{generation}</em>
         </header>
 
         <div style={styles.hero}>
-          <small>SELECTED STATION SYSTEM</small>
+          <small>STATION SYSTEM</small>
           <h2>{data.heading}</h2>
           <p>{data.text}</p>
         </div>
@@ -3187,7 +3227,7 @@ function ModulePanel({ module, generation, onClose, onLaunchGame }) {
         )}
 
         {module.id === "game" && (
-          <button style={styles.launchButton} onClick={onLaunchGame}>
+          <button type="button" style={styles.launchButton} onClick={onLaunchGame}>
             ENTER PVP RIFT
           </button>
         )}
@@ -3196,84 +3236,12 @@ function ModulePanel({ module, generation, onClose, onLaunchGame }) {
   );
 }
 
-function Stat({ label, value }) {
-  return (
-    <div>
-      <small>{label}</small>
-      <b>{value}</b>
-    </div>
-  );
-}
-
 const css = `
 button { touch-action: manipulation; }
-@keyframes panelOpen {
-  from { opacity: 0; transform: translateY(24px) scale(.98); }
-  to { opacity: 1; transform: none; }
+@keyframes stationSheetOpen {
+  from { opacity:0; transform:translateY(34px) scale(.985); }
+  to { opacity:1; transform:none; }
 }
-.identity small,
-.generation small,
-.stats small,
-.panelHeader small,
-.hero small,
-.metricGrid small,
-.pack small {
-  font-size: 7px;
-  letter-spacing: .1em;
-  color: rgba(203,213,225,.62);
-  font-weight: 900;
-}
-.identity strong { font-size: 14px; }
-.generation b { font-size: 13px; }
-.stats > div {
-  min-width: 59px;
-  padding: 6px 8px;
-  border-radius: 11px;
-  background: rgba(2,10,23,.72);
-  border: 1px solid rgba(255,255,255,.09);
-  backdrop-filter: blur(15px);
-  display: flex;
-  flex-direction: column;
-}
-.stats b { font-size: 12px; }
-.panelHeader > div { display: flex; flex-direction: column; }
-.panelHeader em {
-  font-style: normal;
-  padding: 7px 9px;
-  border-radius: 10px;
-  background: rgba(255,255,255,.05);
-  font-size: 9px;
-}
-.hero h2 { margin: 5px 0 6px; font-size: 20px; }
-.hero p {
-  margin: 0;
-  color: rgba(226,232,240,.66);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.metricGrid > div {
-  min-height: 52px;
-  padding: 8px;
-  border-radius: 13px;
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.07);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.metricGrid b { font-size: 11px; }
-.detailRows > div {
-  min-height: 35px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,.055);
-  font-size: 10px;
-}
-.detailRows span { color: #94a3b8; }
-.pack b { font-size: 11px; }
-.pack span { font-size: 10px; color: #d1fae5; }
 `;
 
 const styles = {
@@ -3294,94 +3262,53 @@ const styles = {
     userSelect: "none",
     background: "#010207",
   },
-  header: {
+  exitButton: {
     position: "absolute",
-    zIndex: 70,
-    top: "max(10px, env(safe-area-inset-top))",
-    left: 10,
-    right: 10,
-    height: 54,
-    display: "grid",
-    gridTemplateColumns: "42px 1fr auto",
-    gap: 10,
-    alignItems: "center",
-    padding: "0 10px",
-    borderRadius: 18,
-    background: "linear-gradient(135deg,rgba(2,10,23,.78),rgba(11,8,30,.64))",
-    border: "1px solid rgba(175,232,255,.16)",
-    backdropFilter: "blur(22px)",
-    boxShadow: "0 18px 55px rgba(0,0,0,.3)",
-  },
-  backButton: {
-    width: 36,
-    height: 36,
+    zIndex: 96,
+    top: "calc(max(10px, env(safe-area-inset-top)) + 9px)",
+    right: 88,
+    width: 38,
+    height: 38,
     padding: 0,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.14)",
-    background: "rgba(255,255,255,.055)",
-    color: "white",
-    fontSize: 27,
+    borderRadius: 13,
+    border: "1px solid rgba(255,255,255,.12)",
+    background: "rgba(3,9,22,.74)",
+    backdropFilter: "blur(15px)",
+    color: "rgba(255,255,255,.8)",
+    fontSize: 22,
     cursor: "pointer",
-  },
-  identity: { minWidth: 0, display: "flex", flexDirection: "column" },
-  generation: {
-    minWidth: 66,
-    height: 39,
-    borderRadius: 12,
-    border: "1px solid rgba(103,232,249,.2)",
-    background: "rgba(4,31,46,.5)",
-    color: "#e0fbff",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-  },
-  stats: {
-    position: "absolute",
-    zIndex: 75,
-    top: "calc(max(10px, env(safe-area-inset-top)) + 64px)",
-    left: 10,
-    display: "flex",
-    gap: 5,
-  },
-  cameraHint: {
-    position: "absolute",
-    zIndex: 60,
-    left: "50%",
-    bottom: "max(18px, env(safe-area-inset-bottom))",
-    transform: "translateX(-50%)",
-    padding: "7px 11px",
-    borderRadius: 10,
-    background: "rgba(2,10,23,.62)",
-    border: "1px solid rgba(103,232,249,.13)",
-    color: "rgba(226,232,240,.58)",
-    fontSize: 7,
-    letterSpacing: ".1em",
-    pointerEvents: "none",
-    whiteSpace: "nowrap",
   },
   panelShade: {
     position: "absolute",
     inset: 0,
-    zIndex: 100,
+    zIndex: 120,
     display: "flex",
     alignItems: "flex-end",
-    padding: 10,
+    padding: "12px 10px max(12px, env(safe-area-inset-bottom))",
     boxSizing: "border-box",
-    background: "linear-gradient(180deg,transparent 10%,rgba(0,2,8,.25) 42%,rgba(0,2,8,.96))",
+    background:
+      "linear-gradient(180deg,transparent 5%,rgba(0,2,8,.22) 34%,rgba(0,2,8,.94) 76%)",
+    backdropFilter: "blur(2px)",
   },
   panel: {
     width: "100%",
-    maxHeight: "68vh",
+    maxHeight: "72vh",
     overflowY: "auto",
-    padding: 12,
+    padding: "8px 12px 14px",
     boxSizing: "border-box",
-    borderRadius: "24px 24px 16px 16px",
-    background: "linear-gradient(180deg,rgba(7,22,42,.97),rgba(2,7,17,.99))",
+    borderRadius: "26px 26px 17px 17px",
+    background:
+      "radial-gradient(circle at 100% 0,rgba(34,211,238,.11),transparent 34%),linear-gradient(180deg,rgba(7,22,42,.98),rgba(2,7,17,.995))",
     border: "1px solid",
-    boxShadow: "0 -28px 90px rgba(0,0,0,.8)",
-    animation: "panelOpen .38s ease-out",
+    boxShadow: "0 -30px 100px rgba(0,0,0,.82)",
+    animation: "stationSheetOpen .34s ease-out",
+  },
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    margin: "0 auto 9px",
+    borderRadius: 99,
+    background: "rgba(255,255,255,.18)",
   },
   panelHeader: {
     display: "grid",
@@ -3389,6 +3316,16 @@ const styles = {
     gap: 8,
     alignItems: "center",
     marginBottom: 10,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    padding: 0,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.12)",
+    background: "rgba(255,255,255,.05)",
+    color: "white",
+    fontSize: 20,
   },
   panelIcon: {
     width: 38,
@@ -3399,10 +3336,15 @@ const styles = {
     background: "rgba(255,255,255,.05)",
     fontSize: 20,
   },
+  panelIdentity: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+  },
   hero: {
     padding: 14,
     borderRadius: 17,
-    background: "radial-gradient(circle at 100% 0,rgba(103,232,249,.15),transparent 38%),rgba(255,255,255,.035)",
+    background: "rgba(255,255,255,.035)",
     border: "1px solid rgba(255,255,255,.075)",
     marginBottom: 9,
   },
@@ -3434,7 +3376,7 @@ const styles = {
   },
   launchButton: {
     width: "100%",
-    height: 50,
+    minHeight: 50,
     marginTop: 10,
     border: 0,
     borderRadius: 15,
@@ -3445,6 +3387,7 @@ const styles = {
     boxShadow: "0 0 34px rgba(225,29,72,.25)",
   },
 };
+
 
 
 -
