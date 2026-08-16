@@ -97,7 +97,7 @@ export const OBSERVER_LATERAL_SHIFT = 0.70;
 export const OBSERVER_SCREEN_DOWN_SHIFT = 0.05;
 // Move the observer along the exact straight segment from observer to the beam target.
 // 0.12 means 12% of the current observer-to-beam distance.
-export const OBSERVER_TO_BEAM_FRACTION = 0.2256;
+export const OBSERVER_TO_BEAM_FRACTION = 0.32;
 // One additional move toward the angular seam between:
 // frame 1 left edge and frame 2 right edge.
 // 0.1056 repeats the previous absolute approach step.
