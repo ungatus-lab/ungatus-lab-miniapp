@@ -98,6 +98,14 @@ export const OBSERVER_SCREEN_DOWN_SHIFT = 0.05;
 // Move the observer along the exact straight segment from observer to the beam target.
 // 0.12 means 12% of the current observer-to-beam distance.
 export const OBSERVER_TO_BEAM_FRACTION = 0.32;
+// Additional move toward the visible pink circular platform between frames 1 and 2.
+// The destination is calculated from the platform's actual polar position on the disk.
+export const OBSERVER_TO_PLATFORM = {
+  angleDeg: 338,
+  ring: 0.661,
+  fraction: 0.10,
+  preserveEyeHeight: true,
+};
 // One additional move toward the angular seam between:
 // frame 1 left edge and frame 2 right edge.
 // 0.1056 repeats the previous absolute approach step.
