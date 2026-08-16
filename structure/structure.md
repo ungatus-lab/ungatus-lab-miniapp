@@ -3449,7 +3449,458 @@ const styles = {
 
 -
 
-2.3.2) components/station/StationThreeView.jsx
+2.3.2) components/station/StationHomeHUD.jsx
+таким образом расположение целиком:
+ungatus-lab-miniapp/components/station/StationHomeHUD.jsx
+
+Содержимое документа: 
+
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  getProgressSummary,
+  loadStationProgress,
+  subscribeStationProgress,
+  xpRequiredForLevel,
+} from "./stationProgress";
+
+const COMPLEXES = [
+  {
+    id: "nativeLab",
+    title: "NATIVE LAB",
+    subtitle: "Scanner · Recorder · Multi-device",
+    icon: "◉",
+    color: "#55e7ff",
+  },
+  {
+    id: "projectVault",
+    title: "PROJECT VAULT",
+    subtitle: "Blueprints · Scenarios · Catalog",
+    icon: "▣",
+    color: "#b99cff",
+  },
+  {
+    id: "communityRelay",
+    title: "NETWORK HUB",
+    subtitle: "Squad · Collab · Referrals",
+    icon: "⬡",
+    color: "#78f0bd",
+  },
+  {
+    id: "economyDock",
+    title: "ECONOMY DOCK",
+    subtitle: "UGT · Market · Allocation",
+    icon: "◇",
+    color: "#ffd36e",
+  },
+];
+
+export default function StationHomeHUD({
+  telegramUser,
+  onOpenProfile,
+  onOpenModule,
+  onLaunchTraining,
+  onLaunchArena,
+  compact = false,
+}) {
+  const [progress, setProgress] = useState(null);
+
+  useEffect(() => {
+    setProgress(loadStationProgress());
+    return subscribeStationProgress(setProgress);
+  }, []);
+
+  const profileName =
+    telegramUser?.first_name || telegramUser?.username || "SceneAgent";
+
+  const summary = useMemo(
+    () => (progress ? getProgressSummary(progress) : null),
+    [progress]
+  );
+
+  if (!progress || !summary) return null;
+
+  const xpRequired = xpRequiredForLevel(progress.operator.level);
+  const xpPercent = Math.min(
+    100,
+    Math.round((progress.operator.xp / Math.max(1, xpRequired)) * 100)
+  );
+
+  const trainingFinished = progress.missions.completedTraining;
+  const primaryLabel = trainingFinished ? "ПРОДОЛЖИТЬ ОБУЧЕНИЕ" : "НАЧАТЬ ОБУЧЕНИЕ";
+
+  return (
+    <div style={styles.root}>
+      <style>{css}</style>
+
+      <header style={styles.topBar}>
+        <button
+          type="button"
+          style={styles.profileButton}
+          onClick={onOpenProfile}
+          aria-label="Открыть профиль"
+        >
+          <span style={styles.avatar}>PG</span>
+          <span style={styles.profileText}>
+            <b>{profileName}</b>
+            <small>
+              {progress.operator.title} · LV {progress.operator.level}
+            </small>
+          </span>
+        </button>
+
+        <div style={styles.generationBadge}>
+          <small>STATION</small>
+          <b>G{progress.station.generation}</b>
+        </div>
+      </header>
+
+      <section style={styles.progressCard}>
+        <div style={styles.progressTop}>
+          <span>OPERATOR XP</span>
+          <b>
+            {progress.operator.xp} / {xpRequired}
+          </b>
+        </div>
+        <div style={styles.progressTrack}>
+          <div style={{ ...styles.progressFill, width: `${xpPercent}%` }} />
+        </div>
+        <div style={styles.quickStats}>
+          <Metric label="UGT" value={summary.gameUgt} />
+          <Metric label="STREAK" value={`${progress.operator.streak}D`} />
+          <Metric label="RATING" value={progress.game.rating || "—"} />
+        </div>
+      </section>
+
+      {!compact && (
+        <section style={styles.moduleRail} aria-label="Системы станции">
+          {COMPLEXES.map((complex) => {
+            const unlocked = progress.unlocks[complex.id] !== false;
+            return (
+              <button
+                key={complex.id}
+                type="button"
+                disabled={!unlocked}
+                onClick={() => onOpenModule?.(complex.id)}
+                style={{
+                  ...styles.moduleCard,
+                  borderColor: `${complex.color}42`,
+                  opacity: unlocked ? 1 : 0.5,
+                }}
+              >
+                <span
+                  style={{
+                    ...styles.moduleIcon,
+                    color: complex.color,
+                    boxShadow: `0 0 22px ${complex.color}22`,
+                  }}
+                >
+                  {complex.icon}
+                </span>
+                <span style={styles.moduleText}>
+                  <b>{complex.title}</b>
+                  <small>{unlocked ? complex.subtitle : "LOCKED"}</small>
+                </span>
+              </button>
+            );
+          })}
+        </section>
+      )}
+
+      <section style={styles.bottomDock}>
+        <div style={styles.missionCard}>
+          <span style={styles.missionPulse} />
+          <div>
+            <small>CURRENT MISSION</small>
+            <b>
+              {trainingFinished
+                ? "Проверь системы станции"
+                : "Заверши первое обучение"}
+            </b>
+          </div>
+          <span style={styles.reward}>+XP</span>
+        </div>
+
+        <div style={styles.actions}>
+          <button
+            type="button"
+            style={styles.trainingButton}
+            onClick={onLaunchTraining}
+          >
+            <span>◎</span>
+            <span>
+              <small>NATIVE TRAINING</small>
+              <b>{primaryLabel}</b>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            style={styles.arenaButton}
+            onClick={onLaunchArena}
+          >
+            <span style={styles.arenaIcon}>⚔</span>
+            <span>
+              <small>PVP SIGNAL ONLINE</small>
+              <b>В БОЙ</b>
+            </span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div style={styles.metric}>
+      <small>{label}</small>
+      <b>{value}</b>
+    </div>
+  );
+}
+
+const css = `
+@keyframes stationHudPulse {
+  0%,100% { opacity:.55; transform:scale(.9); }
+  50% { opacity:1; transform:scale(1.15); }
+}
+@keyframes arenaGlow {
+  0%,100% { box-shadow:0 0 22px rgba(244,63,94,.22); }
+  50% { box-shadow:0 0 42px rgba(139,92,246,.34); }
+}
+`;
+
+const glass = {
+  background: "linear-gradient(145deg,rgba(5,12,27,.82),rgba(5,5,18,.68))",
+  border: "1px solid rgba(155,225,255,.14)",
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+};
+
+const styles = {
+  root: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 90,
+    pointerEvents: "none",
+    color: "#f4fbff",
+    fontFamily: "Inter,system-ui,-apple-system,'Segoe UI',sans-serif",
+  },
+  topBar: {
+    position: "absolute",
+    top: "max(10px, env(safe-area-inset-top))",
+    left: 10,
+    right: 10,
+    minHeight: 58,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: "8px 9px",
+    borderRadius: 20,
+    boxSizing: "border-box",
+    pointerEvents: "auto",
+    ...glass,
+  },
+  profileButton: {
+    minWidth: 0,
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: 0,
+    border: 0,
+    background: "transparent",
+    color: "white",
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    flexShrink: 0,
+    borderRadius: 13,
+    display: "grid",
+    placeItems: "center",
+    background: "linear-gradient(135deg,#0891b2,#7c3aed,#ec4899)",
+    boxShadow: "0 0 24px rgba(34,211,238,.22)",
+    fontSize: 11,
+    fontWeight: 950,
+  },
+  profileText: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+  },
+  generationBadge: {
+    minWidth: 66,
+    height: 40,
+    borderRadius: 13,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(34,211,238,.08)",
+    border: "1px solid rgba(103,232,249,.2)",
+  },
+  progressCard: {
+    position: "absolute",
+    top: "calc(max(10px, env(safe-area-inset-top)) + 68px)",
+    left: 10,
+    right: 10,
+    padding: "9px 11px",
+    borderRadius: 17,
+    pointerEvents: "none",
+    ...glass,
+  },
+  progressTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 8,
+    letterSpacing: ".1em",
+    color: "rgba(220,240,255,.68)",
+  },
+  progressTrack: {
+    height: 5,
+    margin: "7px 0 8px",
+    overflow: "hidden",
+    borderRadius: 99,
+    background: "rgba(255,255,255,.08)",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 99,
+    background: "linear-gradient(90deg,#22d3ee,#8b5cf6,#ec4899)",
+    boxShadow: "0 0 14px rgba(34,211,238,.45)",
+    transition: "width .35s ease",
+  },
+  quickStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3,1fr)",
+    gap: 6,
+  },
+  metric: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 5,
+    fontSize: 10,
+  },
+  moduleRail: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: "calc(max(10px, env(safe-area-inset-top)) + 126px)",
+    display: "grid",
+    gridTemplateColumns: "repeat(2,minmax(0,1fr))",
+    gap: 7,
+    pointerEvents: "auto",
+  },
+  moduleCard: {
+    minWidth: 0,
+    minHeight: 49,
+    padding: "7px 8px",
+    borderRadius: 15,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    color: "white",
+    cursor: "pointer",
+    ...glass,
+  },
+  moduleIcon: {
+    width: 32,
+    height: 32,
+    flexShrink: 0,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 10,
+    background: "rgba(255,255,255,.045)",
+    fontSize: 17,
+  },
+  moduleText: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    textAlign: "left",
+  },
+  bottomDock: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    bottom: "max(12px, env(safe-area-inset-bottom))",
+    display: "grid",
+    gap: 7,
+    pointerEvents: "auto",
+  },
+  missionCard: {
+    minHeight: 42,
+    padding: "7px 10px",
+    borderRadius: 15,
+    display: "grid",
+    gridTemplateColumns: "12px 1fr auto",
+    gap: 8,
+    alignItems: "center",
+    ...glass,
+  },
+  missionPulse: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    background: "#67e8f9",
+    boxShadow: "0 0 14px #22d3ee",
+    animation: "stationHudPulse 1.8s infinite",
+  },
+  reward: {
+    color: "#fde68a",
+    fontSize: 10,
+    fontWeight: 900,
+  },
+  actions: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1.08fr",
+    gap: 7,
+  },
+  trainingButton: {
+    minHeight: 58,
+    padding: "8px 10px",
+    borderRadius: 17,
+    border: "1px solid rgba(103,232,249,.22)",
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    background: "linear-gradient(135deg,rgba(6,78,99,.92),rgba(49,46,129,.88))",
+    color: "white",
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  arenaButton: {
+    minHeight: 58,
+    padding: "8px 11px",
+    borderRadius: 17,
+    border: "1px solid rgba(251,113,133,.28)",
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    background: "linear-gradient(135deg,#be123c,#7c3aed 58%,#0369a1)",
+    color: "white",
+    textAlign: "left",
+    cursor: "pointer",
+    animation: "arenaGlow 2.2s infinite",
+  },
+  arenaIcon: {
+    fontSize: 22,
+    filter: "drop-shadow(0 0 8px rgba(255,255,255,.35))",
+  },
+  profileTextSmall: {},
+};
+
+
+-
+
+2.3.3) components/station/StationThreeView.jsx
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/station/StationThreeView.jsx
 
@@ -4035,7 +4486,7 @@ const styles = {
 
 -
 
-2.3.3) components/station/stationBuildings.js
+2.3.4) components/station/stationBuildings.js
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/station/stationBuildings.js
 
@@ -4301,7 +4752,7 @@ export function pulseStationBuilding(moduleGroups, moduleId) {
 
 -
 
-2.3.4) components/station/stationConfig.js
+2.3.5) components/station/stationConfig.js
 таким образом расположение целиком:
 ungatus-lab-miniapp/components/station/stationConfig.js
 
@@ -4467,6 +4918,381 @@ export const SCENE_CONFIG = {
   buildingScale: 0.042,
   buildingEmbed: 0.22,
 };
+
+
+
+-
+
+2.3.6) components/components/station/stationProgress.js
+таким образом расположение целиком:
+ungatus-lab-miniapp/components/station/stationProgress.js
+
+Содержимое документа: 
+
+const STORAGE_KEY = "pgm_station_progress_v1";
+const PROGRESS_EVENT = "pgm:station-progress";
+
+export const DEFAULT_STATION_PROGRESS = Object.freeze({
+  version: 1,
+
+  operator: {
+    level: 1,
+    xp: 0,
+    title: "Early Operator",
+    streak: 1,
+  },
+
+  station: {
+    generation: 1,
+    level: 1,
+    xp: 0,
+    style: "founder-dark",
+    coreColor: "cyan",
+    unlockedCosmetics: ["founder-dark"],
+    equippedCosmetics: {
+      hull: "founder-dark",
+      core: "cyan",
+      trail: "none",
+      orbit: "basic",
+    },
+  },
+
+  mastery: {
+    scanner: 0,
+    recorder: 0,
+    scenarios: 0,
+    branching: 0,
+    emulator: 0,
+    multiDevice: 0,
+  },
+
+  game: {
+    tutorialStage: 0,
+    matches: 0,
+    wins: 0,
+    rating: 0,
+    bestScore: 0,
+    lastPlayedAt: null,
+  },
+
+  economy: {
+    gameUgt: 0,
+    promoUgt: 0,
+    lockedUgt: 0,
+    availableUgt: 0,
+  },
+
+  social: {
+    referrals: 0,
+    friends: [],
+    squadLevel: 1,
+    squadXp: 0,
+  },
+
+  unlocks: {
+    accountCore: true,
+    arena: true,
+    nativeLab: true,
+    projectVault: true,
+    communityRelay: true,
+    economyDock: true,
+    marketplaceTrading: false,
+    walletConnection: false,
+    allocationExchange: false,
+  },
+
+  missions: {
+    openedStation: false,
+    completedTraining: false,
+    playedArena: false,
+    viewedNativeLab: false,
+    viewedProjectVault: false,
+    invitedOperator: false,
+  },
+
+  meta: {
+    createdAt: null,
+    updatedAt: null,
+  },
+});
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function mergeDeep(base, incoming) {
+  if (!isObject(base) || !isObject(incoming)) {
+    return incoming === undefined ? clone(base) : clone(incoming);
+  }
+
+  const result = clone(base);
+
+  Object.keys(incoming).forEach((key) => {
+    const incomingValue = incoming[key];
+    const baseValue = base[key];
+
+    if (isObject(baseValue) && isObject(incomingValue)) {
+      result[key] = mergeDeep(baseValue, incomingValue);
+    } else if (incomingValue !== undefined) {
+      result[key] = clone(incomingValue);
+    }
+  });
+
+  return result;
+}
+
+function clampNumber(value, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return min;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+export function xpRequiredForLevel(level) {
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  return 250 + (safeLevel - 1) * 150;
+}
+
+function applyLevelUps(level, xp) {
+  let nextLevel = Math.max(1, Math.floor(Number(level) || 1));
+  let nextXp = clampNumber(xp);
+  let guard = 0;
+
+  while (nextXp >= xpRequiredForLevel(nextLevel) && guard < 1000) {
+    nextXp -= xpRequiredForLevel(nextLevel);
+    nextLevel += 1;
+    guard += 1;
+  }
+
+  return { level: nextLevel, xp: nextXp };
+}
+
+function normalizeProgress(progress) {
+  const now = new Date().toISOString();
+  const next = mergeDeep(DEFAULT_STATION_PROGRESS, progress || {});
+
+  const operator = applyLevelUps(next.operator.level, next.operator.xp);
+  next.operator.level = operator.level;
+  next.operator.xp = operator.xp;
+  next.operator.streak = Math.max(1, Math.floor(clampNumber(next.operator.streak, 1)));
+
+  const station = applyLevelUps(next.station.level, next.station.xp);
+  next.station.level = station.level;
+  next.station.xp = station.xp;
+  next.station.generation = Math.max(
+    1,
+    Math.floor(clampNumber(next.station.generation, 1, 100))
+  );
+
+  next.game.matches = Math.floor(clampNumber(next.game.matches));
+  next.game.wins = Math.min(
+    next.game.matches,
+    Math.floor(clampNumber(next.game.wins))
+  );
+  next.game.rating = Math.floor(clampNumber(next.game.rating));
+  next.game.bestScore = Math.floor(clampNumber(next.game.bestScore));
+
+  Object.keys(next.mastery).forEach((key) => {
+    next.mastery[key] = Math.floor(clampNumber(next.mastery[key], 0, 100));
+  });
+
+  Object.keys(next.economy).forEach((key) => {
+    next.economy[key] = clampNumber(next.economy[key]);
+  });
+
+  next.social.referrals = Math.floor(clampNumber(next.social.referrals));
+  next.social.squadLevel = Math.max(
+    1,
+    Math.floor(clampNumber(next.social.squadLevel, 1))
+  );
+  next.social.squadXp = clampNumber(next.social.squadXp);
+  next.social.friends = Array.isArray(next.social.friends)
+    ? [...new Set(next.social.friends.map(String))]
+    : [];
+
+  next.station.unlockedCosmetics = Array.isArray(next.station.unlockedCosmetics)
+    ? [...new Set(next.station.unlockedCosmetics.map(String))]
+    : ["founder-dark"];
+
+  next.meta.createdAt = next.meta.createdAt || now;
+  next.meta.updatedAt = now;
+
+  return next;
+}
+
+function emitProgress(progress) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(PROGRESS_EVENT, { detail: clone(progress) })
+  );
+}
+
+export function createDefaultStationProgress() {
+  return normalizeProgress(DEFAULT_STATION_PROGRESS);
+}
+
+export function loadStationProgress() {
+  if (typeof window === "undefined") {
+    return createDefaultStationProgress();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return createDefaultStationProgress();
+    return normalizeProgress(JSON.parse(raw));
+  } catch (error) {
+    console.warn("Station progress could not be loaded", error);
+    return createDefaultStationProgress();
+  }
+}
+
+export function saveStationProgress(progress) {
+  const normalized = normalizeProgress(progress);
+
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    emitProgress(normalized);
+  }
+
+  return normalized;
+}
+
+export function updateStationProgress(updater) {
+  const current = loadStationProgress();
+  const updated =
+    typeof updater === "function" ? updater(clone(current)) : mergeDeep(current, updater);
+  return saveStationProgress(updated || current);
+}
+
+export function resetStationProgress() {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(STORAGE_KEY);
+  }
+  return saveStationProgress(createDefaultStationProgress());
+}
+
+export function subscribeStationProgress(listener) {
+  if (typeof window === "undefined" || typeof listener !== "function") {
+    return () => {};
+  }
+
+  const handleProgress = (event) => listener(clone(event.detail));
+  const handleStorage = (event) => {
+    if (event.key === STORAGE_KEY) listener(loadStationProgress());
+  };
+
+  window.addEventListener(PROGRESS_EVENT, handleProgress);
+  window.addEventListener("storage", handleStorage);
+
+  return () => {
+    window.removeEventListener(PROGRESS_EVENT, handleProgress);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
+export function addOperatorXp(amount, reason = "activity") {
+  return updateStationProgress((progress) => {
+    progress.operator.xp += clampNumber(amount);
+    progress.meta.lastXpReason = String(reason);
+    return progress;
+  });
+}
+
+export function addStationXp(amount, reason = "activity") {
+  return updateStationProgress((progress) => {
+    progress.station.xp += clampNumber(amount);
+    progress.meta.lastStationXpReason = String(reason);
+    return progress;
+  });
+}
+
+export function addMastery(type, amount) {
+  return updateStationProgress((progress) => {
+    if (!(type in progress.mastery)) return progress;
+    progress.mastery[type] = clampNumber(
+      progress.mastery[type] + clampNumber(amount),
+      0,
+      100
+    );
+    return progress;
+  });
+}
+
+export function addGameUgt(amount, reason = "game") {
+  return updateStationProgress((progress) => {
+    progress.economy.gameUgt += clampNumber(amount);
+    progress.meta.lastUgtReason = String(reason);
+    return progress;
+  });
+}
+
+export function completeMission(missionId) {
+  return updateStationProgress((progress) => {
+    if (missionId in progress.missions) {
+      progress.missions[missionId] = true;
+    }
+    return progress;
+  });
+}
+
+export function recordArenaResult({ won = false, score = 0, xp = 0, ugt = 0 } = {}) {
+  return updateStationProgress((progress) => {
+    progress.game.matches += 1;
+    if (won) progress.game.wins += 1;
+    progress.game.bestScore = Math.max(
+      progress.game.bestScore,
+      Math.floor(clampNumber(score))
+    );
+    progress.game.lastPlayedAt = new Date().toISOString();
+    progress.game.tutorialStage = Math.max(progress.game.tutorialStage, 1);
+
+    progress.operator.xp += clampNumber(xp);
+    progress.station.xp += Math.round(clampNumber(xp) * 0.35);
+    progress.economy.gameUgt += clampNumber(ugt);
+    progress.missions.playedArena = true;
+
+    return progress;
+  });
+}
+
+export function unlockStationFeature(featureId) {
+  return updateStationProgress((progress) => {
+    if (featureId in progress.unlocks) {
+      progress.unlocks[featureId] = true;
+    }
+    return progress;
+  });
+}
+
+export function unlockCosmetic(cosmeticId) {
+  return updateStationProgress((progress) => {
+    const id = String(cosmeticId);
+    if (!progress.station.unlockedCosmetics.includes(id)) {
+      progress.station.unlockedCosmetics.push(id);
+    }
+    return progress;
+  });
+}
+
+export function getProgressSummary(progress = loadStationProgress()) {
+  return {
+    operatorLevel: progress.operator.level,
+    operatorXp: progress.operator.xp,
+    operatorXpRequired: xpRequiredForLevel(progress.operator.level),
+    stationLevel: progress.station.level,
+    stationGeneration: progress.station.generation,
+    gameUgt: progress.economy.gameUgt,
+    lockedUgt: progress.economy.lockedUgt,
+    matches: progress.game.matches,
+    wins: progress.game.wins,
+    referrals: progress.social.referrals,
+  };
+}
+
+export { STORAGE_KEY as STATION_PROGRESS_STORAGE_KEY };
 
 
 ---
