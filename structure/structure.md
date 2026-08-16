@@ -3460,6 +3460,16 @@ ungatus-lab-miniapp/components/station/StationThreeView.jsx
 import { useEffect, useRef, useState } from "react";
 import {
   CAMERA_POSES,
+  OBSERVER_POSITION,
+  OBSERVER_LATERAL_SHIFT,
+  OBSERVER_SCREEN_DOWN_SHIFT,
+  OBSERVER_TO_BEAM_FRACTION,
+  OBSERVER_TO_PLATFORM,
+  OBSERVER_TO_FRAME_SEAM_STEP,
+  INITIAL_LOOK_TARGET,
+  HEAD_ROTATION,
+  LOOK_TARGETS,
+  SPACE_OBJECTS,
   SCENE_CONFIG,
   STATION_MODEL_URL,
 } from "./stationConfig";
@@ -3488,10 +3498,10 @@ export default function StationThreeView({ onSelectModule }) {
   const hostRef = useRef(null);
   const rigRef = useRef(null);
   const [coords, setCoords] = useState({
-    ...CAMERA_POSES.start.camera,
-    tx: CAMERA_POSES.start.target.x,
-    ty: CAMERA_POSES.start.target.y,
-    tz: CAMERA_POSES.start.target.z,
+    ...OBSERVER_POSITION,
+    tx: HEAD_ROTATION.startYawDeg,
+    ty: 0,
+    tz: 0,
   });
   const [panoramaFrame, setPanoramaFrame] = useState(1);
 
@@ -3540,7 +3550,95 @@ export default function StationThreeView({ onSelectModule }) {
       renderer.domElement.style.touchAction = "none";
       host.appendChild(renderer.domElement);
 
-      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 2.1));
+      // Deep-space environment: layered stars, giant sun and a distant PvP rift.
+      const spaceRoot = new THREE.Group();
+      scene.add(spaceRoot);
+
+      function createStarLayer(count, spread, size, color, opacity) {
+        const positions = new Float32Array(count * 3);
+        for (let i = 0; i < count; i += 1) {
+          const r = spread * (0.55 + Math.random() * 0.45);
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+          positions[i * 3 + 1] = r * Math.cos(phi);
+          positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        const material = new THREE.PointsMaterial({
+          color,
+          size,
+          transparent: true,
+          opacity,
+          sizeAttenuation: true,
+          depthWrite: false,
+        });
+        return new THREE.Points(geometry, material);
+      }
+
+      const farStars = createStarLayer(900, 175, 0.28, 0xb8d7ff, 0.72);
+      const nearStars = createStarLayer(260, 105, 0.48, 0xffffff, 0.88);
+      spaceRoot.add(farStars, nearStars);
+
+      const sunRoot = new THREE.Group();
+      sunRoot.position.set(-78, 48, -96);
+      const sunCore = new THREE.Mesh(
+        new THREE.SphereGeometry(15, 48, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffe0a0 })
+      );
+      const sunHalo = new THREE.Mesh(
+        new THREE.SphereGeometry(22, 40, 28),
+        new THREE.MeshBasicMaterial({
+          color: 0xff8a35,
+          transparent: true,
+          opacity: 0.11,
+          depthWrite: false,
+          side: THREE.BackSide,
+        })
+      );
+      const sunCorona = new THREE.Mesh(
+        new THREE.SphereGeometry(30, 36, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0xff5d57,
+          transparent: true,
+          opacity: 0.035,
+          depthWrite: false,
+          side: THREE.BackSide,
+        })
+      );
+      sunRoot.add(sunCore, sunHalo, sunCorona);
+      spaceRoot.add(sunRoot);
+
+      const riftRoot = new THREE.Group();
+      riftRoot.position.set(68, 5, -115);
+      riftRoot.rotation.x = Math.PI / 2.35;
+      const riftOuter = new THREE.Mesh(
+        new THREE.TorusGeometry(12, 1.15, 18, 72),
+        new THREE.MeshBasicMaterial({
+          color: 0xff416c,
+          transparent: true,
+          opacity: 0.62,
+          depthWrite: false,
+        })
+      );
+      const riftInner = new THREE.Mesh(
+        new THREE.TorusGeometry(8.7, 0.34, 12, 64),
+        new THREE.MeshBasicMaterial({
+          color: 0x8f6bff,
+          transparent: true,
+          opacity: 0.72,
+          depthWrite: false,
+        })
+      );
+      riftRoot.add(riftOuter, riftInner);
+      spaceRoot.add(riftRoot);
+
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.55);
+      sunLight.position.copy(sunRoot.position);
+      scene.add(sunLight);
+
+      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 1.45));
 
       const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
       keyLight.position.set(8, 18, 16);
@@ -3566,6 +3664,132 @@ export default function StationThreeView({ onSelectModule }) {
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
 
+          // Fixed world-space observer, close to sector 9.
+          const observerWorld = center.clone().add(new THREE.Vector3(
+            radius * OBSERVER_POSITION.x / 100,
+            radius * OBSERVER_POSITION.y / 100,
+            radius * OBSERVER_POSITION.z / 100
+          ));
+          const initialTarget = center.clone().add(new THREE.Vector3(
+            radius * INITIAL_LOOK_TARGET.x / 100,
+            radius * INITIAL_LOOK_TARGET.y / 100,
+            radius * INITIAL_LOOK_TARGET.z / 100
+          ));
+
+          // Parallel translation to screen-right. Target follows by the same amount,
+          // preserving direction, distance, height and all panorama angles.
+          const initialDirection = initialTarget.clone()
+            .sub(observerWorld)
+            .normalize();
+          const screenRight = new THREE.Vector3()
+            .crossVectors(initialDirection, camera.up)
+            .normalize();
+          const lateralShift = screenRight.multiplyScalar(
+            radius * OBSERVER_LATERAL_SHIFT
+          );
+          const screenUp = new THREE.Vector3()
+            .crossVectors(screenRight, initialDirection)
+            .normalize();
+          const screenDownShift = screenUp.multiplyScalar(
+            -radius * OBSERVER_SCREEN_DOWN_SHIFT
+          );
+          const screenShift = lateralShift.add(screenDownShift);
+          observerWorld.add(screenShift);
+          initialTarget.add(screenShift);
+
+          // Exact A -> B move from the observer toward the marked beam center.
+          // The target stays fixed. No orbit, no sideways drift and no radius-based direction.
+          observerWorld.lerp(initialTarget, OBSERVER_TO_BEAM_FRACTION);
+
+          // Move toward the selected circular platform, not toward the station center.
+          const modelSize = bounds.getSize(new THREE.Vector3());
+          const diskRadius = Math.min(modelSize.x, modelSize.z) * 0.5;
+          const platformAngle = THREE.MathUtils.degToRad(
+            OBSERVER_TO_PLATFORM.angleDeg
+          );
+          const platformTarget = new THREE.Vector3(
+            center.x + Math.cos(platformAngle) * diskRadius * OBSERVER_TO_PLATFORM.ring,
+            observerWorld.y,
+            center.z + Math.sin(platformAngle) * diskRadius * OBSERVER_TO_PLATFORM.ring
+          );
+          observerWorld.lerp(platformTarget, OBSERVER_TO_PLATFORM.fraction);
+
+          camera.position.copy(observerWorld);
+          camera.lookAt(initialTarget);
+          const baseQuaternion = camera.quaternion.clone();
+
+          // Exact old middle frame becomes the new start: yaw 45 degrees.
+          const startYawQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.startYawDeg)
+          );
+          const endYawQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.endYawDeg)
+          );
+          const startPitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg * 0.5)
+          );
+          const endPitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0),
+            THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg)
+          );
+          const startQuaternion = baseQuaternion.clone()
+            .premultiply(startYawQuaternion)
+            .multiply(startPitchQuaternion);
+          const endQuaternion = baseQuaternion.clone()
+            .premultiply(endYawQuaternion)
+            .multiply(endPitchQuaternion);
+
+          // Destination is the angular seam between frame 1 left edge
+          // and frame 2 right edge. Move only the observer by the same
+          // absolute approach step used previously; keep gaze angles unchanged.
+          const middleQuaternion = new THREE.Quaternion().slerpQuaternions(
+            startQuaternion,
+            endQuaternion,
+            0.5
+          );
+          const halfVerticalFov = THREE.MathUtils.degToRad(camera.fov * 0.5);
+          const halfHorizontalFov = Math.atan(
+            Math.tan(halfVerticalFov) * camera.aspect
+          );
+          const frame1LeftDirection = new THREE.Vector3(
+            -Math.tan(halfHorizontalFov), 0, -1
+          ).normalize().applyQuaternion(startQuaternion);
+          const frame2RightDirection = new THREE.Vector3(
+            Math.tan(halfHorizontalFov), 0, -1
+          ).normalize().applyQuaternion(middleQuaternion);
+          const seamDirection = frame1LeftDirection
+            .add(frame2RightDirection)
+            .normalize();
+          const seamStepDistance =
+            observerWorld.distanceTo(initialTarget) * OBSERVER_TO_FRAME_SEAM_STEP;
+          observerWorld.addScaledVector(seamDirection, seamStepDistance);
+
+          // Preserve the approved gaze; only the observer position changes.
+          camera.position.copy(observerWorld);
+          camera.quaternion.copy(startQuaternion);
+
+          // Place the sun in the final left-looking horizon. Hide the temporary rift.
+          const endDirection = new THREE.Vector3(0, 0, -1)
+            .applyQuaternion(endQuaternion)
+            .normalize();
+          const endRight = new THREE.Vector3()
+            .crossVectors(endDirection, camera.up)
+            .normalize();
+          const endUp = new THREE.Vector3()
+            .crossVectors(endRight, endDirection)
+            .normalize();
+
+          sunRoot.position.copy(observerWorld)
+            .addScaledVector(endDirection, radius * SPACE_OBJECTS.sun.distance)
+            .addScaledVector(endRight, radius * SPACE_OBJECTS.sun.sideOffset)
+            .addScaledVector(endUp, radius * SPACE_OBJECTS.sun.heightOffset);
+          sunRoot.scale.setScalar((radius * SPACE_OBJECTS.sun.radius) / 15);
+          sunLight.position.copy(sunRoot.position);
+          riftRoot.visible = false;
+
           const buildings = createStationBuildings({
             THREE,
             station,
@@ -3577,71 +3801,23 @@ export default function StationThreeView({ onSelectModule }) {
           const rig = {
             progress: 0,
             goal: 0,
-            cameraPct: { ...CAMERA_POSES.start.camera },
-            targetPct: { ...CAMERA_POSES.start.target },
-
             setProgress(value, immediate = false) {
               rig.goal = clamp(value, 0, 1);
               if (immediate) rig.progress = rig.goal;
             },
-
             update() {
               rig.progress +=
                 (rig.goal - rig.progress) * SCENE_CONFIG.swipeSmoothing;
-
-              rig.cameraPct = interpolatePose(
-                CAMERA_POSES.start.camera,
-                CAMERA_POSES.end.camera,
+              camera.position.copy(observerWorld);
+              camera.quaternion.slerpQuaternions(
+                startQuaternion,
+                endQuaternion,
                 rig.progress
               );
-              rig.targetPct = interpolatePose(
-                CAMERA_POSES.start.target,
-                CAMERA_POSES.end.target,
-                rig.progress
-              );
-              rig.apply(false);
-            },
-
-            apply(syncUi = true) {
-              const cp = rig.cameraPct;
-              const tp = rig.targetPct;
-
-              camera.position.copy(
-                center.clone().add(
-                  new THREE.Vector3(
-                    (radius * cp.x) / 100,
-                    (radius * cp.y) / 100,
-                    (radius * cp.z) / 100
-                  )
-                )
-              );
-
-              const target = center.clone().add(
-                new THREE.Vector3(
-                  (radius * tp.x) / 100,
-                  (radius * tp.y) / 100,
-                  (radius * tp.z) / 100
-                )
-              );
-
-              camera.lookAt(target);
-              camera.near = Math.max(0.05, radius * 0.01);
-              camera.far = radius * 12;
-              camera.updateProjectionMatrix();
-
-              if (syncUi) {
-                setCoords({
-                  ...cp,
-                  tx: tp.x,
-                  ty: tp.y,
-                  tz: tp.z,
-                });
-              }
             },
           };
-
           rigRef.current = rig;
-          rig.apply();
+          rig.update();
 
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
@@ -3672,7 +3848,7 @@ export default function StationThreeView({ onSelectModule }) {
             const width = Math.max(1, host.clientWidth);
             rig.setProgress(
               swipe.startProgress +
-                dx / (width * SCENE_CONFIG.swipeDistanceFactor)
+                dx / (width * 0.58)
             );
           };
 
@@ -3703,17 +3879,17 @@ export default function StationThreeView({ onSelectModule }) {
             rig.setProgress(snap);
             setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
 
-            const cp = interpolatePose(
-              CAMERA_POSES.start.camera,
-              CAMERA_POSES.end.camera,
-              snap
-            );
-            const tp = interpolatePose(
-              CAMERA_POSES.start.target,
-              CAMERA_POSES.end.target,
-              snap
-            );
-            setCoords({ ...cp, tx: tp.x, ty: tp.y, tz: tp.z });
+            setCoords({
+              ...OBSERVER_POSITION,
+              tx: Math.round(
+                HEAD_ROTATION.startYawDeg +
+                (HEAD_ROTATION.endYawDeg - HEAD_ROTATION.startYawDeg) * snap
+              ),
+              ty: Math.round(
+                HEAD_ROTATION.pitchLiftDeg * (0.5 + 0.5 * snap)
+              ),
+              tz: 0,
+            });
           };
 
           renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -3758,6 +3934,13 @@ export default function StationThreeView({ onSelectModule }) {
 
       const render = () => {
         rigRef.current?.update?.();
+        const panorama = rigRef.current?.progress || 0;
+        farStars.rotation.y = panorama * 0.035;
+        nearStars.rotation.y = panorama * 0.08;
+        riftOuter.rotation.z += 0.0018;
+        riftInner.rotation.z -= 0.0026;
+        const pulse = 1 + Math.sin(performance.now() * 0.0015) * 0.035;
+        sunHalo.scale.setScalar(pulse);
         renderer.render(scene, camera);
         frameId = requestAnimationFrame(render);
       };
@@ -3800,8 +3983,7 @@ export default function StationThreeView({ onSelectModule }) {
         <span>СВАЙП ВПРАВО ИЛИ ВЛЕВО</span>
         <small>
           CAM {Math.round(coords.x)} / {Math.round(coords.y)} /{" "}
-          {Math.round(coords.z)} · LOOK {Math.round(coords.tx)} /{" "}
-          {Math.round(coords.ty)} / {Math.round(coords.tz)}
+          {Math.round(coords.z)} · YAW {Math.round(coords.tx)}° · PITCH {Math.round(coords.ty)}°
         </small>
         <div style={styles.frameDots}>
           <i className={panoramaFrame === 1 ? "active" : ""} />
@@ -3820,7 +4002,7 @@ const styles = {
     width: "100%",
     height: "100%",
     background:
-      "radial-gradient(circle at 48% 42%,#07152b 0,#020713 42%,#010207 76%)",
+      "radial-gradient(circle at 18% 28%,rgba(79,32,97,.32),transparent 28%), radial-gradient(circle at 78% 48%,rgba(13,69,105,.24),transparent 36%), linear-gradient(180deg,#020611 0%,#010207 72%)",
     touchAction: "none",
   },
   panoramaPanel: {
@@ -3849,7 +4031,6 @@ const styles = {
     marginTop: 3,
   },
 };
-
 
 
 -
@@ -4115,7 +4296,8 @@ export function pulseStationBuilding(moduleGroups, moduleId) {
       }
     });
   }, 180);
-} 
+}
+
 
 -
 
@@ -4215,39 +4397,59 @@ export const MODULE_DETAILS = {
 
 export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
-export const CAMERA_POSES = {
-  start: {
-    camera: { x: 192, y: 66, z: 70 },
-    target: { x: 60, y: 0, z: 0 },
-  },
-  end: {
-    camera: { x: 217, y: 66, z: 175 },
-    target: { x: -82, y: -8, z: 0 },
-  },
+// Fixed observer placed very close to the right-front edge, sector 9.
+export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
+// Parallel screen-right translation in model-radius units.
+// Observer and look target move together, so the gaze direction and distance do not change.
+export const OBSERVER_LATERAL_SHIFT = 0.70;
+// Slight downward component matching the dotted guide on the screenshot.
+export const OBSERVER_SCREEN_DOWN_SHIFT = 0.05;
+// Move the observer along the exact straight segment from observer to the beam target.
+// 0.12 means 12% of the current observer-to-beam distance.
+export const OBSERVER_TO_BEAM_FRACTION = 0.32;
+// Additional move toward the visible pink circular platform between frames 1 and 2.
+// The destination is calculated from the platform's actual polar position on the disk.
+export const OBSERVER_TO_PLATFORM = {
+  angleDeg: 338,
+  ring: 0.661,
+  fraction: 0.10,
+  preserveEyeHeight: true,
 };
-
+// One additional move toward the angular seam between:
+// frame 1 left edge and frame 2 right edge.
+// 0.1056 repeats the previous absolute approach step.
+export const OBSERVER_TO_FRAME_SEAM_STEP = 0.2112;
+export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
+export const HEAD_ROTATION = {
+  startYawDeg: 60,
+  endYawDeg: 105,
+  pitchLiftDeg: 5,
+};
+export const LOOK_TARGETS = {
+  right: INITIAL_LOOK_TARGET,
+  center: { x: 0, y: 0, z: 0 },
+  left: { x: -100, y: 0, z: 0 },
+};
+export const CAMERA_POSES = {
+  start: { camera: OBSERVER_POSITION, target: INITIAL_LOOK_TARGET },
+  end: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
+};
+export const SPACE_OBJECTS = {
+  sun: { distance: 12.5, sideOffset: -0.9, heightOffset: 0.7, radius: 0.36 },
+  rift: { visible: false },
+};
 // Временно сохраняем текущие места. На следующем этапе заменим их
 // на точные точки крепления к деталям GLB.
 export const MODULE_ANCHORS = [
-  // Four real large circular pads of the GLB. Angles match the authored station geometry.
-  { id: "market", zone: "platform", platform: 1, angle: 22, ring: 0.66, inset: 0.22, focusFrame: 1 },
-  { id: "scanner", zone: "platform", platform: 2, angle: 112, ring: 0.66, inset: 0.22, focusFrame: 2 },
-  { id: "device", zone: "platform", platform: 3, angle: 202, ring: 0.66, inset: 0.22, focusFrame: 2 },
-  { id: "game", zone: "platform", platform: 4, angle: 292, ring: 0.66, inset: 0.16, focusFrame: 3, action: "launch-game" },
-
-  // Five low-profile systems on the protected inner service ring.
-  { id: "collab", zone: "inner-ring", angle: 154, ring: 0.47, inset: 0.30, focusFrame: 2 },
-  { id: "wallet", zone: "inner-ring", angle: 226, ring: 0.47, inset: 0.30, focusFrame: 2 },
-  { id: "premium", zone: "inner-ring", angle: 334, ring: 0.47, inset: 0.30, focusFrame: 1 },
-  { id: "earn", zone: "inner-ring", angle: 46, ring: 0.47, inset: 0.30, focusFrame: 1 },
-  { id: "squad", zone: "inner-ring", angle: 82, ring: 0.47, inset: 0.30, focusFrame: 3 },
-
-  // CORE is the existing central dome and tower, not an extra generated building.
-  { id: "center", zone: "existing-core", useExisting: true, focusFrame: 2 },
+  // Calibration stage: only the four authored circular platforms.
+  // GLB platform centers were authored at radius 7.35 inside a disk radius about 11.12,
+  // therefore the normalized ring is 0.661.
+  { id: "market", zone: "platform", platform: 1, angle: 338, ring: 0.661, focusFrame: 1 },
+  { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 2 },
+  { id: "device", zone: "platform", platform: 3, angle: 158, ring: 0.661, focusFrame: 2 },
+  { id: "game", zone: "platform", platform: 4, angle: 68,  ring: 0.661, focusFrame: 3, action: "launch-game" },
 ];
 
-// Future camera focus can use these values after the base placement is approved.
-// They are disabled for now so the current three-frame panorama stays unchanged.
 export const MODULE_FOCUS = {
   enabled: false,
   distanceScale: 1.35,
@@ -4262,10 +4464,9 @@ export const SCENE_CONFIG = {
   swipeDistanceFactor: 0.72,
   swipeSmoothing: 0.16,
   tapThresholdPx: 9,
-  buildingScale: 0.032,
-  buildingEmbed: 0.3,
+  buildingScale: 0.042,
+  buildingEmbed: 0.22,
 };
-
 
 
 ---
