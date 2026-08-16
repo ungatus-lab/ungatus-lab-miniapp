@@ -7,6 +7,7 @@ import {
   OBSERVER_LATERAL_SHIFT,
   OBSERVER_SCREEN_DOWN_SHIFT,
   OBSERVER_TO_BEAM_FRACTION,
+  OBSERVER_TO_PLATFORM,
   OBSERVER_TO_FRAME_SEAM_STEP,
   INITIAL_LOOK_TARGET,
   HEAD_ROTATION,
@@ -242,6 +243,19 @@ export default function StationThreeView({ onSelectModule }) {
           // Exact A -> B move from the observer toward the marked beam center.
           // The target stays fixed. No orbit, no sideways drift and no radius-based direction.
           observerWorld.lerp(initialTarget, OBSERVER_TO_BEAM_FRACTION);
+
+          // Move toward the selected circular platform, not toward the station center.
+          const modelSize = bounds.getSize(new THREE.Vector3());
+          const diskRadius = Math.min(modelSize.x, modelSize.z) * 0.5;
+          const platformAngle = THREE.MathUtils.degToRad(
+            OBSERVER_TO_PLATFORM.angleDeg
+          );
+          const platformTarget = new THREE.Vector3(
+            center.x + Math.cos(platformAngle) * diskRadius * OBSERVER_TO_PLATFORM.ring,
+            observerWorld.y,
+            center.z + Math.sin(platformAngle) * diskRadius * OBSERVER_TO_PLATFORM.ring
+          );
+          observerWorld.lerp(platformTarget, OBSERVER_TO_PLATFORM.fraction);
 
           camera.position.copy(observerWorld);
           camera.lookAt(initialTarget);
