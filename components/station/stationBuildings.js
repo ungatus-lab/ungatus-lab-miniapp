@@ -1,5 +1,9 @@
 import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 
+// The original procedural complexes were technically present but too small to read
+// from the fixed home camera. 2.75 makes each complex fill most of its authored pad.
+const COMPLEX_VISUAL_SCALE = 2.75;
+
 function bodyMaterial(THREE, color) {
   return new THREE.MeshStandardMaterial({
     color: 0x091827,
@@ -245,7 +249,9 @@ function createModuleBuilding(THREE, module, diskRadius) {
   group.name = `Module_${module.id}`;
   group.userData.moduleId = module.id;
 
-  const radius = diskRadius * SCENE_CONFIG.buildingScale;
+  const radius =
+    diskRadius * SCENE_CONFIG.buildingScale * COMPLEX_VISUAL_SCALE;
+  group.userData.visualRadius = radius;
   const materials = addBase(THREE, group, radius, module.colorHex);
 
   if (module.id === "scanner") {
@@ -263,7 +269,7 @@ function createModuleBuilding(THREE, module, diskRadius) {
   const hitArea = mesh(
     THREE,
     group,
-    new THREE.CylinderGeometry(radius * 1.2, radius * 1.2, radius * 1.35, 18),
+    new THREE.CylinderGeometry(radius * 1.08, radius * 1.08, radius * 1.5, 18),
     invisibleMaterial(THREE),
     [0, radius * 0.42, 0]
   );
@@ -311,7 +317,8 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
     if (!hit) return;
 
     const building = createModuleBuilding(THREE, module, diskRadius);
-    const embed = diskRadius * SCENE_CONFIG.buildingScale * SCENE_CONFIG.buildingEmbed;
+    const embed =
+      building.userData.visualRadius * Math.min(SCENE_CONFIG.buildingEmbed, 0.18);
     building.position.set(x, hit.point.y - embed, z);
     building.rotation.y = -angle + Math.PI / 2;
     building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
