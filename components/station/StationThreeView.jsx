@@ -58,6 +58,12 @@ export default function StationThreeView({ onSelectModule }) {
       renderer.domElement.style.touchAction = "manipulation";
       host.appendChild(renderer.domElement);
 
+      const initialWidth = Math.max(1, host.clientWidth);
+      const initialHeight = Math.max(1, host.clientHeight);
+      camera.aspect = initialWidth / initialHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(initialWidth, initialHeight, false);
+
       function createStarLayer(count, spread, size, color, opacity) {
         const positions = new Float32Array(count * 3);
         for (let i = 0; i < count; i += 1) {
