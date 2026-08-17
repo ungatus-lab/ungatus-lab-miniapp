@@ -2,7 +2,10 @@ import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 
 // The original procedural complexes were technically present but too small to read
 // from the fixed home camera. 2.75 makes each complex fill most of its authored pad.
-const COMPLEX_VISUAL_SCALE = 2.75;
+// Full platform cap: the base intentionally covers the authored white circular pad.
+const COMPLEX_VISUAL_SCALE = 4.35;
+// Upper architecture stays readable and does not grow as wide as the cap.
+const COMPLEX_FEATURE_SCALE = 0.72;
 
 function bodyMaterial(THREE, color) {
   return new THREE.MeshStandardMaterial({
@@ -56,23 +59,23 @@ function addBase(THREE, group, radius, color) {
   mesh(
     THREE,
     group,
-    new THREE.CylinderGeometry(radius * 0.94, radius, radius * 0.16, 32),
+    new THREE.CylinderGeometry(radius * 1.04, radius * 1.1, radius * 0.22, 32),
     dark,
-    [0, -radius * 0.05, 0]
+    [0, -radius * 0.09, 0]
   );
   mesh(
     THREE,
     group,
-    new THREE.CylinderGeometry(radius * 0.76, radius * 0.84, radius * 0.13, 28),
+    new THREE.CylinderGeometry(radius * 0.83, radius * 0.98, radius * 0.18, 28),
     body,
-    [0, radius * 0.06, 0]
+    [0, radius * 0.04, 0]
   );
   const ring = mesh(
     THREE,
     group,
-    new THREE.TorusGeometry(radius * 0.73, radius * 0.035, 8, 40),
+    new THREE.TorusGeometry(radius * 0.86, radius * 0.04, 8, 40),
     glow,
-    [0, radius * 0.14, 0]
+    [0, radius * 0.135, 0]
   );
   ring.rotation.x = Math.PI / 2;
 
@@ -253,17 +256,18 @@ function createModuleBuilding(THREE, module, diskRadius) {
     diskRadius * SCENE_CONFIG.buildingScale * COMPLEX_VISUAL_SCALE;
   group.userData.visualRadius = radius;
   const materials = addBase(THREE, group, radius, module.colorHex);
+  const featureRadius = radius * COMPLEX_FEATURE_SCALE;
 
   if (module.id === "scanner") {
-    createAutomationStudio(THREE, group, radius, materials);
+    createAutomationStudio(THREE, group, featureRadius, materials);
   } else if (module.id === "market") {
-    createProjectLibrary(THREE, group, radius, materials);
+    createProjectLibrary(THREE, group, featureRadius, materials);
   } else if (module.id === "collab") {
-    createCommunityRelay(THREE, group, radius, materials);
+    createCommunityRelay(THREE, group, featureRadius, materials);
   } else if (module.id === "wallet") {
-    createWalletMarket(THREE, group, radius, materials);
+    createWalletMarket(THREE, group, featureRadius, materials);
   } else {
-    createFallbackBuilding(THREE, group, radius, materials);
+    createFallbackBuilding(THREE, group, featureRadius, materials);
   }
 
   const hitArea = mesh(
@@ -318,7 +322,7 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
 
     const building = createModuleBuilding(THREE, module, diskRadius);
     const embed =
-      building.userData.visualRadius * Math.min(SCENE_CONFIG.buildingEmbed, 0.18);
+      building.userData.visualRadius * 0.24;
     building.position.set(x, hit.point.y - embed, z);
     building.rotation.y = -angle + Math.PI / 2;
     building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
