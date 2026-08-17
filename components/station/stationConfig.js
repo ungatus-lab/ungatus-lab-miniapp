@@ -90,7 +90,7 @@ export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
 // One stable home composition. No mandatory panorama frames on the main screen.
 export const HOME_VIEW = {
-  direction: { x: 0.76, y: 0.34, z: 0.55 },
+  direction: { x: 0.86, y: 0.34, z: 0.36 },
   distance: 3.92,
   targetHeight: 0.13,
   fov: 37,
