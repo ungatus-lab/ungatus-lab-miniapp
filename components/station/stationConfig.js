@@ -88,49 +88,24 @@ export const MODULE_DETAILS = {
 
 export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
-// Fixed observer placed very close to the right-front edge, sector 9.
-export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
-// Parallel screen-right translation in model-radius units.
-// Observer and look target move together, so the gaze direction and distance do not change.
-export const OBSERVER_LATERAL_SHIFT = 0.70;
-// Slight downward component matching the dotted guide on the screenshot.
-export const OBSERVER_SCREEN_DOWN_SHIFT = 0.05;
-// Move the observer along the exact straight segment from observer to the beam target.
-// 0.12 means 12% of the current observer-to-beam distance.
-export const OBSERVER_TO_BEAM_FRACTION = 0.32;
-// Additional move toward the visible pink circular platform between frames 1 and 2.
-// The destination is calculated from the platform's actual polar position on the disk.
-export const OBSERVER_TO_PLATFORM = {
-  angleDeg: 338,
-  ring: 0.661,
-  fraction: 0.10,
-  preserveEyeHeight: true,
+// One stable home composition. No mandatory panorama frames on the main screen.
+export const HOME_VIEW = {
+  direction: { x: 0.68, y: 0.34, z: 0.65 },
+  distance: 4.45,
+  targetHeight: -0.04,
+  fov: 38,
 };
-// One additional move toward the angular seam between:
-// frame 1 left edge and frame 2 right edge.
-// 0.1056 repeats the previous absolute approach step.
-export const OBSERVER_TO_FRAME_SEAM_STEP = 0.2112;
-export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
-export const HEAD_ROTATION = {
-  startYawDeg: 82.5,
-  endYawDeg: 127.5,
-  pitchLiftDeg: 5,
-};
-export const LOOK_TARGETS = {
-  right: INITIAL_LOOK_TARGET,
-  center: { x: 0, y: 0, z: 0 },
-  left: { x: -100, y: 0, z: 0 },
-};
-export const CAMERA_POSES = {
-  start: { camera: OBSERVER_POSITION, target: INITIAL_LOOK_TARGET },
-  end: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
-};
+
 export const SPACE_OBJECTS = {
-  sun: { distance: 13.5, sideOffset: -2.1, heightOffset: 0.8, radius: 0.30 },
+  sun: {
+    distance: 8.5,
+    sideOffset: -2.2,
+    heightOffset: 1.25,
+    radius: 0.62,
+  },
   rift: { visible: false },
 };
-// Временно сохраняем текущие места. На следующем этапе заменим их
-// на точные точки крепления к деталям GLB.
+
 export const MODULE_ANCHORS = [
   { id: "market", zone: "platform", platform: 1, angle: 338, ring: 0.661, focusFrame: 1 },
   { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 1 },
