@@ -4,8 +4,8 @@ import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 // from the fixed home camera. 2.75 makes each complex fill most of its authored pad.
 // Full platform cap: the base intentionally covers the authored white circular pad.
 const COMPLEX_VISUAL_SCALE = 4.35;
-// Upper architecture stays readable and does not grow as wide as the cap.
-const COMPLEX_FEATURE_SCALE = 0.72;
+// Upper architecture grows with the full cap while retaining a small edge margin.
+const COMPLEX_FEATURE_SCALE = 0.96;
 
 function bodyMaterial(THREE, color) {
   return new THREE.MeshStandardMaterial({
@@ -322,7 +322,7 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
 
     const building = createModuleBuilding(THREE, module, diskRadius);
     const embed =
-      building.userData.visualRadius * 0.24;
+      building.userData.visualRadius * 0.035;
     building.position.set(x, hit.point.y - embed, z);
     building.rotation.y = -angle + Math.PI / 2;
     building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
