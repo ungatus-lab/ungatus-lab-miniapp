@@ -98,10 +98,10 @@ export const HOME_VIEW = {
 
 export const SPACE_OBJECTS = {
   sun: {
-    distance: 9.6,
-    sideOffset: -2.85,
-    heightOffset: 1.05,
-    radius: 0.38,
+    distance: 8.9,
+    sideOffset: -0.92,
+    heightOffset: 0.78,
+    radius: 0.29,
   },
   rift: { visible: false },
 };
