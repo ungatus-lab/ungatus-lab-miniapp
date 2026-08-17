@@ -54,32 +54,53 @@ function mesh(THREE, group, geometry, material, position = [0, 0, 0]) {
 function addBase(THREE, group, radius, color) {
   const body = bodyMaterial(THREE, color);
   const dark = darkMaterial(THREE);
-  const glow = glowMaterial(THREE, color, 0.62);
+  const glow = glowMaterial(THREE, color, 0.72);
+  const capMaterial = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0.72,
+    roughness: 0.28,
+    emissive: color,
+    emissiveIntensity: 0.22,
+  });
 
+  // Lower skirt wraps the original socket edge.
   mesh(
     THREE,
     group,
-    new THREE.CylinderGeometry(radius * 1.04, radius * 1.1, radius * 0.22, 32),
+    new THREE.CylinderGeometry(radius * 1.13, radius * 1.17, radius * 0.2, 36),
     dark,
-    [0, -radius * 0.09, 0]
+    [0, radius * 0.015, 0]
   );
+
+  // Opaque lid is fully above the raycast surface, so the white GLB pad cannot
+  // draw over it on the left or right side.
   mesh(
     THREE,
     group,
-    new THREE.CylinderGeometry(radius * 0.83, radius * 0.98, radius * 0.18, 28),
-    body,
-    [0, radius * 0.04, 0]
+    new THREE.CylinderGeometry(radius * 1.1, radius * 1.13, radius * 0.13, 36),
+    capMaterial,
+    [0, radius * 0.14, 0]
   );
+
+  // Dark inset visually joins the upper architecture to the large cap.
+  mesh(
+    THREE,
+    group,
+    new THREE.CylinderGeometry(radius * 0.78, radius * 0.91, radius * 0.13, 32),
+    body,
+    [0, radius * 0.24, 0]
+  );
+
   const ring = mesh(
     THREE,
     group,
-    new THREE.TorusGeometry(radius * 0.86, radius * 0.04, 8, 40),
+    new THREE.TorusGeometry(radius * 0.94, radius * 0.045, 9, 48),
     glow,
-    [0, radius * 0.135, 0]
+    [0, radius * 0.215, 0]
   );
   ring.rotation.x = Math.PI / 2;
 
-  return { body, dark, glow };
+  return { body, dark, glow, capMaterial };
 }
 
 function createAutomationStudio(THREE, group, radius, materials) {
@@ -322,7 +343,7 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
 
     const building = createModuleBuilding(THREE, module, diskRadius);
     const embed =
-      building.userData.visualRadius * 0.035;
+      building.userData.visualRadius * 0.0;
     building.position.set(x, hit.point.y - embed, z);
     building.rotation.y = -angle + Math.PI / 2;
     building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
