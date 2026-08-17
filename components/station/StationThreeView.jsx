@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   CAMERA_POSES,
   OBSERVER_POSITION,
@@ -40,13 +40,6 @@ function interpolatePose(start, end, t) {
 export default function StationThreeView({ onSelectModule }) {
   const hostRef = useRef(null);
   const rigRef = useRef(null);
-  const [coords, setCoords] = useState({
-    ...OBSERVER_POSITION,
-    tx: HEAD_ROTATION.startYawDeg,
-    ty: 0,
-    tz: 0,
-  });
-  const [panoramaFrame, setPanoramaFrame] = useState(1);
 
   useEffect(() => {
     let disposed = false;
@@ -420,19 +413,6 @@ export default function StationThreeView({ onSelectModule }) {
 
             const snap = rig.goal < 0.25 ? 0 : rig.goal < 0.75 ? 0.5 : 1;
             rig.setProgress(snap);
-            setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
-
-            setCoords({
-              ...OBSERVER_POSITION,
-              tx: Math.round(
-                HEAD_ROTATION.startYawDeg +
-                (HEAD_ROTATION.endYawDeg - HEAD_ROTATION.startYawDeg) * snap
-              ),
-              ty: Math.round(
-                HEAD_ROTATION.pitchLiftDeg * (0.5 + 0.5 * snap)
-              ),
-              tz: 0,
-            });
           };
 
           renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -514,27 +494,11 @@ export default function StationThreeView({ onSelectModule }) {
   }, [onSelectModule]);
 
   return (
-    <>
-      <div
-        ref={hostRef}
-        style={styles.stationModel}
-        aria-label="Интерактивная 3D-сцена орбитальной станции"
-      />
-
-      <div style={styles.panoramaPanel}>
-        <b>ПАНОРАМА {panoramaFrame} / 3</b>
-        <span>СВАЙП ВПРАВО ИЛИ ВЛЕВО</span>
-        <small>
-          CAM {Math.round(coords.x)} / {Math.round(coords.y)} /{" "}
-          {Math.round(coords.z)} · YAW {Math.round(coords.tx)}° · PITCH {Math.round(coords.ty)}°
-        </small>
-        <div style={styles.frameDots}>
-          <i className={panoramaFrame === 1 ? "active" : ""} />
-          <i className={panoramaFrame === 2 ? "active" : ""} />
-          <i className={panoramaFrame === 3 ? "active" : ""} />
-        </div>
-      </div>
-    </>
+    <div
+      ref={hostRef}
+      style={styles.stationModel}
+      aria-label="Интерактивная 3D-сцена орбитальной станции"
+    />
   );
 }
 
@@ -545,32 +509,7 @@ const styles = {
     width: "100%",
     height: "100%",
     background:
-      "radial-gradient(circle at 18% 28%,rgba(79,32,97,.32),transparent 28%), radial-gradient(circle at 78% 48%,rgba(13,69,105,.24),transparent 36%), linear-gradient(180deg,#020611 0%,#010207 72%)",
+      "radial-gradient(circle at 14% 34%,rgba(63,29,93,.28),transparent 27%), radial-gradient(circle at 78% 42%,rgba(8,62,96,.24),transparent 37%), linear-gradient(180deg,#020611 0%,#010207 74%)",
     touchAction: "none",
-  },
-  panoramaPanel: {
-    position: "absolute",
-    zIndex: 85,
-    left: "50%",
-    bottom: "calc(max(18px, env(safe-area-inset-bottom)) + 54px)",
-    transform: "translateX(-50%)",
-    minWidth: 250,
-    padding: "9px 12px",
-    borderRadius: 14,
-    display: "grid",
-    gap: 3,
-    textAlign: "center",
-    background: "rgba(1,7,17,.82)",
-    border: "1px solid rgba(94,231,255,.25)",
-    backdropFilter: "blur(10px)",
-    pointerEvents: "none",
-    fontSize: 9,
-    color: "#bcecff",
-  },
-  frameDots: {
-    display: "flex",
-    justifyContent: "center",
-    gap: 7,
-    marginTop: 3,
   },
 };
