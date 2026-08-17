@@ -96,14 +96,14 @@ export default function StationThreeView({ onSelectModule }) {
       const sunRoot = new THREE.Group();
       const sunCore = new THREE.Mesh(
         new THREE.SphereGeometry(15, 48, 32),
-        new THREE.MeshBasicMaterial({ color: 0xffd992 })
+        new THREE.MeshBasicMaterial({ color: 0xffcf78 })
       );
       const sunHalo = new THREE.Mesh(
         new THREE.SphereGeometry(22, 40, 28),
         new THREE.MeshBasicMaterial({
           color: 0xff8a35,
           transparent: true,
-          opacity: 0.1,
+          opacity: 0.065,
           depthWrite: false,
           side: THREE.BackSide,
         })
@@ -113,7 +113,7 @@ export default function StationThreeView({ onSelectModule }) {
         new THREE.MeshBasicMaterial({
           color: 0xff5d57,
           transparent: true,
-          opacity: 0.035,
+          opacity: 0.018,
           depthWrite: false,
           side: THREE.BackSide,
         })
@@ -121,7 +121,7 @@ export default function StationThreeView({ onSelectModule }) {
       sunRoot.add(sunCore, sunHalo, sunCorona);
       scene.add(sunRoot);
 
-      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.65);
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.52);
       scene.add(sunLight);
       scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 1.35));
 
