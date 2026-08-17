@@ -1,11 +1,11 @@
 export const MODULES = [
   { id: "device", title: "DEVICE", subtitle: "Emulator Hangar", color: "#5ee7ff", colorHex: 0x5ee7ff, icon: "▣", type: "hangar" },
-  { id: "scanner", title: "SCANNER", subtitle: "Etalon Laboratory", color: "#53f5df", colorHex: 0x53f5df, icon: "◉", type: "dish" },
-  { id: "collab", title: "COLLAB", subtitle: "Link Hub", color: "#b99cff", colorHex: 0xb99cff, icon: "◈", type: "twins" },
-  { id: "market", title: "MARKET", subtitle: "Trade Dock", color: "#ff8bc8", colorHex: 0xff8bc8, icon: "◍", type: "hangar" },
+  { id: "scanner", title: "AUTOMATION", subtitle: "Scanner · Recorder · Scenarios", color: "#53f5df", colorHex: 0x53f5df, icon: "◉", type: "dish" },
+  { id: "collab", title: "COMMUNITY", subtitle: "Squad · Collab · Friends", color: "#b99cff", colorHex: 0xb99cff, icon: "◈", type: "twins" },
+  { id: "market", title: "PROJECTS", subtitle: "Library · Catalog · Rentals", color: "#ff8bc8", colorHex: 0xff8bc8, icon: "◍", type: "hangar" },
   { id: "premium", title: "PREMIUM", subtitle: "Status Reactor", color: "#6df0ad", colorHex: 0x6df0ad, icon: "◇", type: "reactor" },
   { id: "center", title: "CORE", subtitle: "Account Citadel", color: "#8cecff", colorHex: 0x8cecff, icon: "◎", type: "citadel" },
-  { id: "wallet", title: "WALLET", subtitle: "UGT Vault", color: "#ffe693", colorHex: 0xffe693, icon: "⇄", type: "vault" },
+  { id: "wallet", title: "WALLET & MARKET", subtitle: "UGT · Premium · Allocation", color: "#ffe693", colorHex: 0xffe693, icon: "⇄", type: "vault" },
   { id: "squad", title: "SQUAD", subtitle: "Relay Array", color: "#ca9cff", colorHex: 0xca9cff, icon: "⬡", type: "beacon" },
   { id: "earn", title: "EARN", subtitle: "Mission Beacon", color: "#ffe45c", colorHex: 0xffe45c, icon: "✦", type: "beacon" },
   { id: "game", title: "ARENA", subtitle: "PvP Rift", color: "#ff6f91", colorHex: 0xff6f91, icon: "⚔", type: "gate" },
@@ -112,8 +112,8 @@ export const OBSERVER_TO_PLATFORM = {
 export const OBSERVER_TO_FRAME_SEAM_STEP = 0.2112;
 export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
 export const HEAD_ROTATION = {
-  startYawDeg: 60,
-  endYawDeg: 105,
+  startYawDeg: 82.5,
+  endYawDeg: 127.5,
   pitchLiftDeg: 5,
 };
 export const LOOK_TARGETS = {
@@ -126,19 +126,16 @@ export const CAMERA_POSES = {
   end: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
 };
 export const SPACE_OBJECTS = {
-  sun: { distance: 12.5, sideOffset: -0.9, heightOffset: 0.7, radius: 0.36 },
+  sun: { distance: 13.5, sideOffset: -2.1, heightOffset: 0.8, radius: 0.30 },
   rift: { visible: false },
 };
 // Временно сохраняем текущие места. На следующем этапе заменим их
 // на точные точки крепления к деталям GLB.
 export const MODULE_ANCHORS = [
-  // Calibration stage: only the four authored circular platforms.
-  // GLB platform centers were authored at radius 7.35 inside a disk radius about 11.12,
-  // therefore the normalized ring is 0.661.
   { id: "market", zone: "platform", platform: 1, angle: 338, ring: 0.661, focusFrame: 1 },
-  { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 2 },
-  { id: "device", zone: "platform", platform: 3, angle: 158, ring: 0.661, focusFrame: 2 },
-  { id: "game", zone: "platform", platform: 4, angle: 68,  ring: 0.661, focusFrame: 3, action: "launch-game" },
+  { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 1 },
+  { id: "collab", zone: "platform", platform: 3, angle: 158, ring: 0.661, focusFrame: 2 },
+  { id: "wallet", zone: "platform", platform: 4, angle: 68, ring: 0.661, focusFrame: 3 },
 ];
 
 export const MODULE_FOCUS = {
