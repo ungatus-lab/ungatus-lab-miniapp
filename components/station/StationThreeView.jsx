@@ -121,15 +121,16 @@ export default function StationThreeView({ onSelectModule }) {
       sunRoot.add(sunCore, sunHalo, sunCorona);
       scene.add(sunRoot);
 
-      const sunLight = new THREE.DirectionalLight(0xffb56b, 1.05);
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 1.35);
       scene.add(sunLight);
-      scene.add(new THREE.HemisphereLight(0x9fcfff, 0x06101c, 1.42));
+      scene.add(new THREE.HemisphereLight(0xaed8ff, 0x101824, 1.65));
+      scene.add(new THREE.AmbientLight(0x60758d, 0.42));
 
-      const keyLight = new THREE.DirectionalLight(0xb7ddff, 1.35);
+      const keyLight = new THREE.DirectionalLight(0xc8e6ff, 0.0);
       keyLight.position.set(8, 18, 16);
       scene.add(keyLight);
 
-      const rimLight = new THREE.DirectionalLight(0x4aa8ff, 1.15);
+      const rimLight = new THREE.DirectionalLight(0x4aa8ff, 0.0);
       rimLight.position.set(-14, 7, -10);
       scene.add(rimLight);
 
@@ -163,14 +164,14 @@ export default function StationThreeView({ onSelectModule }) {
                 sourceColor.g * 0.7152 +
                 sourceColor.b * 0.0722;
               const target = luminance > 0.58
-                ? new THREE.Color(0x506275)
-                : new THREE.Color(0x172535);
-              material.color = sourceColor.lerp(target, 0.68);
+                ? new THREE.Color(0x63798f)
+                : new THREE.Color(0x2b4055);
+              material.color = sourceColor.lerp(target, 0.52);
               if ("metalness" in material) material.metalness = Math.max(material.metalness || 0, 0.58);
               if ("roughness" in material) material.roughness = 0.34;
               if ("emissive" in material) {
                 material.emissive = new THREE.Color(luminance > 0.7 ? 0x071725 : 0x02070d);
-                material.emissiveIntensity = luminance > 0.7 ? 0.1 : 0.025;
+                material.emissiveIntensity = luminance > 0.7 ? 0.13 : 0.055;
               }
               material.needsUpdate = true;
               return material;
@@ -212,24 +213,23 @@ export default function StationThreeView({ onSelectModule }) {
           sunLight.target.position.copy(center);
           scene.add(sunLight.target);
 
-          // Warm fill follows the visible sun side. The weaker cool fill only
-          // separates the opposite rim from the black background.
-          const warmFill = new THREE.PointLight(0xffbd78, 1.85, radius * 9, 1.6);
-          warmFill.position.copy(center)
-            .addScaledVector(right, -radius * 2.1)
-            .addScaledVector(up, radius * 1.55)
-            .addScaledVector(forward, -radius * 0.7);
-          scene.add(warmFill);
+          // Deterministic light rig: one warm sun-side fill and one soft
+          // camera-facing fill. Directional lights avoid distance falloff.
+          const leftFill = new THREE.DirectionalLight(0xffc58a, 1.05);
+          leftFill.position.copy(center)
+            .addScaledVector(right, -radius * 3.2)
+            .addScaledVector(up, radius * 2.2)
+            .addScaledVector(forward, -radius * 1.1);
+          leftFill.target.position.copy(center);
+          scene.add(leftFill, leftFill.target);
 
-          const coolFill = new THREE.PointLight(0x5caeff, 0.72, radius * 8, 1.75);
-          coolFill.position.copy(center)
-            .addScaledVector(right, radius * 1.75)
-            .addScaledVector(up, radius * 0.75)
-            .addScaledVector(forward, radius * 0.25);
-          scene.add(coolFill);
+          const frontFill = new THREE.DirectionalLight(0x8fc8ff, 0.72);
+          frontFill.position.copy(camera.position);
+          frontFill.target.position.copy(center);
+          scene.add(frontFill, frontFill.target);
 
-          const coreFill = new THREE.PointLight(0x8fd8ff, 0.48, radius * 4.5, 1.8);
-          coreFill.position.copy(center).addScaledVector(up, radius * 1.15);
+          const coreFill = new THREE.PointLight(0x9fddff, 0.55, radius * 5.5, 1.2);
+          coreFill.position.copy(center).addScaledVector(up, radius * 1.3);
           scene.add(coreFill);
 
           const buildings = createStationBuildings({
