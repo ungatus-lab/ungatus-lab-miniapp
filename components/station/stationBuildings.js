@@ -105,76 +105,133 @@ function addBase(THREE, group, radius, color) {
   return { body, dark, glow, capMaterial };
 }
 
-function addPanelArc(THREE, group, radius, color, startAngle, length) {
+function accentMaterial(THREE, color, intensity = 0.72) {
+  return new THREE.MeshStandardMaterial({
+    color: 0x152434,
+    metalness: 0.82,
+    roughness: 0.27,
+    emissive: color,
+    emissiveIntensity: intensity,
+  });
+}
+
+function addPanelArc(THREE, group, radius, color, startAngle, length, y) {
   const arc = mesh(
     THREE,
     group,
-    new THREE.TorusGeometry(radius, radius * 0.035, 7, 48, length),
-    glowMaterial(THREE, color, 0.78),
-    [0, radius * 0.56, 0]
+    new THREE.TorusGeometry(radius, radius * 0.028, 6, 56, length),
+    glowMaterial(THREE, color, 0.84),
+    [0, y, 0]
   );
   arc.rotation.set(Math.PI / 2, 0, startAngle);
   return arc;
 }
 
+function addArmorPanels(THREE, group, radius, material, count = 6) {
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2;
+    const panel = mesh(
+      THREE,
+      group,
+      new THREE.BoxGeometry(radius * 0.34, radius * 0.055, radius * 0.2),
+      material,
+      [
+        Math.cos(angle) * radius * 0.58,
+        radius * 0.46,
+        Math.sin(angle) * radius * 0.58,
+      ]
+    );
+    panel.rotation.y = -angle;
+  }
+}
+
 function createAutomationStudio(THREE, group, radius, materials) {
   const { body, dark } = materials;
-  mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.72, radius * 0.86, radius * 0.2, 32),
-    dark, [0, radius * 0.31, 0]);
-  mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.5, radius * 0.68, radius * 0.16, 32),
-    body, [0, radius * 0.47, 0]);
-  addPanelArc(THREE, group, radius * 0.58, 0x53f5df, 0.18, Math.PI * 1.55);
-  addPanelArc(THREE, group, radius * 0.39, 0x8ffff0, Math.PI, Math.PI * 0.78);
-  mesh(THREE, group,
-    new THREE.SphereGeometry(radius * 0.14, 18, 12),
-    glowMaterial(THREE, 0x53f5df, 0.9), [0, radius * 0.62, 0]);
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.69, radius * 0.82, radius * 0.16, 32),
+    dark, [0, radius * 0.31, 0]
+  );
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.47, radius * 0.65, radius * 0.12, 32),
+    body, [0, radius * 0.43, 0]
+  );
+  addArmorPanels(THREE, group, radius, body, 6);
+  addPanelArc(THREE, group, radius * 0.57, 0x53f5df, 0.15, Math.PI * 1.45, radius * 0.53);
+  addPanelArc(THREE, group, radius * 0.39, 0x8ffff0, Math.PI, Math.PI * 0.72, radius * 0.55);
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.13, radius * 0.18, radius * 0.07, 20),
+    accentMaterial(THREE, 0x53f5df, 0.9), [0, radius * 0.56, 0]
+  );
 }
 
 function createProjectLibrary(THREE, group, radius, materials) {
   const { body, dark } = materials;
-  mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.74, radius * 0.88, radius * 0.2, 8),
-    dark, [0, radius * 0.31, 0]);
-  [-0.36, 0, 0.36].forEach((offset, index) => {
-    mesh(THREE, group,
-      new THREE.BoxGeometry(radius * 0.27, radius * 0.18, radius * 0.72),
-      body,
-      [offset * radius, radius * 0.48, 0]);
-    mesh(THREE, group,
-      new THREE.BoxGeometry(radius * 0.19, radius * 0.025, radius * 0.58),
-      glowMaterial(THREE, 0xff8bc8, 0.74),
-      [offset * radius, radius * 0.59, 0]);
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.72, radius * 0.85, radius * 0.16, 12),
+    dark, [0, radius * 0.31, 0]
+  );
+  [-0.36, 0, 0.36].forEach((offset) => {
+    const block = mesh(
+      THREE, group,
+      new THREE.BoxGeometry(radius * 0.28, radius * 0.13, radius * 0.64),
+      body, [offset * radius, radius * 0.45, 0]
+    );
+    block.rotation.y = offset * -0.18;
+    mesh(
+      THREE, group,
+      new THREE.BoxGeometry(radius * 0.21, radius * 0.022, radius * 0.5),
+      accentMaterial(THREE, 0xff8bc8, 0.72),
+      [offset * radius, radius * 0.525, 0]
+    ).rotation.y = offset * -0.18;
   });
+  addPanelArc(THREE, group, radius * 0.61, 0xff8bc8, 0.52, Math.PI * 0.82, radius * 0.5);
 }
 
 function createCommunityRelay(THREE, group, radius, materials) {
   const { body, dark } = materials;
-  [-0.31, 0.31].forEach((offset, index) => {
-    mesh(THREE, group,
-      new THREE.CapsuleGeometry(radius * 0.22, radius * 0.28, 8, 18),
-      body,
-      [offset * radius, radius * 0.45, 0]);
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.72, radius * 0.85, radius * 0.16, 32),
+    dark, [0, radius * 0.31, 0]
+  );
+  [-0.3, 0.3].forEach((offset) => {
+    mesh(
+      THREE, group,
+      new THREE.CapsuleGeometry(radius * 0.19, radius * 0.18, 7, 18),
+      body, [offset * radius, radius * 0.49, 0]
+    ).rotation.z = Math.PI / 2;
   });
-  mesh(THREE, group,
-    new THREE.BoxGeometry(radius * 0.62, radius * 0.07, radius * 0.12),
-    glowMaterial(THREE, 0xb99cff, 0.76), [0, radius * 0.48, 0]);
-  addPanelArc(THREE, group, radius * 0.65, 0xb99cff, 0.45, Math.PI * 1.05);
+  mesh(
+    THREE, group,
+    new THREE.BoxGeometry(radius * 0.58, radius * 0.055, radius * 0.12),
+    accentMaterial(THREE, 0xb99cff, 0.76), [0, radius * 0.49, 0]
+  );
+  addPanelArc(THREE, group, radius * 0.61, 0xb99cff, 0.3, Math.PI * 1.05, radius * 0.52);
 }
 
 function createWalletMarket(THREE, group, radius, materials) {
   const { body, dark } = materials;
-  mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.72, radius * 0.88, radius * 0.22, 32),
-    dark, [0, radius * 0.32, 0]);
-  mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.45, radius * 0.62, radius * 0.16, 28),
-    body, [0, radius * 0.49, 0]);
-  addPanelArc(THREE, group, radius * 0.62, 0xffd76b, 0.0, Math.PI * 1.8);
-  mesh(THREE, group,
-    new THREE.IcosahedronGeometry(radius * 0.16, 1),
-    glowMaterial(THREE, 0xffd76b, 0.9), [0, radius * 0.65, 0]);
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.7, radius * 0.85, radius * 0.17, 32),
+    dark, [0, radius * 0.32, 0]
+  );
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.43, radius * 0.61, radius * 0.12, 28),
+    body, [0, radius * 0.45, 0]
+  );
+  addArmorPanels(THREE, group, radius, body, 8);
+  addPanelArc(THREE, group, radius * 0.59, 0xffd76b, 0.0, Math.PI * 1.72, radius * 0.53);
+  mesh(
+    THREE, group,
+    new THREE.CylinderGeometry(radius * 0.13, radius * 0.18, radius * 0.08, 20),
+    accentMaterial(THREE, 0xffd76b, 0.86), [0, radius * 0.57, 0]
+  );
 }
 
 function createFallbackBuilding(THREE, group, radius, materials) {
@@ -215,7 +272,7 @@ function createModuleBuilding(THREE, module, diskRadius) {
       emissive: 0x07131f,
       emissiveIntensity: 0.08,
     }),
-    [0, radius * 0.37, 0]
+    [0, radius * 0.315, 0]
   );
   identityPlate.userData.moduleId = module.id;
 
@@ -301,12 +358,12 @@ export function pulseStationBuilding(moduleGroups, moduleId) {
   if (!group) return;
 
   const initialScale = group.scale.clone();
-  group.scale.multiplyScalar(1.06);
+  group.scale.multiplyScalar(1.025);
 
   group.traverse((object) => {
     if (object.material?.emissiveIntensity !== undefined) {
       object.userData.previousEmissiveIntensity = object.material.emissiveIntensity;
-      object.material.emissiveIntensity = 1.1;
+      object.material.emissiveIntensity = 0.72;
     }
   });
 
