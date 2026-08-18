@@ -7,21 +7,23 @@ const COMPLEX_VISUAL_SCALE = 4.35;
 // Upper architecture grows with the full cap while retaining a small edge margin.
 const COMPLEX_FEATURE_SCALE = 1.02;
 
-function bodyMaterial(THREE, color) {
+function bodyMaterial(THREE) {
   return new THREE.MeshStandardMaterial({
-    color: 0x26384a,
-    metalness: 0.9,
+    color: 0x40566b,
+    metalness: 0.88,
     roughness: 0.3,
-    emissive: color,
-    emissiveIntensity: 0.16,
+    emissive: 0x07121d,
+    emissiveIntensity: 0.08,
   });
 }
 
 function darkMaterial(THREE) {
   return new THREE.MeshStandardMaterial({
-    color: 0x101d2b,
-    metalness: 0.92,
+    color: 0x1b2b3b,
+    metalness: 0.9,
     roughness: 0.34,
+    emissive: 0x03090f,
+    emissiveIntensity: 0.04,
   });
 }
 
@@ -52,15 +54,15 @@ function mesh(THREE, group, geometry, material, position = [0, 0, 0]) {
 }
 
 function addBase(THREE, group, radius, color) {
-  const body = bodyMaterial(THREE, color);
+  const body = bodyMaterial(THREE);
   const dark = darkMaterial(THREE);
   const glow = glowMaterial(THREE, color, 0.72);
   const capMaterial = new THREE.MeshStandardMaterial({
-    color: 0x1b2b3c,
-    metalness: 0.9,
+    color: 0x2a3e52,
+    metalness: 0.88,
     roughness: 0.3,
-    emissive: color,
-    emissiveIntensity: 0.14,
+    emissive: 0x06111b,
+    emissiveIntensity: 0.06,
   });
 
   // Lower skirt wraps the original socket edge.
@@ -138,7 +140,7 @@ function createProjectLibrary(THREE, group, radius, materials) {
   [-0.36, 0, 0.36].forEach((offset, index) => {
     mesh(THREE, group,
       new THREE.BoxGeometry(radius * 0.27, radius * 0.18, radius * 0.72),
-      index === 1 ? body : dark,
+      body,
       [offset * radius, radius * 0.48, 0]);
     mesh(THREE, group,
       new THREE.BoxGeometry(radius * 0.19, radius * 0.025, radius * 0.58),
@@ -152,7 +154,7 @@ function createCommunityRelay(THREE, group, radius, materials) {
   [-0.31, 0.31].forEach((offset, index) => {
     mesh(THREE, group,
       new THREE.CapsuleGeometry(radius * 0.22, radius * 0.28, 8, 18),
-      index === 0 ? body : dark,
+      body,
       [offset * radius, radius * 0.45, 0]);
   });
   mesh(THREE, group,
@@ -207,11 +209,11 @@ function createModuleBuilding(THREE, module, diskRadius) {
     group,
     new THREE.CylinderGeometry(radius * 0.72, radius * 0.78, radius * 0.055, 32),
     new THREE.MeshStandardMaterial({
-      color: 0x31465a,
-      metalness: 0.8,
-      roughness: 0.26,
-      emissive: module.colorHex,
-      emissiveIntensity: 0.18,
+      color: 0x4a6075,
+      metalness: 0.84,
+      roughness: 0.27,
+      emissive: 0x07131f,
+      emissiveIntensity: 0.08,
     }),
     [0, radius * 0.37, 0]
   );
