@@ -121,15 +121,15 @@ export default function StationThreeView({ onSelectModule }) {
       sunRoot.add(sunCore, sunHalo, sunCorona);
       scene.add(sunRoot);
 
-      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.52);
+      const sunLight = new THREE.DirectionalLight(0xffb56b, 1.05);
       scene.add(sunLight);
-      scene.add(new THREE.HemisphereLight(0xaedbff, 0x07101f, 1.18));
+      scene.add(new THREE.HemisphereLight(0x9fcfff, 0x06101c, 1.42));
 
-      const keyLight = new THREE.DirectionalLight(0xc8e7ff, 2.35);
+      const keyLight = new THREE.DirectionalLight(0xb7ddff, 1.35);
       keyLight.position.set(8, 18, 16);
       scene.add(keyLight);
 
-      const rimLight = new THREE.DirectionalLight(0x4aa8ff, 2.05);
+      const rimLight = new THREE.DirectionalLight(0x4aa8ff, 1.15);
       rimLight.position.set(-14, 7, -10);
       scene.add(rimLight);
 
@@ -209,6 +209,28 @@ export default function StationThreeView({ onSelectModule }) {
             .addScaledVector(up, radius * SPACE_OBJECTS.sun.heightOffset);
           sunRoot.scale.setScalar((radius * SPACE_OBJECTS.sun.radius) / 15);
           sunLight.position.copy(sunRoot.position);
+          sunLight.target.position.copy(center);
+          scene.add(sunLight.target);
+
+          // Warm fill follows the visible sun side. The weaker cool fill only
+          // separates the opposite rim from the black background.
+          const warmFill = new THREE.PointLight(0xffbd78, 1.85, radius * 9, 1.6);
+          warmFill.position.copy(center)
+            .addScaledVector(right, -radius * 2.1)
+            .addScaledVector(up, radius * 1.55)
+            .addScaledVector(forward, -radius * 0.7);
+          scene.add(warmFill);
+
+          const coolFill = new THREE.PointLight(0x5caeff, 0.72, radius * 8, 1.75);
+          coolFill.position.copy(center)
+            .addScaledVector(right, radius * 1.75)
+            .addScaledVector(up, radius * 0.75)
+            .addScaledVector(forward, radius * 0.25);
+          scene.add(coolFill);
+
+          const coreFill = new THREE.PointLight(0x8fd8ff, 0.48, radius * 4.5, 1.8);
+          coreFill.position.copy(center).addScaledVector(up, radius * 1.15);
+          scene.add(coreFill);
 
           const buildings = createStationBuildings({
             THREE,
