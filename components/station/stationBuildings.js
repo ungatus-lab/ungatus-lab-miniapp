@@ -13,7 +13,7 @@ function bodyMaterial(THREE) {
     metalness: 0.88,
     roughness: 0.3,
     emissive: 0x07121d,
-    emissiveIntensity: 0.08,
+    emissiveIntensity: 0.13,
   });
 }
 
@@ -23,7 +23,7 @@ function darkMaterial(THREE) {
     metalness: 0.9,
     roughness: 0.34,
     emissive: 0x03090f,
-    emissiveIntensity: 0.04,
+    emissiveIntensity: 0.09,
   });
 }
 
@@ -62,7 +62,7 @@ function addBase(THREE, group, radius, color) {
     metalness: 0.88,
     roughness: 0.3,
     emissive: 0x06111b,
-    emissiveIntensity: 0.06,
+    emissiveIntensity: 0.11,
   });
 
   // Lower skirt wraps the original socket edge.
@@ -127,30 +127,77 @@ function addLightStrip(THREE, group, color, width, depth, x, y, z, rotationY = 0
   return strip;
 }
 
+function createRadialSectorGeometry(THREE, radius, options = {}) {
+  const outerHalf = radius * (options.outerHalf ?? 0.78);
+  const innerHalf = radius * (options.innerHalf ?? 0.48);
+  const length = radius * (options.length ?? 1.62);
+  const height = radius * (options.height ?? 0.18);
+  const outerZ = radius * (options.outerZ ?? 0.43);
+  const innerZ = outerZ - length;
+  const shoulderZ = outerZ - length * 0.56;
+
+  const shape = new THREE.Shape();
+  shape.moveTo(-outerHalf * 0.82, outerZ);
+  shape.quadraticCurveTo(-outerHalf, outerZ, -outerHalf, outerZ - radius * 0.16);
+  shape.lineTo(-innerHalf, innerZ);
+  shape.quadraticCurveTo(-innerHalf * 0.82, innerZ - radius * 0.08, 0, innerZ - radius * 0.08);
+  shape.quadraticCurveTo(innerHalf * 0.82, innerZ - radius * 0.08, innerHalf, innerZ);
+  shape.lineTo(outerHalf, outerZ - radius * 0.16);
+  shape.quadraticCurveTo(outerHalf, outerZ, outerHalf * 0.82, outerZ);
+  shape.lineTo(0, outerZ + radius * 0.08);
+  shape.closePath();
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: radius * 0.035,
+    bevelThickness: radius * 0.025,
+    curveSegments: 8,
+  });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.computeVertexNormals();
+  return { geometry, height, shoulderZ, innerZ, outerZ };
+}
+
 function addRadialHull(THREE, group, radius, materials, options = {}) {
   const { body, dark } = materials;
-  const width = radius * (options.width ?? 1.5);
-  const length = radius * (options.length ?? 1.65);
-  const height = radius * (options.height ?? 0.22);
-  const z = -radius * (options.centerOffset ?? 0.34);
+  const sector = createRadialSectorGeometry(THREE, radius, options);
 
-  mesh(
+  const lower = mesh(
     THREE,
     group,
-    new THREE.BoxGeometry(width, height, length),
+    sector.geometry,
     dark,
-    [0, radius * 0.35, z]
+    [0, radius * 0.205, 0]
   );
+  lower.userData.part = "radial-sector-lower";
 
-  const shoulder = mesh(
+  const upperSector = createRadialSectorGeometry(THREE, radius, {
+    ...options,
+    outerHalf: (options.outerHalf ?? 0.78) * 0.86,
+    innerHalf: (options.innerHalf ?? 0.48) * 0.84,
+    length: (options.length ?? 1.62) * 0.88,
+    height: (options.height ?? 0.18) * 0.56,
+    outerZ: (options.outerZ ?? 0.43) - 0.08,
+  });
+  const upper = mesh(
     THREE,
     group,
-    new THREE.BoxGeometry(width * 0.84, height * 0.62, length * 0.88),
+    upperSector.geometry,
     body,
-    [0, radius * 0.47, z]
+    [0, radius * 0.205 + sector.height, 0]
   );
-  shoulder.rotation.y = options.skew ?? 0;
-  return shoulder;
+  upper.userData.part = "radial-sector-upper";
+
+  return {
+    lower,
+    upper,
+    shoulderZ: sector.shoulderZ,
+    innerZ: sector.innerZ,
+    outerZ: sector.outerZ,
+  };
 }
 
 function createAutomationStudio(THREE, group, radius, materials) {
@@ -166,19 +213,19 @@ function createAutomationStudio(THREE, group, radius, materials) {
     group,
     new THREE.CylinderGeometry(radius * 0.43, radius * 0.52, radius * 0.1, 32),
     bodyMaterial(THREE),
-    [0, radius * 0.58, -radius * 0.13]
+    [0, radius * 0.49, -radius * 0.22]
   );
   lens.scale.z = 0.82;
 
   addLightStrip(
     THREE, group, 0x53f5df,
     radius * 0.92, radius * 0.16,
-    0, radius * 0.66, -radius * 0.2
+    0, radius * 0.565, -radius * 0.25
   );
   addLightStrip(
     THREE, group, 0x8ffff0,
     radius * 0.6, radius * 0.11,
-    0, radius * 0.685, -radius * 0.44
+    0, radius * 0.585, -radius * 0.48
   );
 }
 
@@ -196,13 +243,13 @@ function createProjectLibrary(THREE, group, radius, materials) {
       group,
       new THREE.BoxGeometry(radius * 0.39, radius * 0.17, radius * 1.04),
       index === 1 ? bodyMaterial(THREE) : darkMaterial(THREE),
-      [offset * radius, radius * 0.58, -radius * 0.31]
+      [offset * radius, radius * 0.50, -radius * 0.34]
     );
     cassette.rotation.y = offset * -0.08;
     addLightStrip(
       THREE, group, 0xff8bc8,
       radius * 0.25, radius * 0.69,
-      offset * radius, radius * 0.685, -radius * 0.31,
+      offset * radius, radius * 0.59, -radius * 0.34,
       offset * -0.08
     );
   });
@@ -222,7 +269,7 @@ function createCommunityRelay(THREE, group, radius, materials) {
       group,
       new THREE.CapsuleGeometry(radius * 0.22, radius * 0.62, 8, 18),
       bodyMaterial(THREE),
-      [offset * radius, radius * 0.58, -radius * 0.28]
+      [offset * radius, radius * 0.50, -radius * 0.31]
     );
     capsule.rotation.z = Math.PI / 2;
     capsule.rotation.y = Math.PI / 2;
@@ -231,7 +278,7 @@ function createCommunityRelay(THREE, group, radius, materials) {
   addLightStrip(
     THREE, group, 0xb99cff,
     radius * 0.94, radius * 0.12,
-    0, radius * 0.665, -radius * 0.3
+    0, radius * 0.57, -radius * 0.33
   );
 }
 
@@ -248,7 +295,7 @@ function createWalletMarket(THREE, group, radius, materials) {
     group,
     new THREE.CylinderGeometry(radius * 0.49, radius * 0.62, radius * 0.16, 8),
     bodyMaterial(THREE),
-    [0, radius * 0.58, -radius * 0.23]
+    [0, radius * 0.50, -radius * 0.28]
   );
   vault.rotation.y = Math.PI / 8;
 
@@ -257,14 +304,14 @@ function createWalletMarket(THREE, group, radius, materials) {
     group,
     new THREE.CylinderGeometry(radius * 0.16, radius * 0.21, radius * 0.075, 20),
     accentMaterial(THREE, 0xffd76b, 0.9),
-    [0, radius * 0.72, -radius * 0.23]
+    [0, radius * 0.62, -radius * 0.28]
   );
   core.rotation.y = Math.PI / 8;
 
   addLightStrip(
     THREE, group, 0xffd76b,
     radius * 0.78, radius * 0.12,
-    0, radius * 0.68, -radius * 0.58
+    0, radius * 0.58, -radius * 0.57
   );
 }
 
