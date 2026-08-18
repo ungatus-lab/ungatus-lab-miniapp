@@ -5,23 +5,23 @@ import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 // Full platform cap: the base intentionally covers the authored white circular pad.
 const COMPLEX_VISUAL_SCALE = 4.35;
 // Upper architecture grows with the full cap while retaining a small edge margin.
-const COMPLEX_FEATURE_SCALE = 0.96;
+const COMPLEX_FEATURE_SCALE = 1.02;
 
 function bodyMaterial(THREE, color) {
   return new THREE.MeshStandardMaterial({
-    color: 0x091827,
+    color: 0x26384a,
     metalness: 0.9,
     roughness: 0.3,
     emissive: color,
-    emissiveIntensity: 0.11,
+    emissiveIntensity: 0.16,
   });
 }
 
 function darkMaterial(THREE) {
   return new THREE.MeshStandardMaterial({
-    color: 0x06111d,
+    color: 0x101d2b,
     metalness: 0.92,
-    roughness: 0.38,
+    roughness: 0.34,
   });
 }
 
@@ -56,11 +56,11 @@ function addBase(THREE, group, radius, color) {
   const dark = darkMaterial(THREE);
   const glow = glowMaterial(THREE, color, 0.72);
   const capMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0b1724,
+    color: 0x1b2b3c,
     metalness: 0.9,
     roughness: 0.3,
     emissive: color,
-    emissiveIntensity: 0.08,
+    emissiveIntensity: 0.14,
   });
 
   // Lower skirt wraps the original socket edge.
@@ -109,7 +109,7 @@ function addPanelArc(THREE, group, radius, color, startAngle, length) {
     group,
     new THREE.TorusGeometry(radius, radius * 0.035, 7, 48, length),
     glowMaterial(THREE, color, 0.78),
-    [0, radius * 0.27, 0]
+    [0, radius * 0.56, 0]
   );
   arc.rotation.set(Math.PI / 2, 0, startAngle);
   return arc;
@@ -202,6 +202,20 @@ function createModuleBuilding(THREE, module, diskRadius) {
   group.userData.visualRadius = radius;
   const materials = addBase(THREE, group, radius, module.colorHex);
   const featureRadius = radius * COMPLEX_FEATURE_SCALE;
+  const identityPlate = mesh(
+    THREE,
+    group,
+    new THREE.CylinderGeometry(radius * 0.72, radius * 0.78, radius * 0.055, 32),
+    new THREE.MeshStandardMaterial({
+      color: 0x31465a,
+      metalness: 0.8,
+      roughness: 0.26,
+      emissive: module.colorHex,
+      emissiveIntensity: 0.18,
+    }),
+    [0, radius * 0.37, 0]
+  );
+  identityPlate.userData.moduleId = module.id;
 
   if (module.id === "scanner") {
     createAutomationStudio(THREE, group, featureRadius, materials);
