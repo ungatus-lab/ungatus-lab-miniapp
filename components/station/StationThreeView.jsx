@@ -123,13 +123,13 @@ export default function StationThreeView({ onSelectModule }) {
 
       const sunLight = new THREE.DirectionalLight(0xffb56b, 0.52);
       scene.add(sunLight);
-      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 1.35));
+      scene.add(new THREE.HemisphereLight(0x7fcfff, 0x01040a, 0.82));
 
-      const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+      const keyLight = new THREE.DirectionalLight(0x9fdcff, 1.65);
       keyLight.position.set(8, 18, 16);
       scene.add(keyLight);
 
-      const rimLight = new THREE.DirectionalLight(0x65baff, 1.8);
+      const rimLight = new THREE.DirectionalLight(0x2f9dff, 2.4);
       rimLight.position.set(-14, 7, -10);
       scene.add(rimLight);
 
@@ -147,6 +147,77 @@ export default function StationThreeView({ onSelectModule }) {
           const center = bounds.getCenter(new THREE.Vector3());
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
+
+          // Runtime graphite skin for the untextured GLB.
+          const coolMetal = new THREE.Color(0x101b29);
+          const deepMetal = new THREE.Color(0x050b13);
+          station.traverse((object) => {
+            if (!object.isMesh) return;
+            const sources = Array.isArray(object.material)
+              ? object.material
+              : [object.material];
+            const replacements = sources.map((source, index) => {
+              const original = source?.color?.clone?.() || new THREE.Color(0x808080);
+              const luminance =
+                original.r * 0.2126 + original.g * 0.7152 + original.b * 0.0722;
+              const material = new THREE.MeshStandardMaterial({
+                color: luminance > 0.62 ? coolMetal : deepMetal,
+                metalness: 0.88,
+                roughness: luminance > 0.62 ? 0.3 : 0.42,
+                emissive: luminance > 0.72 ? 0x071d2e : 0x010306,
+                emissiveIntensity: luminance > 0.72 ? 0.16 : 0.03,
+              });
+              material.name = `PGM_Graphite_${index}`;
+              return material;
+            });
+            object.material = Array.isArray(object.material)
+              ? replacements
+              : replacements[0];
+          });
+
+          // Temporary procedural windows and energy rails until the final GLB skin.
+          const cityDetails = new THREE.Group();
+          cityDetails.name = "ProceduralStationSkin";
+          const windowMaterial = new THREE.MeshBasicMaterial({ color: 0xffa84c });
+          const energyMaterial = new THREE.MeshBasicMaterial({
+            color: 0x31c8ff,
+            transparent: true,
+            opacity: 0.76,
+            depthWrite: false,
+          });
+          const windowGeometry = new THREE.BoxGeometry(
+            radius * 0.018,
+            radius * 0.012,
+            radius * 0.008
+          );
+          for (let ringIndex = 0; ringIndex < 3; ringIndex += 1) {
+            const count = 28 + ringIndex * 8;
+            const ringRadius = radius * (0.22 + ringIndex * 0.09);
+            const y = center.y + radius * (0.025 + ringIndex * 0.028);
+            for (let i = 0; i < count; i += 1) {
+              if ((i + ringIndex) % 3 === 0) continue;
+              const angle = (i / count) * Math.PI * 2;
+              const windowMesh = new THREE.Mesh(windowGeometry, windowMaterial);
+              windowMesh.position.set(
+                center.x + Math.cos(angle) * ringRadius,
+                y,
+                center.z + Math.sin(angle) * ringRadius
+              );
+              windowMesh.rotation.y = -angle;
+              cityDetails.add(windowMesh);
+            }
+          }
+          [0.45, 0.66, 0.86].forEach((scale, index) => {
+            const rail = new THREE.Mesh(
+              new THREE.TorusGeometry(radius * scale, radius * 0.0055, 6, 96),
+              energyMaterial.clone()
+            );
+            rail.position.copy(center);
+            rail.position.y += radius * (0.01 + index * 0.008);
+            rail.rotation.x = Math.PI / 2;
+            cityDetails.add(rail);
+          });
+          scene.add(cityDetails);
 
           const direction = new THREE.Vector3(
             HOME_VIEW.direction.x,
