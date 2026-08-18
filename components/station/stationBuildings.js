@@ -200,6 +200,75 @@ function addRadialHull(THREE, group, radius, materials, options = {}) {
   };
 }
 
+function addGlyphBar(THREE, group, color, radius, width, depth, x, z, rotationY = 0) {
+  const bar = mesh(
+    THREE,
+    group,
+    new THREE.BoxGeometry(radius * width, radius * 0.045, radius * depth),
+    glowMaterial(THREE, color, 0.92),
+    [radius * x, radius * 0.69, radius * z]
+  );
+  bar.rotation.y = rotationY;
+  bar.userData.glyphPart = true;
+  return bar;
+}
+
+function addGlyphNode(THREE, group, color, radius, x, z, scale = 1) {
+  const node = mesh(
+    THREE,
+    group,
+    new THREE.CylinderGeometry(radius * 0.09 * scale, radius * 0.09 * scale, radius * 0.05, 18),
+    glowMaterial(THREE, color, 0.95),
+    [radius * x, radius * 0.705, radius * z]
+  );
+  node.userData.glyphPart = true;
+  return node;
+}
+
+function addGlyphFrame(THREE, group, color, radius, x, z, scale = 1) {
+  const w = 0.28 * scale;
+  const h = 0.36 * scale;
+  addGlyphBar(THREE, group, color, radius, w, 0.045, x, z - h / 2);
+  addGlyphBar(THREE, group, color, radius, w, 0.045, x, z + h / 2);
+  addGlyphBar(THREE, group, color, radius, 0.045, h, x - w / 2, z);
+  addGlyphBar(THREE, group, color, radius, 0.045, h, x + w / 2, z);
+}
+
+function addFlowNodeGlyph(THREE, group, radius) {
+  const color = 0x53f5df;
+  addGlyphNode(THREE, group, color, radius, 0, -0.32, 1.12);
+  addGlyphNode(THREE, group, color, radius, -0.3, 0.08, 0.72);
+  addGlyphNode(THREE, group, color, radius, 0.3, 0.08, 0.72);
+  addGlyphBar(THREE, group, color, radius, 0.08, 0.42, -0.15, -0.12, -0.62);
+  addGlyphBar(THREE, group, color, radius, 0.08, 0.42, 0.15, -0.12, 0.62);
+  addGlyphBar(THREE, group, color, radius, 0.08, 0.34, 0, -0.51);
+}
+
+function addScenarioFramesGlyph(THREE, group, radius) {
+  const color = 0xff8bc8;
+  addGlyphFrame(THREE, group, color, radius, -0.28, -0.14, 0.82);
+  addGlyphFrame(THREE, group, color, radius, 0, -0.28, 0.9);
+  addGlyphFrame(THREE, group, color, radius, 0.28, -0.42, 0.82);
+}
+
+function addLinkedCoresGlyph(THREE, group, radius) {
+  const color = 0xb99cff;
+  addGlyphNode(THREE, group, color, radius, -0.28, -0.25, 1.05);
+  addGlyphNode(THREE, group, color, radius, 0.28, -0.25, 1.05);
+  addGlyphBar(THREE, group, color, radius, 0.46, 0.07, 0, -0.25);
+  addGlyphBar(THREE, group, color, radius, 0.36, 0.055, 0, -0.5);
+}
+
+function addExchangeGateGlyph(THREE, group, radius) {
+  const color = 0xffd76b;
+  const diamond = addGlyphBar(THREE, group, color, radius, 0.25, 0.25, 0, -0.28, Math.PI / 4);
+  diamond.scale.z = 0.5;
+  addGlyphBar(THREE, group, color, radius, 0.38, 0.07, -0.2, -0.02);
+  addGlyphBar(THREE, group, color, radius, 0.38, 0.07, 0.2, -0.54);
+  addGlyphBar(THREE, group, color, radius, 0.14, 0.06, -0.39, -0.02, -0.62);
+  addGlyphBar(THREE, group, color, radius, 0.14, 0.06, 0.39, -0.54, -0.62);
+}
+
 function createAutomationStudio(THREE, group, radius, materials) {
   addRadialHull(THREE, group, radius, materials, {
     width: 1.52,
