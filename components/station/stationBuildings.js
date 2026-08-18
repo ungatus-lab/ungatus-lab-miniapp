@@ -56,11 +56,11 @@ function addBase(THREE, group, radius, color) {
   const dark = darkMaterial(THREE);
   const glow = glowMaterial(THREE, color, 0.72);
   const capMaterial = new THREE.MeshStandardMaterial({
-    color,
-    metalness: 0.72,
-    roughness: 0.28,
+    color: 0x0b1724,
+    metalness: 0.9,
+    roughness: 0.3,
     emissive: color,
-    emissiveIntensity: 0.22,
+    emissiveIntensity: 0.08,
   });
 
   // Lower skirt wraps the original socket edge.
@@ -103,99 +103,76 @@ function addBase(THREE, group, radius, color) {
   return { body, dark, glow, capMaterial };
 }
 
+function addPanelArc(THREE, group, radius, color, startAngle, length) {
+  const arc = mesh(
+    THREE,
+    group,
+    new THREE.TorusGeometry(radius, radius * 0.035, 7, 48, length),
+    glowMaterial(THREE, color, 0.78),
+    [0, radius * 0.27, 0]
+  );
+  arc.rotation.set(Math.PI / 2, 0, startAngle);
+  return arc;
+}
+
 function createAutomationStudio(THREE, group, radius, materials) {
-  const { body, dark, glow } = materials;
-
+  const { body, dark } = materials;
   mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.34, radius * 0.48, radius * 0.28, 24),
-    body, [0, radius * 0.42, 0]);
+    new THREE.CylinderGeometry(radius * 0.72, radius * 0.86, radius * 0.2, 32),
+    dark, [0, radius * 0.31, 0]);
   mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.08, radius * 0.12, radius * 0.9, 16),
-    dark, [0, radius * 0.92, 0]);
-
-  const scannerRing = mesh(THREE, group,
-    new THREE.TorusGeometry(radius * 0.46, radius * 0.055, 10, 48),
-    glow, [0, radius * 0.92, 0]);
-  scannerRing.rotation.x = Math.PI / 2.55;
-
-  const dish = mesh(THREE, group,
-    new THREE.SphereGeometry(radius * 0.46, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2),
-    body, [0, radius * 1.12, radius * 0.04]);
-  dish.scale.set(1, 0.3, 1);
-  dish.rotation.x = -0.34;
-
+    new THREE.CylinderGeometry(radius * 0.5, radius * 0.68, radius * 0.16, 32),
+    body, [0, radius * 0.47, 0]);
+  addPanelArc(THREE, group, radius * 0.58, 0x53f5df, 0.18, Math.PI * 1.55);
+  addPanelArc(THREE, group, radius * 0.39, 0x8ffff0, Math.PI, Math.PI * 0.78);
   mesh(THREE, group,
-    new THREE.SphereGeometry(radius * 0.11, 18, 14),
-    glow, [0, radius * 1.34, -radius * 0.05]);
+    new THREE.SphereGeometry(radius * 0.14, 18, 12),
+    glowMaterial(THREE, 0x53f5df, 0.9), [0, radius * 0.62, 0]);
 }
 
 function createProjectLibrary(THREE, group, radius, materials) {
-  const { body, dark, glow } = materials;
-
-  [-0.36, 0, 0.36].forEach((offset, index) => {
-    const height = radius * [0.78, 1.22, 0.94][index];
-    mesh(THREE, group,
-      new THREE.BoxGeometry(radius * 0.3, height, radius * 0.52),
-      index === 1 ? body : dark,
-      [offset * radius, radius * 0.35 + height / 2, 0]);
-    mesh(THREE, group,
-      new THREE.BoxGeometry(radius * 0.2, radius * 0.07, radius * 0.56),
-      glow,
-      [offset * radius, radius * 0.48 + height * 0.72, -radius * 0.01]);
-  });
-
-  const portal = mesh(THREE, group,
-    new THREE.TorusGeometry(radius * 0.44, radius * 0.055, 10, 4),
-    glow, [0, radius * 1.02, -radius * 0.04]);
-  portal.rotation.set(Math.PI / 2, 0, Math.PI / 4);
-
+  const { body, dark } = materials;
   mesh(THREE, group,
-    new THREE.OctahedronGeometry(radius * 0.2, 0),
-    glow, [0, radius * 1.05, 0]);
+    new THREE.CylinderGeometry(radius * 0.74, radius * 0.88, radius * 0.2, 8),
+    dark, [0, radius * 0.31, 0]);
+  [-0.36, 0, 0.36].forEach((offset, index) => {
+    mesh(THREE, group,
+      new THREE.BoxGeometry(radius * 0.27, radius * 0.18, radius * 0.72),
+      index === 1 ? body : dark,
+      [offset * radius, radius * 0.48, 0]);
+    mesh(THREE, group,
+      new THREE.BoxGeometry(radius * 0.19, radius * 0.025, radius * 0.58),
+      glowMaterial(THREE, 0xff8bc8, 0.74),
+      [offset * radius, radius * 0.59, 0]);
+  });
 }
 
 function createCommunityRelay(THREE, group, radius, materials) {
-  const { body, dark, glow } = materials;
-
-  [-0.38, 0.38].forEach((offset, index) => {
+  const { body, dark } = materials;
+  [-0.31, 0.31].forEach((offset, index) => {
     mesh(THREE, group,
-      new THREE.CylinderGeometry(radius * 0.13, radius * 0.2, radius * 1.15, 16),
+      new THREE.CapsuleGeometry(radius * 0.22, radius * 0.28, 8, 18),
       index === 0 ? body : dark,
-      [offset * radius, radius * 0.86, 0]);
-    mesh(THREE, group,
-      new THREE.SphereGeometry(radius * 0.17, 18, 14),
-      glow, [offset * radius, radius * 1.48, 0]);
+      [offset * radius, radius * 0.45, 0]);
   });
-
   mesh(THREE, group,
-    new THREE.BoxGeometry(radius * 0.82, radius * 0.09, radius * 0.1),
-    glow, [0, radius * 1.08, 0]);
-  mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.06, radius * 0.09, radius * 0.72, 12),
-    body, [0, radius * 0.72, radius * 0.14]);
-  mesh(THREE, group,
-    new THREE.TorusGeometry(radius * 0.28, radius * 0.035, 8, 36),
-    glow, [0, radius * 1.18, radius * 0.02]).rotation.x = Math.PI / 2;
+    new THREE.BoxGeometry(radius * 0.62, radius * 0.07, radius * 0.12),
+    glowMaterial(THREE, 0xb99cff, 0.76), [0, radius * 0.48, 0]);
+  addPanelArc(THREE, group, radius * 0.65, 0xb99cff, 0.45, Math.PI * 1.05);
 }
 
 function createWalletMarket(THREE, group, radius, materials) {
-  const { body, dark, glow } = materials;
-
+  const { body, dark } = materials;
   mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.48, radius * 0.62, radius * 0.5, 28),
-    dark, [0, radius * 0.5, 0]);
+    new THREE.CylinderGeometry(radius * 0.72, radius * 0.88, radius * 0.22, 32),
+    dark, [0, radius * 0.32, 0]);
   mesh(THREE, group,
-    new THREE.CylinderGeometry(radius * 0.3, radius * 0.44, radius * 0.56, 24),
-    body, [0, radius * 0.9, 0]);
-
-  const tradeRing = mesh(THREE, group,
-    new THREE.TorusGeometry(radius * 0.52, radius * 0.06, 10, 44),
-    glow, [0, radius * 0.88, 0]);
-  tradeRing.rotation.x = Math.PI / 2;
-
+    new THREE.CylinderGeometry(radius * 0.45, radius * 0.62, radius * 0.16, 28),
+    body, [0, radius * 0.49, 0]);
+  addPanelArc(THREE, group, radius * 0.62, 0xffd76b, 0.0, Math.PI * 1.8);
   mesh(THREE, group,
-    new THREE.IcosahedronGeometry(radius * 0.27, 1),
-    glow, [0, radius * 1.35, 0]);
+    new THREE.IcosahedronGeometry(radius * 0.16, 1),
+    glowMaterial(THREE, 0xffd76b, 0.9), [0, radius * 0.65, 0]);
 }
 
 function createFallbackBuilding(THREE, group, radius, materials) {
