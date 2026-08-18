@@ -296,6 +296,7 @@ function createAutomationStudio(THREE, group, radius, materials) {
     radius * 0.6, radius * 0.11,
     0, radius * 0.585, -radius * 0.48
   );
+  addFlowNodeGlyph(THREE, group, radius);
 }
 
 function createProjectLibrary(THREE, group, radius, materials) {
@@ -322,6 +323,7 @@ function createProjectLibrary(THREE, group, radius, materials) {
       offset * -0.08
     );
   });
+  addScenarioFramesGlyph(THREE, group, radius);
 }
 
 function createCommunityRelay(THREE, group, radius, materials) {
@@ -349,6 +351,7 @@ function createCommunityRelay(THREE, group, radius, materials) {
     radius * 0.94, radius * 0.12,
     0, radius * 0.57, -radius * 0.33
   );
+  addLinkedCoresGlyph(THREE, group, radius);
 }
 
 function createWalletMarket(THREE, group, radius, materials) {
@@ -382,6 +385,7 @@ function createWalletMarket(THREE, group, radius, materials) {
     radius * 0.78, radius * 0.12,
     0, radius * 0.58, -radius * 0.57
   );
+  addExchangeGateGlyph(THREE, group, radius);
 }
 
 function createFallbackBuilding(THREE, group, radius, materials) {
