@@ -123,13 +123,13 @@ export default function StationThreeView({ onSelectModule }) {
 
       const sunLight = new THREE.DirectionalLight(0xffb56b, 0.52);
       scene.add(sunLight);
-      scene.add(new THREE.HemisphereLight(0x7fcfff, 0x01040a, 0.82));
+      scene.add(new THREE.HemisphereLight(0xaedbff, 0x07101f, 1.18));
 
-      const keyLight = new THREE.DirectionalLight(0x9fdcff, 1.65);
+      const keyLight = new THREE.DirectionalLight(0xc8e7ff, 2.35);
       keyLight.position.set(8, 18, 16);
       scene.add(keyLight);
 
-      const rimLight = new THREE.DirectionalLight(0x2f9dff, 2.4);
+      const rimLight = new THREE.DirectionalLight(0x4aa8ff, 2.05);
       rimLight.position.set(-14, 7, -10);
       scene.add(rimLight);
 
@@ -148,76 +148,35 @@ export default function StationThreeView({ onSelectModule }) {
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
 
-          // Runtime graphite skin for the untextured GLB.
-          const coolMetal = new THREE.Color(0x101b29);
-          const deepMetal = new THREE.Color(0x050b13);
+          // Conservative graphite skin: preserve the GLB materials and textures,
+          // tint them instead of replacing the entire station with black materials.
           station.traverse((object) => {
-            if (!object.isMesh) return;
-            const sources = Array.isArray(object.material)
+            if (!object.isMesh || !object.material) return;
+            const originals = Array.isArray(object.material)
               ? object.material
               : [object.material];
-            const replacements = sources.map((source, index) => {
-              const original = source?.color?.clone?.() || new THREE.Color(0x808080);
+            const tinted = originals.map((source) => {
+              const material = source.clone();
+              const sourceColor = material.color?.clone?.() || new THREE.Color(0x8b98a6);
               const luminance =
-                original.r * 0.2126 + original.g * 0.7152 + original.b * 0.0722;
-              const material = new THREE.MeshStandardMaterial({
-                color: luminance > 0.62 ? coolMetal : deepMetal,
-                metalness: 0.88,
-                roughness: luminance > 0.62 ? 0.3 : 0.42,
-                emissive: luminance > 0.72 ? 0x071d2e : 0x010306,
-                emissiveIntensity: luminance > 0.72 ? 0.16 : 0.03,
-              });
-              material.name = `PGM_Graphite_${index}`;
+                sourceColor.r * 0.2126 +
+                sourceColor.g * 0.7152 +
+                sourceColor.b * 0.0722;
+              const target = luminance > 0.58
+                ? new THREE.Color(0x506275)
+                : new THREE.Color(0x172535);
+              material.color = sourceColor.lerp(target, 0.68);
+              if ("metalness" in material) material.metalness = Math.max(material.metalness || 0, 0.58);
+              if ("roughness" in material) material.roughness = 0.34;
+              if ("emissive" in material) {
+                material.emissive = new THREE.Color(luminance > 0.7 ? 0x071725 : 0x02070d);
+                material.emissiveIntensity = luminance > 0.7 ? 0.1 : 0.025;
+              }
+              material.needsUpdate = true;
               return material;
             });
-            object.material = Array.isArray(object.material)
-              ? replacements
-              : replacements[0];
+            object.material = Array.isArray(object.material) ? tinted : tinted[0];
           });
-
-          // Temporary procedural windows and energy rails until the final GLB skin.
-          const cityDetails = new THREE.Group();
-          cityDetails.name = "ProceduralStationSkin";
-          const windowMaterial = new THREE.MeshBasicMaterial({ color: 0xffa84c });
-          const energyMaterial = new THREE.MeshBasicMaterial({
-            color: 0x31c8ff,
-            transparent: true,
-            opacity: 0.76,
-            depthWrite: false,
-          });
-          const windowGeometry = new THREE.BoxGeometry(
-            radius * 0.018,
-            radius * 0.012,
-            radius * 0.008
-          );
-          for (let ringIndex = 0; ringIndex < 3; ringIndex += 1) {
-            const count = 28 + ringIndex * 8;
-            const ringRadius = radius * (0.22 + ringIndex * 0.09);
-            const y = center.y + radius * (0.025 + ringIndex * 0.028);
-            for (let i = 0; i < count; i += 1) {
-              if ((i + ringIndex) % 3 === 0) continue;
-              const angle = (i / count) * Math.PI * 2;
-              const windowMesh = new THREE.Mesh(windowGeometry, windowMaterial);
-              windowMesh.position.set(
-                center.x + Math.cos(angle) * ringRadius,
-                y,
-                center.z + Math.sin(angle) * ringRadius
-              );
-              windowMesh.rotation.y = -angle;
-              cityDetails.add(windowMesh);
-            }
-          }
-          [0.45, 0.66, 0.86].forEach((scale, index) => {
-            const rail = new THREE.Mesh(
-              new THREE.TorusGeometry(radius * scale, radius * 0.0055, 6, 96),
-              energyMaterial.clone()
-            );
-            rail.position.copy(center);
-            rail.position.y += radius * (0.01 + index * 0.008);
-            rail.rotation.x = Math.PI / 2;
-            cityDetails.add(rail);
-          });
-          scene.add(cityDetails);
 
           const direction = new THREE.Vector3(
             HOME_VIEW.direction.x,
