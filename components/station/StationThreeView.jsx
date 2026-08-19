@@ -138,6 +138,8 @@ export default function StationThreeView({
       let cameraState = "home";
       let focusedId = null;
       let handledReturn = returnRef.current;
+      const parentWorldQuaternion = new THREE.Quaternion();
+      const inverseParentQuaternion = new THREE.Quaternion();
 
       const reportState = (value) => {
         cameraState = value;
@@ -346,6 +348,17 @@ export default function StationThreeView({
         farStars.rotation.y += 0.000015;
         nearStars.rotation.y += 0.00003;
         sunHalo.scale.setScalar(1 + Math.sin(now * 0.0014) * 0.025);
+
+        if (buildings?.hologramBillboards) {
+          buildings.hologramBillboards.forEach((billboard) => {
+            billboard.parent.getWorldQuaternion(parentWorldQuaternion);
+            inverseParentQuaternion.copy(parentWorldQuaternion).invert();
+            billboard.quaternion.copy(inverseParentQuaternion).multiply(camera.quaternion);
+            billboard.position.y =
+              billboard.userData.baseY +
+              Math.sin(now * 0.0017 + billboard.userData.phase) * diskRadius * 0.004;
+          });
+        }
 
         if (returnRef.current !== handledReturn) {
           handledReturn = returnRef.current;
