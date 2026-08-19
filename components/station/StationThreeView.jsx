@@ -25,7 +25,7 @@ export default function StationThreeView({
 
   useEffect(() => {
     onSelectModuleRef.current = onSelectModule;
-  }, []);
+  }, [onSelectModule]);
 
   useEffect(() => {
     onCameraStateChangeRef.current = onCameraStateChange;
@@ -234,24 +234,36 @@ export default function StationThreeView({
           const homePosition = camera.position.clone();
           const homeQuaternion = camera.quaternion.clone();
           const worldUp = new THREE.Vector3(0, 1, 0);
-          const focusLookObject = new THREE.Object3D();
+          const focusLookCamera = new THREE.PerspectiveCamera();
+          focusLookCamera.up.copy(worldUp);
+
+          const normalizeAngleDelta = (delta) => {
+            let value = delta;
+            while (value > Math.PI) value -= Math.PI * 2;
+            while (value < -Math.PI) value += Math.PI * 2;
+            return value;
+          };
 
           const beginCameraMove = ({ endPosition, endQuaternion, focusedId, returning = false }) => {
             const startPosition = camera.position.clone();
             const startQuaternion = camera.quaternion.clone();
-            const outward = endPosition.clone().sub(center).setY(0).normalize();
-            const tangent = new THREE.Vector3().crossVectors(worldUp, outward).normalize();
-            const control = startPosition.clone().add(endPosition).multiplyScalar(0.5)
-              .addScaledVector(worldUp, buildings?.diskRadius * MODULE_FOCUS.arcLiftByRadius || radius * 0.15)
-              .addScaledVector(tangent, (buildings?.diskRadius || radius) * MODULE_FOCUS.arcSideByRadius);
+            const startOffset = startPosition.clone().sub(center);
+            const endOffset = endPosition.clone().sub(center);
+            const startAngle = Math.atan2(startOffset.z, startOffset.x);
+            const endAngle = Math.atan2(endOffset.z, endOffset.x);
 
             cameraMotion = {
               startedAt: performance.now(),
               startPosition,
               startQuaternion,
-              control,
               endPosition: endPosition.clone(),
               endQuaternion: endQuaternion.clone(),
+              startRadius: Math.hypot(startOffset.x, startOffset.z),
+              endRadius: Math.hypot(endOffset.x, endOffset.z),
+              startHeight: startOffset.y,
+              endHeight: endOffset.y,
+              startAngle,
+              angleDelta: normalizeAngleDelta(endAngle - startAngle),
               focusedId,
               returning,
             };
@@ -311,12 +323,12 @@ export default function StationThreeView({
               .addScaledVector(outward, -buildings.diskRadius * MODULE_FOCUS.targetInsetByRadius)
               .addScaledVector(worldUp, buildings.diskRadius * MODULE_FOCUS.targetHeightByRadius);
 
-            focusLookObject.position.copy(focusPosition);
-            focusLookObject.up.copy(worldUp);
-            focusLookObject.lookAt(focusTarget);
+            focusLookCamera.position.copy(focusPosition);
+            focusLookCamera.up.copy(worldUp);
+            focusLookCamera.lookAt(focusTarget);
             return {
               position: focusPosition,
-              quaternion: focusLookObject.quaternion.clone(),
+              quaternion: focusLookCamera.quaternion.clone(),
             };
           };
 
@@ -426,11 +438,25 @@ export default function StationThreeView({
         if (cameraMotion) {
           const raw = Math.min(1, (now - cameraMotion.startedAt) / MODULE_FOCUS.durationMs);
           const t = easeCamera(raw);
-          const oneMinus = 1 - t;
-          camera.position.set(0, 0, 0)
-            .addScaledVector(cameraMotion.startPosition, oneMinus * oneMinus)
-            .addScaledVector(cameraMotion.control, 2 * oneMinus * t)
-            .addScaledVector(cameraMotion.endPosition, t * t);
+          const angle = cameraMotion.startAngle + cameraMotion.angleDelta * t;
+          const orbitRadius = THREE.MathUtils.lerp(
+            cameraMotion.startRadius,
+            cameraMotion.endRadius,
+            t
+          );
+          const baseHeight = THREE.MathUtils.lerp(
+            cameraMotion.startHeight,
+            cameraMotion.endHeight,
+            t
+          );
+          const arcHeight =
+            Math.sin(Math.PI * t) * buildings.diskRadius * MODULE_FOCUS.arcLiftByRadius;
+
+          camera.position.set(
+            center.x + Math.cos(angle) * orbitRadius,
+            center.y + baseHeight + arcHeight,
+            center.z + Math.sin(angle) * orbitRadius
+          );
           camera.quaternion.slerpQuaternions(
             cameraMotion.startQuaternion,
             cameraMotion.endQuaternion,
