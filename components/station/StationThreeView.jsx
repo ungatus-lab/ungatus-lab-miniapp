@@ -373,9 +373,19 @@ export default function StationThreeView({
             camera.position.copy(cameraMotion.endPosition);
             camera.quaternion.copy(cameraMotion.endQuaternion);
             focusedId = cameraMotion.id;
+            const completedId = cameraMotion.id;
             const returning = cameraMotion.returning;
             cameraMotion = null;
-            reportState(returning ? "home" : "focused");
+
+            if (returning) {
+              focusedId = null;
+              reportState("home");
+            } else {
+              // The first tap is now a complete action: fly to the selected
+              // sector and open its existing React panel automatically.
+              reportState("panel");
+              selectRef.current?.(completedId);
+            }
           }
         }
 
