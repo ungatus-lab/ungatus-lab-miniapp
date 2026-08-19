@@ -25,7 +25,7 @@ export default function StationThreeView({
 
   useEffect(() => {
     onSelectModuleRef.current = onSelectModule;
-  }, []);
+  }, [onSelectModule]);
 
   useEffect(() => {
     onCameraStateChangeRef.current = onCameraStateChange;
@@ -182,6 +182,7 @@ export default function StationThreeView({
 
           const bounds = new THREE.Box3().setFromObject(station);
           const center = bounds.getCenter(new THREE.Vector3());
+          stationCenter = center.clone();
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
 
@@ -437,7 +438,7 @@ export default function StationThreeView({
           returnHomeHandler();
         }
 
-        if (cameraMotion) {
+        if (cameraMotion && stationCenter) {
           const raw = Math.min(1, (now - cameraMotion.startedAt) / MODULE_FOCUS.durationMs);
           const t = easeCamera(raw);
           const angle = cameraMotion.startAngle + cameraMotion.angleDelta * t;
@@ -455,9 +456,9 @@ export default function StationThreeView({
             Math.sin(Math.PI * t) * stationDiskRadius * MODULE_FOCUS.arcLiftByRadius;
 
           camera.position.set(
-            center.x + Math.cos(angle) * orbitRadius,
-            center.y + baseHeight + arcHeight,
-            center.z + Math.sin(angle) * orbitRadius
+            stationCenter.x + Math.cos(angle) * orbitRadius,
+            stationCenter.y + baseHeight + arcHeight,
+            stationCenter.z + Math.sin(angle) * orbitRadius
           );
           camera.quaternion.slerpQuaternions(
             cameraMotion.startQuaternion,
@@ -501,7 +502,7 @@ export default function StationThreeView({
       renderer?.dispose();
       if (hostRef.current) hostRef.current.replaceChildren();
     };
-  }, [onSelectModule]);
+  }, []);
 
   return (
     <div
