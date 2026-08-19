@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import {
   HOME_VIEW,
+  MODULE_FOCUS,
   SCENE_CONFIG,
   SPACE_OBJECTS,
   STATION_MODEL_URL,
@@ -12,8 +13,27 @@ import {
   pulseStationBuilding,
 } from "./stationBuildings";
 
-export default function StationThreeView({ onSelectModule }) {
+export default function StationThreeView({
+  onSelectModule,
+  onCameraStateChange,
+  returnHomeSignal = 0,
+}) {
   const hostRef = useRef(null);
+  const onSelectModuleRef = useRef(onSelectModule);
+  const onCameraStateChangeRef = useRef(onCameraStateChange);
+  const returnHomeSignalRef = useRef(returnHomeSignal);
+
+  useEffect(() => {
+    onSelectModuleRef.current = onSelectModule;
+  }, []);
+
+  useEffect(() => {
+    onCameraStateChangeRef.current = onCameraStateChange;
+  }, [onCameraStateChange]);
+
+  useEffect(() => {
+    returnHomeSignalRef.current = returnHomeSignal;
+  }, [returnHomeSignal]);
 
   useEffect(() => {
     let disposed = false;
@@ -21,6 +41,21 @@ export default function StationThreeView({ onSelectModule }) {
     let frameId;
     let resizeObserver;
     const cleanups = [];
+    let cameraMotion = null;
+    let cameraState = "home";
+    let currentFocusedId = null;
+    let handledReturnSignal = returnHomeSignalRef.current;
+    let returnHomeHandler = () => {};
+
+    const easeCamera = (value) =>
+      value < 0.5
+        ? 4 * value * value * value
+        : 1 - Math.pow(-2 * value + 2, 3) / 2;
+
+    const reportCameraState = (state) => {
+      cameraState = state;
+      onCameraStateChangeRef.current?.(state);
+    };
 
     (async () => {
       const THREE = await import(
@@ -196,6 +231,33 @@ export default function StationThreeView({ onSelectModule }) {
           camera.far = radius * 20;
           camera.updateProjectionMatrix();
 
+          const homePosition = camera.position.clone();
+          const homeQuaternion = camera.quaternion.clone();
+          const worldUp = new THREE.Vector3(0, 1, 0);
+          const focusLookObject = new THREE.Object3D();
+
+          const beginCameraMove = ({ endPosition, endQuaternion, focusedId, returning = false }) => {
+            const startPosition = camera.position.clone();
+            const startQuaternion = camera.quaternion.clone();
+            const outward = endPosition.clone().sub(center).setY(0).normalize();
+            const tangent = new THREE.Vector3().crossVectors(worldUp, outward).normalize();
+            const control = startPosition.clone().add(endPosition).multiplyScalar(0.5)
+              .addScaledVector(worldUp, buildings?.diskRadius * MODULE_FOCUS.arcLiftByRadius || radius * 0.15)
+              .addScaledVector(tangent, (buildings?.diskRadius || radius) * MODULE_FOCUS.arcSideByRadius);
+
+            cameraMotion = {
+              startedAt: performance.now(),
+              startPosition,
+              startQuaternion,
+              control,
+              endPosition: endPosition.clone(),
+              endQuaternion: endQuaternion.clone(),
+              focusedId,
+              returning,
+            };
+            reportCameraState(returning ? "returning" : "moving");
+          };
+
           const forward = target.clone().sub(camera.position).normalize();
           const right = new THREE.Vector3()
             .crossVectors(forward, camera.up)
@@ -231,6 +293,55 @@ export default function StationThreeView({ onSelectModule }) {
           });
           scene.add(buildings.root);
 
+          const getFocusPose = (moduleId) => {
+            const group = buildings.moduleGroups.get(moduleId);
+            if (!group) return null;
+            group.updateWorldMatrix(true, false);
+
+            const sectorCenter = group.getWorldPosition(new THREE.Vector3());
+            const anchorData = group.userData.focusAnchorLocal || { x: 0, y: 0, z: 0 };
+            const anchor = group.localToWorld(
+              new THREE.Vector3(anchorData.x, anchorData.y, anchorData.z)
+            );
+            const outward = sectorCenter.clone().sub(center).setY(0).normalize();
+            const focusPosition = anchor.clone()
+              .addScaledVector(outward, buildings.diskRadius * MODULE_FOCUS.distanceByRadius)
+              .addScaledVector(worldUp, buildings.diskRadius * MODULE_FOCUS.heightByRadius);
+            const focusTarget = anchor.clone()
+              .addScaledVector(outward, -buildings.diskRadius * MODULE_FOCUS.targetInsetByRadius)
+              .addScaledVector(worldUp, buildings.diskRadius * MODULE_FOCUS.targetHeightByRadius);
+
+            focusLookObject.position.copy(focusPosition);
+            focusLookObject.up.copy(worldUp);
+            focusLookObject.lookAt(focusTarget);
+            return {
+              position: focusPosition,
+              quaternion: focusLookObject.quaternion.clone(),
+            };
+          };
+
+          const focusModule = (moduleId) => {
+            const pose = getFocusPose(moduleId);
+            if (!pose || cameraMotion) return;
+            beginCameraMove({
+              endPosition: pose.position,
+              endQuaternion: pose.quaternion,
+              focusedId: moduleId,
+            });
+          };
+
+          const returnHome = () => {
+            if (cameraState === "home" && !cameraMotion) return;
+            cameraMotion = null;
+            beginCameraMove({
+              endPosition: homePosition,
+              endQuaternion: homeQuaternion,
+              focusedId: null,
+              returning: true,
+            });
+          };
+          returnHomeHandler = returnHome;
+
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
           let pointerDown = null;
@@ -261,7 +372,15 @@ export default function StationThreeView({ onSelectModule }) {
             if (!hit) return;
             const moduleId = hit.object.userData.moduleId;
             pulseStationBuilding(buildings.moduleGroups, moduleId);
-            window.setTimeout(() => onSelectModule?.(moduleId), 120);
+
+            if (cameraState === "focused" && currentFocusedId === moduleId) {
+              onSelectModuleRef.current?.(moduleId);
+              reportCameraState("panel");
+              return;
+            }
+
+            if (cameraState === "moving" || cameraState === "returning") return;
+            focusModule(moduleId);
           };
 
           renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -293,10 +412,41 @@ export default function StationThreeView({ onSelectModule }) {
       resize();
 
       const render = () => {
+        const now = performance.now();
         farStars.rotation.y += 0.000015;
         nearStars.rotation.y += 0.00003;
-        const pulse = 1 + Math.sin(performance.now() * 0.0014) * 0.025;
+        const pulse = 1 + Math.sin(now * 0.0014) * 0.025;
         sunHalo.scale.setScalar(pulse);
+
+        if (returnHomeSignalRef.current !== handledReturnSignal) {
+          handledReturnSignal = returnHomeSignalRef.current;
+          returnHomeHandler();
+        }
+
+        if (cameraMotion) {
+          const raw = Math.min(1, (now - cameraMotion.startedAt) / MODULE_FOCUS.durationMs);
+          const t = easeCamera(raw);
+          const oneMinus = 1 - t;
+          camera.position.set(0, 0, 0)
+            .addScaledVector(cameraMotion.startPosition, oneMinus * oneMinus)
+            .addScaledVector(cameraMotion.control, 2 * oneMinus * t)
+            .addScaledVector(cameraMotion.endPosition, t * t);
+          camera.quaternion.slerpQuaternions(
+            cameraMotion.startQuaternion,
+            cameraMotion.endQuaternion,
+            t
+          );
+
+          if (raw >= 1) {
+            camera.position.copy(cameraMotion.endPosition);
+            camera.quaternion.copy(cameraMotion.endQuaternion);
+            currentFocusedId = cameraMotion.focusedId;
+            const wasReturning = cameraMotion.returning;
+            cameraMotion = null;
+            reportCameraState(wasReturning ? "home" : "focused");
+          }
+        }
+
         renderer.render(scene, camera);
         frameId = requestAnimationFrame(render);
       };
