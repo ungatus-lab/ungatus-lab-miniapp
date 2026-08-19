@@ -25,7 +25,7 @@ export default function StationThreeView({
 
   useEffect(() => {
     onSelectModuleRef.current = onSelectModule;
-  }, [onSelectModule]);
+  }, []);
 
   useEffect(() => {
     onCameraStateChangeRef.current = onCameraStateChange;
@@ -46,6 +46,7 @@ export default function StationThreeView({
     let currentFocusedId = null;
     let handledReturnSignal = returnHomeSignalRef.current;
     let returnHomeHandler = () => {};
+    let stationDiskRadius = 1;
 
     const easeCamera = (value) =>
       value < 0.5
@@ -303,6 +304,7 @@ export default function StationThreeView({
             bounds,
             center,
           });
+          stationDiskRadius = buildings.diskRadius;
           scene.add(buildings.root);
 
           const getFocusPose = (moduleId) => {
@@ -450,7 +452,7 @@ export default function StationThreeView({
             t
           );
           const arcHeight =
-            Math.sin(Math.PI * t) * buildings.diskRadius * MODULE_FOCUS.arcLiftByRadius;
+            Math.sin(Math.PI * t) * stationDiskRadius * MODULE_FOCUS.arcLiftByRadius;
 
           camera.position.set(
             center.x + Math.cos(angle) * orbitRadius,
