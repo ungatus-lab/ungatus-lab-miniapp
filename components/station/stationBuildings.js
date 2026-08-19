@@ -348,6 +348,130 @@ function addWalletGlyph(THREE, group, radius) {
   addGlyphNode(THREE, group, color, radius, 0.37, -0.3, 0.66);
 }
 
+function holoMaterial(THREE, color, opacity = 0.82) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+function holoBar(THREE, group, material, radius, width, height, x, y, rotationZ = 0) {
+  const part = mesh(
+    THREE,
+    group,
+    new THREE.BoxGeometry(radius * width, radius * height, radius * 0.04),
+    material,
+    [radius * x, radius * y, 0]
+  );
+  part.rotation.z = rotationZ;
+  return part;
+}
+
+function holoDot(THREE, group, material, radius, x, y, scale = 1) {
+  return mesh(
+    THREE,
+    group,
+    new THREE.CircleGeometry(radius * 0.1 * scale, 20),
+    material,
+    [radius * x, radius * y, 0]
+  );
+}
+
+function addHoloFrame(THREE, group, material, radius) {
+  holoBar(THREE, group, material, radius, 1.0, 0.04, 0, 0.56);
+  holoBar(THREE, group, material, radius, 1.0, 0.04, 0, -0.56);
+  holoBar(THREE, group, material, radius, 0.04, 1.12, -0.5, 0);
+  holoBar(THREE, group, material, radius, 0.04, 1.12, 0.5, 0);
+}
+
+function addWalletHolo(THREE, group, material, radius) {
+  holoBar(THREE, group, material, radius, 0.62, 0.055, -0.06, 0.24);
+  holoBar(THREE, group, material, radius, 0.62, 0.055, -0.06, -0.24);
+  holoBar(THREE, group, material, radius, 0.055, 0.48, -0.37, 0);
+  holoBar(THREE, group, material, radius, 0.055, 0.48, 0.25, 0);
+  holoBar(THREE, group, material, radius, 0.28, 0.15, 0.33, 0);
+  holoDot(THREE, group, material, radius, 0.38, 0, 0.5);
+}
+
+function addMarketHolo(THREE, group, material, radius) {
+  holoBar(THREE, group, material, radius, 0.72, 0.055, 0, -0.3);
+  holoBar(THREE, group, material, radius, 0.055, 0.46, -0.31, -0.07);
+  holoBar(THREE, group, material, radius, 0.055, 0.46, 0.31, -0.07);
+  holoBar(THREE, group, material, radius, 0.84, 0.055, 0, 0.25);
+  [-0.3, -0.1, 0.1, 0.3].forEach((x, index) => {
+    holoBar(THREE, group, material, radius, 0.18, 0.15, x, 0.14, index % 2 ? 0.12 : -0.12);
+  });
+}
+
+function addCollabHolo(THREE, group, material, radius) {
+  holoDot(THREE, group, material, radius, -0.28, 0.2, 1.05);
+  holoDot(THREE, group, material, radius, 0.28, 0.2, 1.05);
+  holoDot(THREE, group, material, radius, 0, -0.26, 1.05);
+  holoBar(THREE, group, material, radius, 0.43, 0.05, -0.14, -0.02, -0.62);
+  holoBar(THREE, group, material, radius, 0.43, 0.05, 0.14, -0.02, 0.62);
+  holoBar(THREE, group, material, radius, 0.45, 0.05, 0, 0.2);
+}
+
+function addAutomationHolo(THREE, group, material, radius) {
+  holoDot(THREE, group, material, radius, 0, 0.28, 0.85);
+  holoDot(THREE, group, material, radius, -0.3, -0.24, 0.72);
+  holoDot(THREE, group, material, radius, 0.3, -0.24, 0.72);
+  holoBar(THREE, group, material, radius, 0.5, 0.055, -0.15, 0.01, 0.52);
+  holoBar(THREE, group, material, radius, 0.5, 0.055, 0.15, 0.01, -0.52);
+  holoBar(THREE, group, material, radius, 0.3, 0.05, 0, -0.42);
+}
+
+function addModuleHologram(THREE, group, module, radius) {
+  const projector = new THREE.Group();
+  projector.name = `HologramProjector_${module.id}`;
+  projector.position.set(0, radius * 0.72, -radius * 0.3);
+  group.add(projector);
+
+  mesh(
+    THREE,
+    projector,
+    new THREE.CylinderGeometry(radius * 0.2, radius * 0.28, radius * 0.12, 24),
+    holoMaterial(THREE, module.colorHex, 0.68),
+    [0, 0, 0]
+  );
+  const halo = mesh(
+    THREE,
+    projector,
+    new THREE.TorusGeometry(radius * 0.31, radius * 0.024, 8, 40),
+    holoMaterial(THREE, module.colorHex, 0.6),
+    [0, radius * 0.08, 0]
+  );
+  halo.rotation.x = Math.PI / 2;
+  mesh(
+    THREE,
+    projector,
+    new THREE.CylinderGeometry(radius * 0.13, radius * 0.23, radius * 1.12, 24, 1, true),
+    holoMaterial(THREE, module.colorHex, 0.085),
+    [0, radius * 0.67, 0]
+  );
+
+  const billboard = new THREE.Group();
+  billboard.name = `HologramBillboard_${module.id}`;
+  billboard.position.set(0, radius * 1.34, 0);
+  billboard.userData.baseY = billboard.position.y;
+  billboard.userData.phase = module.id.length * 0.73;
+  projector.add(billboard);
+
+  const material = holoMaterial(THREE, module.colorHex, 0.82);
+  addHoloFrame(THREE, billboard, material, radius);
+  if (module.id === "wallet") addWalletHolo(THREE, billboard, material, radius);
+  if (module.id === "market") addMarketHolo(THREE, billboard, material, radius);
+  if (module.id === "collab") addCollabHolo(THREE, billboard, material, radius);
+  if (module.id === "scanner") addAutomationHolo(THREE, billboard, material, radius);
+
+  group.userData.hologramBillboard = billboard;
+}
+
+
 function createAutomationStudio(THREE, group, radius, materials) {
   addRadialHull(THREE, group, radius, materials, {
     width: 1.52,
@@ -484,6 +608,15 @@ function createModuleBuilding(THREE, module, diskRadius) {
     createFallbackBuilding(THREE, group, featureRadius, materials);
   }
 
+  group.traverse((object) => {
+    if (object.userData.glyphPart && object.material) {
+      object.material.transparent = true;
+      object.material.opacity = Math.min(object.material.opacity ?? 1, 0.28);
+      object.material.depthWrite = false;
+    }
+  });
+  addModuleHologram(THREE, group, module, radius);
+
   const hitArea = mesh(
     THREE,
     group,
@@ -522,6 +655,7 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
 
   const clickableBuildings = [];
   const moduleGroups = new Map();
+  const hologramBillboards = [];
   const diskRadius = getDiskRadius(THREE, bounds);
 
   MODULE_ANCHORS.forEach((anchor) => {
@@ -544,9 +678,12 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
     root.add(building);
     clickableBuildings.push(building);
     moduleGroups.set(module.id, building);
+    if (building.userData.hologramBillboard) {
+      hologramBillboards.push(building.userData.hologramBillboard);
+    }
   });
 
-  return { root, clickableBuildings, moduleGroups, diskRadius };
+  return { root, clickableBuildings, moduleGroups, hologramBillboards, diskRadius };
 }
 
 export function pulseStationBuilding(moduleGroups, moduleId) {
