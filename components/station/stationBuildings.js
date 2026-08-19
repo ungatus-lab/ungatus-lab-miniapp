@@ -466,6 +466,9 @@ function createModuleBuilding(THREE, module, diskRadius) {
   const radius =
     diskRadius * SCENE_CONFIG.buildingScale * COMPLEX_VISUAL_SCALE;
   group.userData.visualRadius = radius;
+  group.userData.focusAnchorLocal = { x: 0, y: radius * 0.58, z: 0 };
+  // Module geometry points inward along local -Z, therefore +Z is the outer edge.
+  group.userData.outwardLocal = { x: 0, y: 0, z: 1 };
   const materials = addBase(THREE, group, radius, module.colorHex);
   const featureRadius = radius * COMPLEX_FEATURE_SCALE;
   // Identity comes from the module silhouette, not another circular plate.
