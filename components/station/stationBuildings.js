@@ -200,13 +200,15 @@ function addRadialHull(THREE, group, radius, materials, options = {}) {
   };
 }
 
+const GLYPH_Y = 0.735;
+
 function addGlyphBar(THREE, group, color, radius, width, depth, x, z, rotationY = 0) {
   const bar = mesh(
     THREE,
     group,
-    new THREE.BoxGeometry(radius * width, radius * 0.045, radius * depth),
-    glowMaterial(THREE, color, 0.92),
-    [radius * x, radius * 0.69, radius * z]
+    new THREE.BoxGeometry(radius * width, radius * 0.065, radius * depth),
+    glowMaterial(THREE, color, 0.96),
+    [radius * x, radius * GLYPH_Y, radius * z]
   );
   bar.rotation.y = rotationY;
   bar.userData.glyphPart = true;
@@ -217,56 +219,93 @@ function addGlyphNode(THREE, group, color, radius, x, z, scale = 1) {
   const node = mesh(
     THREE,
     group,
-    new THREE.CylinderGeometry(radius * 0.09 * scale, radius * 0.09 * scale, radius * 0.05, 18),
-    glowMaterial(THREE, color, 0.95),
-    [radius * x, radius * 0.705, radius * z]
+    new THREE.CylinderGeometry(
+      radius * 0.115 * scale,
+      radius * 0.115 * scale,
+      radius * 0.07,
+      20
+    ),
+    glowMaterial(THREE, color, 0.98),
+    [radius * x, radius * (GLYPH_Y + 0.005), radius * z]
   );
   node.userData.glyphPart = true;
   return node;
 }
 
-function addGlyphFrame(THREE, group, color, radius, x, z, scale = 1) {
-  const w = 0.28 * scale;
-  const h = 0.36 * scale;
-  addGlyphBar(THREE, group, color, radius, w, 0.045, x, z - h / 2);
-  addGlyphBar(THREE, group, color, radius, w, 0.045, x, z + h / 2);
-  addGlyphBar(THREE, group, color, radius, 0.045, h, x - w / 2, z);
-  addGlyphBar(THREE, group, color, radius, 0.045, h, x + w / 2, z);
+function addGlyphFrame(THREE, group, color, radius, x, z, width, height) {
+  addGlyphBar(THREE, group, color, radius, width, 0.065, x, z - height / 2);
+  addGlyphBar(THREE, group, color, radius, width, 0.065, x, z + height / 2);
+  addGlyphBar(THREE, group, color, radius, 0.065, height, x - width / 2, z);
+  addGlyphBar(THREE, group, color, radius, 0.065, height, x + width / 2, z);
+}
+
+function addArrowGlyph(THREE, group, color, radius, z, direction = 1) {
+  addGlyphBar(THREE, group, color, radius, 0.54, 0.075, 0, z);
+  addGlyphBar(
+    THREE,
+    group,
+    color,
+    radius,
+    0.22,
+    0.075,
+    direction * 0.25,
+    z - 0.1,
+    direction * 0.7
+  );
+  addGlyphBar(
+    THREE,
+    group,
+    color,
+    radius,
+    0.22,
+    0.075,
+    direction * 0.25,
+    z + 0.1,
+    -direction * 0.7
+  );
 }
 
 function addFlowNodeGlyph(THREE, group, radius) {
   const color = 0x53f5df;
-  addGlyphNode(THREE, group, color, radius, 0, -0.32, 1.12);
-  addGlyphNode(THREE, group, color, radius, -0.3, 0.08, 0.72);
-  addGlyphNode(THREE, group, color, radius, 0.3, 0.08, 0.72);
-  addGlyphBar(THREE, group, color, radius, 0.08, 0.42, -0.15, -0.12, -0.62);
-  addGlyphBar(THREE, group, color, radius, 0.08, 0.42, 0.15, -0.12, 0.62);
-  addGlyphBar(THREE, group, color, radius, 0.08, 0.34, 0, -0.51);
+  addGlyphNode(THREE, group, color, radius, 0, -0.48, 1.08);
+  addGlyphNode(THREE, group, color, radius, -0.34, -0.05, 0.78);
+  addGlyphNode(THREE, group, color, radius, 0.34, -0.05, 0.78);
+  addGlyphBar(THREE, group, color, radius, 0.09, 0.49, -0.17, -0.27, -0.67);
+  addGlyphBar(THREE, group, color, radius, 0.09, 0.49, 0.17, -0.27, 0.67);
 }
 
 function addScenarioFramesGlyph(THREE, group, radius) {
   const color = 0xff8bc8;
-  addGlyphFrame(THREE, group, color, radius, -0.28, -0.14, 0.82);
-  addGlyphFrame(THREE, group, color, radius, 0, -0.28, 0.9);
-  addGlyphFrame(THREE, group, color, radius, 0.28, -0.42, 0.82);
+  addGlyphFrame(THREE, group, color, radius, 0, -0.28, 0.78, 0.62);
+  addGlyphBar(THREE, group, color, radius, 0.065, 0.52, -0.24, -0.28);
+  addGlyphBar(THREE, group, color, radius, 0.065, 0.52, 0, -0.28);
+  addGlyphBar(THREE, group, color, radius, 0.065, 0.52, 0.24, -0.28);
 }
 
 function addLinkedCoresGlyph(THREE, group, radius) {
   const color = 0xb99cff;
-  addGlyphNode(THREE, group, color, radius, -0.28, -0.25, 1.05);
-  addGlyphNode(THREE, group, color, radius, 0.28, -0.25, 1.05);
-  addGlyphBar(THREE, group, color, radius, 0.46, 0.07, 0, -0.25);
-  addGlyphBar(THREE, group, color, radius, 0.36, 0.055, 0, -0.5);
+  addGlyphNode(THREE, group, color, radius, -0.31, -0.27, 1.08);
+  addGlyphNode(THREE, group, color, radius, 0.31, -0.27, 1.08);
+  addGlyphBar(THREE, group, color, radius, 0.46, 0.09, 0, -0.27);
+  addGlyphBar(THREE, group, color, radius, 0.56, 0.07, 0, -0.53);
 }
 
 function addExchangeGateGlyph(THREE, group, radius) {
   const color = 0xffd76b;
-  const diamond = addGlyphBar(THREE, group, color, radius, 0.25, 0.25, 0, -0.28, Math.PI / 4);
-  diamond.scale.z = 0.5;
-  addGlyphBar(THREE, group, color, radius, 0.38, 0.07, -0.2, -0.02);
-  addGlyphBar(THREE, group, color, radius, 0.38, 0.07, 0.2, -0.54);
-  addGlyphBar(THREE, group, color, radius, 0.14, 0.06, -0.39, -0.02, -0.62);
-  addGlyphBar(THREE, group, color, radius, 0.14, 0.06, 0.39, -0.54, -0.62);
+  addArrowGlyph(THREE, group, color, radius, -0.1, 1);
+  addArrowGlyph(THREE, group, color, radius, -0.5, -1);
+  const core = addGlyphBar(
+    THREE,
+    group,
+    color,
+    radius,
+    0.22,
+    0.22,
+    0,
+    -0.3,
+    Math.PI / 4
+  );
+  core.scale.z = 0.58;
 }
 
 function createAutomationStudio(THREE, group, radius, materials) {
@@ -286,16 +325,6 @@ function createAutomationStudio(THREE, group, radius, materials) {
   );
   lens.scale.z = 0.82;
 
-  addLightStrip(
-    THREE, group, 0x53f5df,
-    radius * 0.92, radius * 0.16,
-    0, radius * 0.565, -radius * 0.25
-  );
-  addLightStrip(
-    THREE, group, 0x8ffff0,
-    radius * 0.6, radius * 0.11,
-    0, radius * 0.585, -radius * 0.48
-  );
   addFlowNodeGlyph(THREE, group, radius);
 }
 
@@ -316,12 +345,6 @@ function createProjectLibrary(THREE, group, radius, materials) {
       [offset * radius, radius * 0.50, -radius * 0.34]
     );
     cassette.rotation.y = offset * -0.08;
-    addLightStrip(
-      THREE, group, 0xff8bc8,
-      radius * 0.25, radius * 0.69,
-      offset * radius, radius * 0.59, -radius * 0.34,
-      offset * -0.08
-    );
   });
   addScenarioFramesGlyph(THREE, group, radius);
 }
@@ -346,11 +369,6 @@ function createCommunityRelay(THREE, group, radius, materials) {
     capsule.rotation.y = Math.PI / 2;
   });
 
-  addLightStrip(
-    THREE, group, 0xb99cff,
-    radius * 0.94, radius * 0.12,
-    0, radius * 0.57, -radius * 0.33
-  );
   addLinkedCoresGlyph(THREE, group, radius);
 }
 
@@ -380,11 +398,6 @@ function createWalletMarket(THREE, group, radius, materials) {
   );
   core.rotation.y = Math.PI / 8;
 
-  addLightStrip(
-    THREE, group, 0xffd76b,
-    radius * 0.78, radius * 0.12,
-    0, radius * 0.58, -radius * 0.57
-  );
   addExchangeGateGlyph(THREE, group, radius);
 }
 
