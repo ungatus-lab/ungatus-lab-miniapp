@@ -114,10 +114,14 @@ export const MODULE_ANCHORS = [
 ];
 
 export const MODULE_FOCUS = {
-  enabled: false,
-  distanceScale: 1.35,
-  heightScale: 0.38,
-  durationMs: 520,
+  enabled: true,
+  durationMs: 760,
+  distanceByRadius: 0.92,
+  heightByRadius: 0.36,
+  targetInsetByRadius: 0.12,
+  targetHeightByRadius: 0.08,
+  arcLiftByRadius: 0.28,
+  arcSideByRadius: 0.18,
 };
 
 export const SCENE_CONFIG = {
