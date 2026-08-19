@@ -31,6 +31,8 @@ export default function AccountStationPrototype({
 }) {
   const [activeId, setActiveId] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [cameraReturnSignal, setCameraReturnSignal] = useState(0);
+  const [cameraState, setCameraState] = useState("home");
 
   useEffect(() => {
     if (!open) return undefined;
@@ -56,6 +58,11 @@ export default function AccountStationPrototype({
     setActiveId(moduleId);
   }
 
+  function closeModulePanel() {
+    setActiveId(null);
+    setCameraReturnSignal((value) => value + 1);
+  }
+
   function launchTraining() {
     completeMission("viewedNativeLab");
     if (typeof onLaunchTraining === "function") {
@@ -75,7 +82,11 @@ export default function AccountStationPrototype({
       <style>{css}</style>
 
       <section style={styles.viewport}>
-        <StationThreeView onSelectModule={setActiveId} />
+        <StationThreeView
+          onSelectModule={setActiveId}
+          onCameraStateChange={setCameraState}
+          returnHomeSignal={cameraReturnSignal}
+        />
       </section>
 
       <StationHomeHUD
@@ -84,7 +95,7 @@ export default function AccountStationPrototype({
         onOpenModule={openComplex}
         onLaunchTraining={launchTraining}
         onLaunchArena={launchArena}
-        compact={Boolean(active)}
+        compact={Boolean(active) || cameraState === "moving" || cameraState === "returning"}
       />
 
       {typeof onClose === "function" && !active && (
@@ -102,7 +113,7 @@ export default function AccountStationPrototype({
         <ModulePanel
           module={active}
           generation={progress?.station?.generation || 1}
-          onClose={() => setActiveId(null)}
+          onClose={closeModulePanel}
           onLaunchGame={launchArena}
         />
       )}
