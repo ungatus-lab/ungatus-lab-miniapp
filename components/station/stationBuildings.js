@@ -290,22 +290,62 @@ function addLinkedCoresGlyph(THREE, group, radius) {
   addGlyphBar(THREE, group, color, radius, 0.56, 0.07, 0, -0.53);
 }
 
-function addExchangeGateGlyph(THREE, group, radius) {
+function addWalletGlyph(THREE, group, radius) {
   const color = 0xffd76b;
-  addArrowGlyph(THREE, group, color, radius, -0.1, 1);
-  addArrowGlyph(THREE, group, color, radius, -0.5, -1);
-  const core = addGlyphBar(
+  const y = radius * 0.742;
+  const glow = glowMaterial(THREE, color, 0.98);
+
+  // Wallet body: a wide rounded outline, rotated with the module so it faces
+  // the home observer correctly on the near-left platform.
+  const bodyShape = new THREE.Shape();
+  const w = radius * 0.9;
+  const h = radius * 0.64;
+  const r = radius * 0.13;
+  bodyShape.moveTo(-w / 2 + r, -h / 2);
+  bodyShape.lineTo(w / 2 - r, -h / 2);
+  bodyShape.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  bodyShape.lineTo(w / 2, h / 2 - r);
+  bodyShape.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  bodyShape.lineTo(-w / 2 + r, h / 2);
+  bodyShape.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  bodyShape.lineTo(-w / 2, -h / 2 + r);
+  bodyShape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  bodyShape.closePath();
+
+  const hole = new THREE.Path();
+  const inset = radius * 0.1;
+  hole.moveTo(-w / 2 + r + inset, -h / 2 + inset);
+  hole.lineTo(w / 2 - r - inset, -h / 2 + inset);
+  hole.quadraticCurveTo(w / 2 - inset, -h / 2 + inset, w / 2 - inset, -h / 2 + r + inset);
+  hole.lineTo(w / 2 - inset, h / 2 - r - inset);
+  hole.quadraticCurveTo(w / 2 - inset, h / 2 - inset, w / 2 - r - inset, h / 2 - inset);
+  hole.lineTo(-w / 2 + r + inset, h / 2 - inset);
+  hole.quadraticCurveTo(-w / 2 + inset, h / 2 - inset, -w / 2 + inset, h / 2 - r - inset);
+  hole.lineTo(-w / 2 + inset, -h / 2 + r + inset);
+  hole.quadraticCurveTo(-w / 2 + inset, -h / 2 + inset, -w / 2 + r + inset, -h / 2 + inset);
+  hole.closePath();
+  bodyShape.holes.push(hole);
+
+  const body = mesh(
     THREE,
     group,
-    color,
-    radius,
-    0.22,
-    0.22,
-    0,
-    -0.3,
-    Math.PI / 4
+    new THREE.ExtrudeGeometry(bodyShape, {
+      depth: radius * 0.055,
+      bevelEnabled: false,
+      curveSegments: 10,
+    }),
+    glow,
+    [0, y, -radius * 0.3]
   );
-  core.scale.z = 0.58;
+  body.rotation.x = -Math.PI / 2;
+  body.userData.glyphPart = true;
+
+  // Top opening/card lip makes the silhouette read as a wallet rather than a card.
+  addGlyphBar(THREE, group, color, radius, 0.64, 0.075, -0.07, -0.02, -0.13);
+
+  // Clasp tab and coin/button on the observer-facing right side of the icon.
+  addGlyphBar(THREE, group, color, radius, 0.34, 0.17, 0.3, -0.3);
+  addGlyphNode(THREE, group, color, radius, 0.37, -0.3, 0.66);
 }
 
 function createAutomationStudio(THREE, group, radius, materials) {
@@ -398,7 +438,7 @@ function createWalletMarket(THREE, group, radius, materials) {
   );
   core.rotation.y = Math.PI / 8;
 
-  addExchangeGateGlyph(THREE, group, radius);
+  addWalletGlyph(THREE, group, radius);
 }
 
 function createFallbackBuilding(THREE, group, radius, materials) {
