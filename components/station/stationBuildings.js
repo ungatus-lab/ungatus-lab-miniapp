@@ -6,7 +6,8 @@ import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 const COMPLEX_VISUAL_SCALE = 4.35;
 // Upper architecture grows with the full cap while retaining a small edge margin.
 const COMPLEX_FEATURE_SCALE = 1.02;
-const WALLET_UI_BLUE = 0x58d7ff;
+const HOLOGRAM_UI_BLUE = 0x58d7ff;
+const WALLET_UI_BLUE = HOLOGRAM_UI_BLUE;
 
 function bodyMaterial(THREE) {
   return new THREE.MeshStandardMaterial({
@@ -489,12 +490,11 @@ function createRoundedRectRingShape(THREE, width, height, corner, thickness) {
   return outer;
 }
 
-function addWalletTerminal(THREE, group, color, radius) {
-  const uiBlue = WALLET_UI_BLUE;
+function addModernTerminalShell(THREE, group, radius) {
+  const uiBlue = HOLOGRAM_UI_BLUE;
   const uiBlueSoft = 0x2c94c7;
   const darkCore = 0x06121f;
 
-  // Soft rear aura gives depth without washing the terminal out to white.
   const aura = mesh(
     THREE,
     group,
@@ -506,7 +506,6 @@ function addWalletTerminal(THREE, group, color, radius) {
   );
   aura.scale.setScalar(1.12);
 
-  // Dark glass body.
   mesh(
     THREE,
     group,
@@ -517,7 +516,6 @@ function addWalletTerminal(THREE, group, color, radius) {
     [0, 0, 0]
   );
 
-  // One continuous, naturally rounded frame instead of separate white bars.
   mesh(
     THREE,
     group,
@@ -534,7 +532,6 @@ function addWalletTerminal(THREE, group, color, radius) {
     [0, 0, radius * 0.018]
   );
 
-  // Inner glass accent, slightly offset to create a modern layered terminal.
   mesh(
     THREE,
     group,
@@ -551,7 +548,112 @@ function addWalletTerminal(THREE, group, color, radius) {
     [0, 0, radius * 0.028]
   );
 
-  // Clear wallet silhouette: rounded body, top fold, projecting clasp and dot.
+  holoDisc(
+    THREE,
+    group,
+    holoColorMaterial(THREE, uiBlueSoft, 0.72),
+    radius,
+    0,
+    -0.37,
+    0.28,
+    0.045
+  );
+}
+
+function addMarketplaceTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
+
+  // Familiar shopping bag with two short handles and a small price tag.
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.54, radius * 0.48, radius * 0.07)
+    ),
+    blue,
+    [0, -radius * 0.055, radius * 0.05]
+  );
+  const handle = new THREE.Shape();
+  handle.absarc(0, 0, radius * 0.16, Math.PI, 0, false);
+  const handleHole = new THREE.Path();
+  handleHole.absarc(0, 0, radius * 0.105, Math.PI, 0, false);
+  handle.holes.push(handleHole);
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(handle),
+    blue,
+    [0, radius * 0.19, radius * 0.055]
+  );
+  holoDisc(THREE, group, dark, radius, 0.18, -0.03, 0.5, 0.07);
+}
+
+function addCollaborationTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+
+  // Conventional three-person group: three heads and one shared shoulder base.
+  holoDisc(THREE, group, blue, radius, 0, 0.18, 0.94, 0.06);
+  holoDisc(THREE, group, blue, radius, -0.25, 0.09, 0.76, 0.055);
+  holoDisc(THREE, group, blue, radius, 0.25, 0.09, 0.76, 0.055);
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.34, radius * 0.2, radius * 0.1)
+    ),
+    blue,
+    [0, -radius * 0.12, radius * 0.05]
+  );
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.68, radius * 0.16, radius * 0.08)
+    ),
+    blue,
+    [0, -radius * 0.27, radius * 0.045]
+  );
+}
+
+function addAutomationTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.94);
+
+  // Macro recorder: project card with a gesture path, tap target and REC dot.
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.58, radius * 0.5, radius * 0.07)
+    ),
+    blue,
+    [0, -radius * 0.02, radius * 0.045]
+  );
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.48, radius * 0.39, radius * 0.05)
+    ),
+    dark,
+    [0, -radius * 0.02, radius * 0.065]
+  );
+  holoDisc(THREE, group, blue, radius, -0.17, 0.11, 0.48, 0.08);
+  holoDisc(THREE, group, blue, radius, 0.13, -0.13, 0.5, 0.08);
+  holoLine(THREE, group, blue, radius, 0.34, 0.045, -0.02, -0.01, -0.62, 0.08);
+  holoTriangle(THREE, group, blue, radius, 0.2, 0.12, 0.62, 0);
+  holoDisc(THREE, group, blue, radius, 0.25, 0.28, 0.34, 0.085);
+}
+
+function addWalletTerminal(THREE, group, color, radius) {
+  const uiBlue = HOLOGRAM_UI_BLUE;
+  const darkCore = 0x06121f;
+  addModernTerminalShell(THREE, group, radius);
+
   mesh(
     THREE,
     group,
@@ -594,20 +696,6 @@ function addWalletTerminal(THREE, group, color, radius) {
     0.4,
     0.09
   );
-
-  // Tiny lower status light; it reads as a digital terminal, not a framed sign.
-  holoDisc(
-    THREE,
-    group,
-    holoColorMaterial(THREE, uiBlueSoft, 0.72),
-    radius,
-    0,
-    -0.37,
-    0.28,
-    0.045
-  );
-
-  group.userData.walletPrototype = true;
 }
 
 function addWalletHolo(THREE, group, material, radius) {
@@ -662,13 +750,13 @@ function addAutomationHolo(THREE, group, material, radius) {
 }
 
 function addModuleHologram(THREE, group, module, radius) {
-  const hologramColor = module.id === "wallet" ? WALLET_UI_BLUE : module.colorHex;
+  const hologramColor = HOLOGRAM_UI_BLUE;
   const projector = new THREE.Group();
   projector.name = `HologramProjector_${module.id}`;
   projector.position.set(
     0,
     radius * 0.72,
-    module.id === "wallet" ? radius * 0.02 : -radius * 0.3
+    radius * 0.02
   );
   group.add(projector);
 
@@ -699,29 +787,29 @@ function addModuleHologram(THREE, group, module, radius) {
   billboard.name = `HologramBillboard_${module.id}`;
   billboard.position.set(
     0,
-    radius * (module.id === "wallet" ? 0.9 : 1.04),
+    radius * 0.9,
     0
   );
   billboard.userData.baseY = billboard.position.y;
   billboard.userData.phase = module.id.length * 0.73;
   projector.add(billboard);
 
-  const material = holoMaterial(THREE, module.colorHex, 0.88);
   if (module.id === "wallet") {
     addWalletTerminal(THREE, billboard, hologramColor, radius);
-  } else {
-    addHoloToken(THREE, billboard, module.colorHex, radius);
-    if (module.id === "market") addMarketHolo(THREE, billboard, material, radius);
-    if (module.id === "collab") addCollabHolo(THREE, billboard, material, radius);
-    if (module.id === "scanner") addAutomationHolo(THREE, billboard, material, radius);
+  } else if (module.id === "market") {
+    addMarketplaceTerminal(THREE, billboard, radius);
+  } else if (module.id === "collab") {
+    addCollaborationTerminal(THREE, billboard, radius);
+  } else if (module.id === "scanner") {
+    addAutomationTerminal(THREE, billboard, radius);
   }
 
   const hitArea = mesh(
     THREE,
     billboard,
     new THREE.PlaneGeometry(
-      radius * (module.id === "wallet" ? 1.08 : 1.22),
-      radius * (module.id === "wallet" ? 1.16 : 1.08)
+      radius * 1.08,
+      radius * 1.16
     ),
     invisibleMaterial(THREE),
     [0, 0, radius * 0.08]
@@ -751,7 +839,6 @@ function createAutomationStudio(THREE, group, radius, materials) {
   );
   lens.scale.z = 0.82;
 
-  addFlowNodeGlyph(THREE, group, radius);
 }
 
 function createProjectLibrary(THREE, group, radius, materials) {
@@ -772,7 +859,6 @@ function createProjectLibrary(THREE, group, radius, materials) {
     );
     cassette.rotation.y = offset * -0.08;
   });
-  addScenarioFramesGlyph(THREE, group, radius);
 }
 
 function createCommunityRelay(THREE, group, radius, materials) {
@@ -795,7 +881,6 @@ function createCommunityRelay(THREE, group, radius, materials) {
     capsule.rotation.y = Math.PI / 2;
   });
 
-  addLinkedCoresGlyph(THREE, group, radius);
 }
 
 function createWalletMarket(THREE, group, radius, materials) {
@@ -855,8 +940,7 @@ function createModuleBuilding(THREE, module, diskRadius) {
   group.userData.focusAnchorLocal = { x: 0, y: radius * 0.58, z: 0 };
   // Module geometry points inward along local -Z, therefore +Z is the outer edge.
   group.userData.outwardLocal = { x: 0, y: 0, z: 1 };
-  const moduleAccentColor =
-    module.id === "wallet" ? WALLET_UI_BLUE : module.colorHex;
+  const moduleAccentColor = HOLOGRAM_UI_BLUE;
   const materials = addBase(THREE, group, radius, moduleAccentColor);
   const featureRadius = radius * COMPLEX_FEATURE_SCALE;
   // Identity comes from the module silhouette, not another circular plate.
