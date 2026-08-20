@@ -478,62 +478,132 @@ function createRoundedRectShape(THREE, width, height, corner) {
   return shape;
 }
 
+function createRoundedRectRingShape(THREE, width, height, corner, thickness) {
+  const outer = createRoundedRectShape(THREE, width, height, corner);
+  const innerWidth = width - thickness * 2;
+  const innerHeight = height - thickness * 2;
+  const innerCorner = Math.max(corner - thickness, thickness * 0.45);
+  const inner = createRoundedRectShape(THREE, innerWidth, innerHeight, innerCorner);
+  outer.holes.push(inner);
+  return outer;
+}
+
 function addWalletTerminal(THREE, group, color, radius) {
-  const glow = mesh(
+  const uiBlue = 0x58d7ff;
+  const uiBlueSoft = 0x2c94c7;
+  const darkCore = 0x06121f;
+
+  // Soft rear aura gives depth without washing the terminal out to white.
+  const aura = mesh(
     THREE,
     group,
     new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.92, radius * 1.02, radius * 0.2)
+      createRoundedRectShape(THREE, radius * 0.94, radius * 1.02, radius * 0.23)
     ),
-    holoFillMaterial(THREE, color, 0.11),
-    [0, 0, -radius * 0.025]
+    holoFillMaterial(THREE, uiBlueSoft, 0.12),
+    [0, 0, -radius * 0.05]
   );
-  glow.scale.setScalar(1.13);
+  aura.scale.setScalar(1.12);
 
+  // Dark glass body.
   mesh(
     THREE,
     group,
     new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.82, radius * 0.92, radius * 0.18)
+      createRoundedRectShape(THREE, radius * 0.82, radius * 0.92, radius * 0.2)
     ),
-    holoFillMaterial(THREE, 0x07111f, 0.82),
+    holoFillMaterial(THREE, darkCore, 0.88),
     [0, 0, 0]
   );
 
-  const outline = holoColorMaterial(THREE, color, 0.88);
-  holoLine(THREE, group, outline, radius, 0.5, 0.035, 0, 0.46);
-  holoLine(THREE, group, outline, radius, 0.5, 0.035, 0, -0.46);
-  holoLine(THREE, group, outline, radius, 0.035, 0.62, -0.4, 0);
-  holoLine(THREE, group, outline, radius, 0.035, 0.62, 0.4, 0);
-
-  // One clean wallet silhouette: rounded body plus a projecting clasp.
+  // One continuous, naturally rounded frame instead of separate white bars.
   mesh(
     THREE,
     group,
     new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.58, radius * 0.4, radius * 0.08)
+      createRoundedRectRingShape(
+        THREE,
+        radius * 0.86,
+        radius * 0.96,
+        radius * 0.21,
+        radius * 0.045
+      )
     ),
-    holoColorMaterial(THREE, color, 0.96),
-    [-radius * 0.035, -radius * 0.02, radius * 0.035]
+    holoColorMaterial(THREE, uiBlue, 0.8),
+    [0, 0, radius * 0.018]
   );
+
+  // Inner glass accent, slightly offset to create a modern layered terminal.
   mesh(
     THREE,
     group,
     new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.29, radius * 0.16, radius * 0.045)
+      createRoundedRectRingShape(
+        THREE,
+        radius * 0.72,
+        radius * 0.8,
+        radius * 0.16,
+        radius * 0.018
+      )
     ),
-    holoFillMaterial(THREE, 0x07111f, 0.92),
-    [radius * 0.25, -radius * 0.01, radius * 0.055]
+    holoColorMaterial(THREE, uiBlueSoft, 0.42),
+    [0, 0, radius * 0.028]
+  );
+
+  // Clear wallet silhouette: rounded body, top fold, projecting clasp and dot.
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.58, radius * 0.4, radius * 0.09)
+    ),
+    holoColorMaterial(THREE, uiBlue, 0.94),
+    [-radius * 0.035, -radius * 0.025, radius * 0.05]
+  );
+
+  const fold = new THREE.Shape();
+  fold.moveTo(-radius * 0.24, radius * 0.07);
+  fold.lineTo(radius * 0.1, radius * 0.17);
+  fold.lineTo(radius * 0.23, radius * 0.07);
+  fold.closePath();
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(fold),
+    holoFillMaterial(THREE, darkCore, 0.78),
+    [0, radius * 0.055, radius * 0.065]
+  );
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.3, radius * 0.17, radius * 0.055)
+    ),
+    holoFillMaterial(THREE, darkCore, 0.94),
+    [radius * 0.25, -radius * 0.025, radius * 0.075]
   );
   holoDisc(
     THREE,
     group,
-    holoColorMaterial(THREE, color, 1),
+    holoColorMaterial(THREE, uiBlue, 1),
     radius,
     0.29,
-    -0.01,
-    0.42,
-    0.07
+    -0.025,
+    0.4,
+    0.09
+  );
+
+  // Tiny lower status light; it reads as a digital terminal, not a framed sign.
+  holoDisc(
+    THREE,
+    group,
+    holoColorMaterial(THREE, uiBlueSoft, 0.72),
+    radius,
+    0,
+    -0.37,
+    0.28,
+    0.045
   );
 
   group.userData.walletPrototype = true;
@@ -591,12 +661,13 @@ function addAutomationHolo(THREE, group, material, radius) {
 }
 
 function addModuleHologram(THREE, group, module, radius) {
+  const hologramColor = module.id === "wallet" ? 0x58d7ff : module.colorHex;
   const projector = new THREE.Group();
   projector.name = `HologramProjector_${module.id}`;
   projector.position.set(
     0,
     radius * 0.72,
-    module.id === "wallet" ? -radius * 0.36 : -radius * 0.3
+    module.id === "wallet" ? -radius * 0.42 : -radius * 0.3
   );
   group.add(projector);
 
@@ -604,14 +675,14 @@ function addModuleHologram(THREE, group, module, radius) {
     THREE,
     projector,
     new THREE.CylinderGeometry(radius * 0.13, radius * 0.2, radius * 0.08, 24),
-    holoMaterial(THREE, module.colorHex, 0.52),
+    holoMaterial(THREE, hologramColor, 0.52),
     [0, 0, 0]
   );
   const halo = mesh(
     THREE,
     projector,
     new THREE.TorusGeometry(radius * 0.24, radius * 0.018, 8, 36),
-    holoMaterial(THREE, module.colorHex, 0.52),
+    holoMaterial(THREE, hologramColor, 0.52),
     [0, radius * 0.055, 0]
   );
   halo.rotation.x = Math.PI / 2;
@@ -619,7 +690,7 @@ function addModuleHologram(THREE, group, module, radius) {
     THREE,
     projector,
     new THREE.CylinderGeometry(radius * 0.09, radius * 0.17, radius * 0.78, 22, 1, true),
-    holoMaterial(THREE, module.colorHex, 0.07),
+    holoMaterial(THREE, hologramColor, 0.07),
     [0, radius * 0.44, 0]
   );
 
@@ -636,7 +707,7 @@ function addModuleHologram(THREE, group, module, radius) {
 
   const material = holoMaterial(THREE, module.colorHex, 0.88);
   if (module.id === "wallet") {
-    addWalletTerminal(THREE, billboard, module.colorHex, radius);
+    addWalletTerminal(THREE, billboard, hologramColor, radius);
   } else {
     addHoloToken(THREE, billboard, module.colorHex, radius);
     if (module.id === "market") addMarketHolo(THREE, billboard, material, radius);
