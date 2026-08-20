@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import StationThreeView from "./StationThreeView";
 import StationHomeHUD from "./StationHomeHUD";
+import PixelFlowLabDirect from "../game/PixelFlowLabDirect";
 import {
   MODULES,
   MODULE_DETAILS,
@@ -33,6 +34,7 @@ export default function AccountStationPrototype({
   const [progress, setProgress] = useState(null);
   const [cameraReturnSignal, setCameraReturnSignal] = useState(0);
   const [cameraState, setCameraState] = useState("home");
+  const [labDirectOpen, setLabDirectOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -74,7 +76,11 @@ export default function AccountStationPrototype({
 
   function launchArena() {
     completeMission("playedArena");
-    if (typeof onLaunchGame === "function") onLaunchGame();
+    setLabDirectOpen(true);
+  }
+
+  function closeLabDirect() {
+    setLabDirectOpen(false);
   }
 
   return (
@@ -116,6 +122,12 @@ export default function AccountStationPrototype({
           onClose={closeModulePanel}
           onLaunchGame={launchArena}
         />
+      )}
+
+      {labDirectOpen && (
+        <div style={styles.gameLayer}>
+          <PixelFlowLabDirect open onClose={closeLabDirect} />
+        </div>
       )}
     </main>
   );
@@ -220,6 +232,14 @@ const styles = {
     background: "#010207",
     color: "#f2fbff",
     fontFamily: "Inter,system-ui,-apple-system,'Segoe UI',sans-serif",
+  },
+  gameLayer: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 300,
+    overflow: "hidden",
+    background: "#010207",
+    pointerEvents: "auto",
   },
   viewport: {
     position: "absolute",
