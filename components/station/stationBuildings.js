@@ -370,6 +370,17 @@ function holoFillMaterial(THREE, color, opacity = 0.18) {
   });
 }
 
+function holoColorMaterial(THREE, color, opacity = 0.78) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+  });
+}
+
 function holoLine(THREE, group, material, radius, width, height, x, y, rotationZ = 0, z = 0.02) {
   const part = mesh(
     THREE,
@@ -448,6 +459,86 @@ function addHoloToken(THREE, group, color, radius) {
   holoLine(THREE, group, line, radius, 0.035, 0.34, 0.48, -0.17, -0.45);
 }
 
+function createRoundedRectShape(THREE, width, height, corner) {
+  const shape = new THREE.Shape();
+  const left = -width / 2;
+  const right = width / 2;
+  const top = height / 2;
+  const bottom = -height / 2;
+  shape.moveTo(left + corner, top);
+  shape.lineTo(right - corner, top);
+  shape.quadraticCurveTo(right, top, right, top - corner);
+  shape.lineTo(right, bottom + corner);
+  shape.quadraticCurveTo(right, bottom, right - corner, bottom);
+  shape.lineTo(left + corner, bottom);
+  shape.quadraticCurveTo(left, bottom, left, bottom + corner);
+  shape.lineTo(left, top - corner);
+  shape.quadraticCurveTo(left, top, left + corner, top);
+  shape.closePath();
+  return shape;
+}
+
+function addWalletTerminal(THREE, group, color, radius) {
+  const glow = mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.92, radius * 1.02, radius * 0.2)
+    ),
+    holoFillMaterial(THREE, color, 0.11),
+    [0, 0, -radius * 0.025]
+  );
+  glow.scale.setScalar(1.13);
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.82, radius * 0.92, radius * 0.18)
+    ),
+    holoFillMaterial(THREE, 0x07111f, 0.82),
+    [0, 0, 0]
+  );
+
+  const outline = holoColorMaterial(THREE, color, 0.88);
+  holoLine(THREE, group, outline, radius, 0.5, 0.035, 0, 0.46);
+  holoLine(THREE, group, outline, radius, 0.5, 0.035, 0, -0.46);
+  holoLine(THREE, group, outline, radius, 0.035, 0.62, -0.4, 0);
+  holoLine(THREE, group, outline, radius, 0.035, 0.62, 0.4, 0);
+
+  // One clean wallet silhouette: rounded body plus a projecting clasp.
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.58, radius * 0.4, radius * 0.08)
+    ),
+    holoColorMaterial(THREE, color, 0.96),
+    [-radius * 0.035, -radius * 0.02, radius * 0.035]
+  );
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.29, radius * 0.16, radius * 0.045)
+    ),
+    holoFillMaterial(THREE, 0x07111f, 0.92),
+    [radius * 0.25, -radius * 0.01, radius * 0.055]
+  );
+  holoDisc(
+    THREE,
+    group,
+    holoColorMaterial(THREE, color, 1),
+    radius,
+    0.29,
+    -0.01,
+    0.42,
+    0.07
+  );
+
+  group.userData.walletPrototype = true;
+}
+
 function addWalletHolo(THREE, group, material, radius) {
   // Readable wallet: body, flap, side clasp dot.
   holoLine(THREE, group, material, radius, 0.68, 0.07, -0.04, -0.2);
@@ -502,7 +593,11 @@ function addAutomationHolo(THREE, group, material, radius) {
 function addModuleHologram(THREE, group, module, radius) {
   const projector = new THREE.Group();
   projector.name = `HologramProjector_${module.id}`;
-  projector.position.set(0, radius * 0.72, -radius * 0.3);
+  projector.position.set(
+    0,
+    radius * 0.72,
+    module.id === "wallet" ? -radius * 0.36 : -radius * 0.3
+  );
   group.add(projector);
 
   mesh(
@@ -530,22 +625,32 @@ function addModuleHologram(THREE, group, module, radius) {
 
   const billboard = new THREE.Group();
   billboard.name = `HologramBillboard_${module.id}`;
-  billboard.position.set(0, radius * 1.04, 0);
+  billboard.position.set(
+    0,
+    radius * (module.id === "wallet" ? 0.9 : 1.04),
+    0
+  );
   billboard.userData.baseY = billboard.position.y;
   billboard.userData.phase = module.id.length * 0.73;
   projector.add(billboard);
 
   const material = holoMaterial(THREE, module.colorHex, 0.88);
-  addHoloToken(THREE, billboard, module.colorHex, radius);
-  if (module.id === "wallet") addWalletHolo(THREE, billboard, material, radius);
-  if (module.id === "market") addMarketHolo(THREE, billboard, material, radius);
-  if (module.id === "collab") addCollabHolo(THREE, billboard, material, radius);
-  if (module.id === "scanner") addAutomationHolo(THREE, billboard, material, radius);
+  if (module.id === "wallet") {
+    addWalletTerminal(THREE, billboard, module.colorHex, radius);
+  } else {
+    addHoloToken(THREE, billboard, module.colorHex, radius);
+    if (module.id === "market") addMarketHolo(THREE, billboard, material, radius);
+    if (module.id === "collab") addCollabHolo(THREE, billboard, material, radius);
+    if (module.id === "scanner") addAutomationHolo(THREE, billboard, material, radius);
+  }
 
   const hitArea = mesh(
     THREE,
     billboard,
-    new THREE.PlaneGeometry(radius * 1.22, radius * 1.08),
+    new THREE.PlaneGeometry(
+      radius * (module.id === "wallet" ? 1.08 : 1.22),
+      radius * (module.id === "wallet" ? 1.16 : 1.08)
+    ),
     invisibleMaterial(THREE),
     [0, 0, radius * 0.08]
   );
@@ -764,6 +869,9 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
     building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
 
     root.add(building);
+    if (building.userData.baseHitArea) {
+      clickableBuildings.push(building.userData.baseHitArea);
+    }
     moduleGroups.set(module.id, building);
     if (building.userData.hologramBillboard) {
       hologramBillboards.push(building.userData.hologramBillboard);
