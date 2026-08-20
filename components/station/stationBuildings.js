@@ -818,97 +818,45 @@ function addModuleHologram(THREE, group, module, radius) {
   group.userData.hologramClickArea = hitArea;
 }
 
-function addPlatformServicePods(THREE, group, radius, color) {
+function addPlatformServiceCylinders(THREE, group, radius, platformMaterial) {
   [-0.39, 0.39].forEach((offset) => {
-    const pod = mesh(
+    const cylinder = mesh(
       THREE,
       group,
-      new THREE.CapsuleGeometry(radius * 0.17, radius * 0.46, 8, 16),
-      accentMaterial(THREE, color, 0.46),
-      [offset * radius, radius * 0.49, -radius * 0.31]
+      new THREE.CapsuleGeometry(radius * 0.22, radius * 0.62, 8, 18),
+      platformMaterial,
+      [offset * radius, radius * 0.5, -radius * 0.31]
     );
-    pod.rotation.z = Math.PI / 2;
-    pod.rotation.y = Math.PI / 2;
-    pod.userData.part = "platform-service-pod";
+    cylinder.rotation.z = Math.PI / 2;
+    cylinder.rotation.y = Math.PI / 2;
+    cylinder.userData.part = "platform-service-cylinder";
   });
 }
 
-function createAutomationStudio(THREE, group, radius, materials) {
-  addRadialHull(THREE, group, radius, materials, {
-    width: 1.52,
-    length: 1.72,
-    height: 0.22,
-    centerOffset: 0.34,
-  });
-
-  const lens = mesh(
-    THREE,
-    group,
-    new THREE.CylinderGeometry(radius * 0.43, radius * 0.52, radius * 0.1, 32),
-    bodyMaterial(THREE),
-    [0, radius * 0.49, -radius * 0.22]
-  );
-  lens.scale.z = 0.82;
-
-}
-
-function createProjectLibrary(THREE, group, radius, materials) {
-  addRadialHull(THREE, group, radius, materials, {
-    width: 1.58,
-    length: 1.75,
-    height: 0.22,
-    centerOffset: 0.34,
-  });
-
-  [-0.43, 0, 0.43].forEach((offset, index) => {
-    const cassette = mesh(
-      THREE,
-      group,
-      new THREE.BoxGeometry(radius * 0.39, radius * 0.17, radius * 1.04),
-      index === 1 ? bodyMaterial(THREE) : darkMaterial(THREE),
-      [offset * radius, radius * 0.50, -radius * 0.34]
-    );
-    cassette.rotation.y = offset * -0.08;
-  });
-}
-
-function createCommunityRelay(THREE, group, radius, materials) {
+function createStandardModulePlatform(THREE, group, radius, materials) {
   addRadialHull(THREE, group, radius, materials, {
     width: 1.6,
     length: 1.7,
     height: 0.21,
     centerOffset: 0.32,
   });
+  addPlatformServiceCylinders(THREE, group, radius, materials.body);
+}
 
+function createAutomationStudio(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
+}
+
+function createProjectLibrary(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
+}
+
+function createCommunityRelay(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
 }
 
 function createWalletMarket(THREE, group, radius, materials) {
-  addRadialHull(THREE, group, radius, materials, {
-    width: 1.54,
-    length: 1.7,
-    height: 0.24,
-    centerOffset: 0.34,
-  });
-
-  const vault = mesh(
-    THREE,
-    group,
-    new THREE.CylinderGeometry(radius * 0.49, radius * 0.62, radius * 0.16, 8),
-    bodyMaterial(THREE),
-    [0, radius * 0.50, radius * 0.02]
-  );
-  vault.rotation.y = Math.PI / 8;
-  vault.userData.part = "wallet-projector-plinth";
-
-  const core = mesh(
-    THREE,
-    group,
-    new THREE.CylinderGeometry(radius * 0.16, radius * 0.21, radius * 0.075, 20),
-    accentMaterial(THREE, WALLET_UI_BLUE, 0.9),
-    [0, radius * 0.62, radius * 0.02]
-  );
-  core.rotation.y = Math.PI / 8;
-  core.userData.part = "wallet-projector-core";
+  createStandardModulePlatform(THREE, group, radius, materials);
 }
 
 function createFallbackBuilding(THREE, group, radius, materials) {
@@ -954,7 +902,6 @@ function createModuleBuilding(THREE, module, diskRadius) {
   } else {
     createFallbackBuilding(THREE, group, featureRadius, materials);
   }
-  addPlatformServicePods(THREE, group, featureRadius, module.colorHex);
 
   group.traverse((object) => {
     if (object.userData.glyphPart && object.material) {
