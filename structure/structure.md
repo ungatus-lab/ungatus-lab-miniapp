@@ -782,6 +782,7 @@ ungatus-lab-miniapp/app/page.js
 import { useEffect, useMemo, useState } from "react";
 import AppDrawer from "../components/shell/AppDrawer";
 import PixelFlowSurvival from "../components/game/PixelFlowSurvival";
+import AccountStationPrototype from "../components/station/AccountStationPrototype";
 import {
   createTranslator,
   normalizeLanguage,
@@ -852,6 +853,7 @@ export default function Home() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nativeNoticeOpen, setNativeNoticeOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
+  const [stationOpen, setStationOpen] = useState(false);
 
   const t = useMemo(() => createTranslator(language), [language]);
 
@@ -941,6 +943,14 @@ export default function Home() {
     setGameOpen(false);
   }
 
+  function openStationPrototype() {
+    setStationOpen(true);
+  }
+
+  function closeStationPrototype() {
+    setStationOpen(false);
+  }
+
   function resetMiniAppEntrance() {
     if (typeof window === "undefined") return;
 
@@ -1014,6 +1024,7 @@ export default function Home() {
           telegramUser={telegramUser}
           t={t}
           onLaunchGame={openGame}
+          onLaunchStation={openStationPrototype}
         />
 
         <DualBottomNav
@@ -1040,6 +1051,15 @@ export default function Home() {
         />
 
         <PixelFlowSurvival open={gameOpen} onClose={closeGame} />
+
+        <AccountStationPrototype
+          open={stationOpen}
+          onClose={closeStationPrototype}
+          onOpenProfile={() => setDrawerOpen(true)}
+          onLaunchGame={openGame}
+          telegramUser={telegramUser}
+          t={t}
+        />
       </div>
     </div>
   );
@@ -1081,9 +1101,21 @@ function WelcomeScreen({ onStart, telegramUser, t }) {
   );
 }
 
-function RoomRenderer({ activeRoom, telegramUser, t, onLaunchGame }) {
+function RoomRenderer({
+  activeRoom,
+  telegramUser,
+  t,
+  onLaunchGame,
+  onLaunchStation,
+}) {
   if (activeRoom === "game") {
-    return <GameRoom t={t} onLaunchGame={onLaunchGame} />;
+    return (
+      <GameRoom
+        t={t}
+        onLaunchGame={onLaunchGame}
+        onLaunchStation={onLaunchStation}
+      />
+    );
   }
 
   if (activeRoom === "squad") {
@@ -1320,7 +1352,7 @@ function MarketRoom({ t }) {
   );
 }
 
-function GameRoom({ t, onLaunchGame }) {
+function GameRoom({ t, onLaunchGame, onLaunchStation }) {
   return (
     <>
       <RoomHeader
@@ -1359,6 +1391,10 @@ function GameRoom({ t, onLaunchGame }) {
 
         <button style={styles.primaryAction} onClick={onLaunchGame}>
           Launch Scenario Survival
+        </button>
+
+        <button style={styles.secondaryAction} onClick={onLaunchStation}>
+          Launch Account Station Prototype
         </button>
       </section>
     </>
@@ -2708,7 +2744,7 @@ const styles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    zIndex: 100,
+    zIndex: 260,
     background: "rgba(0,0,0,0.54)",
     backdropFilter: "blur(8px)",
     display: "flex",
@@ -2722,8 +2758,8 @@ const styles = {
     padding: "18px 14px 22px",
     boxSizing: "border-box",
     background:
-      "radial-gradient(circle at 0% 0%, rgba(139,92,246,0.24), transparent 34%), rgba(18,18,18,0.98)",
-    borderRight: "1px solid rgba(255,255,255,0.1)",
+      "radial-gradient(circle at 0% 0%, rgba(88,215,255,0.18), transparent 34%), linear-gradient(180deg,rgba(5,17,32,.995),rgba(2,7,17,.995))",
+    borderRight: "1px solid rgba(88,215,255,.2)",
     boxShadow: "24px 0 80px rgba(0,0,0,0.62)",
     color: "#ffffff",
   },
@@ -2748,9 +2784,9 @@ const styles = {
     borderRadius: "50%",
     display: "grid",
     placeItems: "center",
-    background: "linear-gradient(135deg, #7c3aed, #ec4899, #22d3ee)",
+    background: "linear-gradient(135deg,#153a59,#2c94c7,#58d7ff)",
     boxShadow:
-      "0 0 20px rgba(236,72,153,0.45), 0 0 48px rgba(34,211,238,0.18)",
+      "0 0 24px rgba(88,215,255,.34), 0 0 58px rgba(44,148,199,.18)",
     fontSize: 12,
     fontWeight: 900,
     letterSpacing: "0.08em",
@@ -2865,7 +2901,7 @@ const styles = {
     padding: "12px 12px",
     border: 0,
     borderRadius: 16,
-    background: "rgba(139,92,246,0.16)",
+    background: "rgba(88,215,255,.11)",
     color: "#ffffff",
     display: "flex",
     alignItems: "center",
@@ -2908,7 +2944,7 @@ const styles = {
     minWidth: 42,
     padding: "7px 9px",
     borderRadius: 999,
-    background: "rgba(34,211,238,0.14)",
+    background: "rgba(88,215,255,.13)",
     color: "#a5f3fc",
     border: "1px solid rgba(165,243,252,0.16)",
     fontSize: 12,
@@ -3075,6 +3111,8 @@ export default function AccountStationPrototype({
 }) {
   const [activeId, setActiveId] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [cameraReturnSignal, setCameraReturnSignal] = useState(0);
+  const [cameraState, setCameraState] = useState("home");
 
   useEffect(() => {
     if (!open) return undefined;
@@ -3100,6 +3138,11 @@ export default function AccountStationPrototype({
     setActiveId(moduleId);
   }
 
+  function closeModulePanel() {
+    setActiveId(null);
+    setCameraReturnSignal((value) => value + 1);
+  }
+
   function launchTraining() {
     completeMission("viewedNativeLab");
     if (typeof onLaunchTraining === "function") {
@@ -3119,7 +3162,11 @@ export default function AccountStationPrototype({
       <style>{css}</style>
 
       <section style={styles.viewport}>
-        <StationThreeView onSelectModule={setActiveId} />
+        <StationThreeView
+          onSelectModule={setActiveId}
+          onCameraStateChange={setCameraState}
+          returnHomeSignal={cameraReturnSignal}
+        />
       </section>
 
       <StationHomeHUD
@@ -3128,7 +3175,7 @@ export default function AccountStationPrototype({
         onOpenModule={openComplex}
         onLaunchTraining={launchTraining}
         onLaunchArena={launchArena}
-        compact={Boolean(active)}
+        compact={Boolean(active) || cameraState === "moving" || cameraState === "returning"}
       />
 
       {typeof onClose === "function" && !active && (
@@ -3146,7 +3193,7 @@ export default function AccountStationPrototype({
         <ModulePanel
           module={active}
           generation={progress?.station?.generation || 1}
-          onClose={() => setActiveId(null)}
+          onClose={closeModulePanel}
           onLaunchGame={launchArena}
         />
       )}
@@ -3400,49 +3447,16 @@ ungatus-lab-miniapp/components/station/StationHomeHUD.jsx
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  getProgressSummary,
   loadStationProgress,
   subscribeStationProgress,
   xpRequiredForLevel,
 } from "./stationProgress";
 
-const COMPLEXES = [
-  {
-    id: "nativeLab",
-    title: "NATIVE LAB",
-    subtitle: "Scanner · Recorder · Multi-device",
-    icon: "◉",
-    color: "#55e7ff",
-  },
-  {
-    id: "projectVault",
-    title: "PROJECT VAULT",
-    subtitle: "Blueprints · Scenarios · Catalog",
-    icon: "▣",
-    color: "#b99cff",
-  },
-  {
-    id: "communityRelay",
-    title: "NETWORK HUB",
-    subtitle: "Squad · Collab · Referrals",
-    icon: "⬡",
-    color: "#78f0bd",
-  },
-  {
-    id: "economyDock",
-    title: "ECONOMY DOCK",
-    subtitle: "UGT · Market · Allocation",
-    icon: "◇",
-    color: "#ffd36e",
-  },
-];
-
 export default function StationHomeHUD({
   telegramUser,
   onOpenProfile,
-  onOpenModule,
   onLaunchTraining,
   onLaunchArena,
   compact = false,
@@ -3454,390 +3468,78 @@ export default function StationHomeHUD({
     return subscribeStationProgress(setProgress);
   }, []);
 
-  const profileName =
-    telegramUser?.first_name || telegramUser?.username || "SceneAgent";
+  if (!progress) return null;
 
-  const summary = useMemo(
-    () => (progress ? getProgressSummary(progress) : null),
-    [progress]
-  );
-
-  if (!progress || !summary) return null;
-
-  const xpRequired = xpRequiredForLevel(progress.operator.level);
-  const xpPercent = Math.min(
-    100,
-    Math.round((progress.operator.xp / Math.max(1, xpRequired)) * 100)
-  );
-
-  const trainingFinished = progress.missions.completedTraining;
-  const primaryLabel = trainingFinished ? "ПРОДОЛЖИТЬ ОБУЧЕНИЕ" : "НАЧАТЬ ОБУЧЕНИЕ";
+  const name = telegramUser?.first_name || telegramUser?.username || "SceneAgent";
+  const required = xpRequiredForLevel(progress.operator.level);
+  const percent = Math.min(100, (progress.operator.xp / Math.max(1, required)) * 100);
 
   return (
     <div style={styles.root}>
       <style>{css}</style>
 
-      <header style={styles.topBar}>
-        <button
-          type="button"
-          style={styles.profileButton}
-          onClick={onOpenProfile}
-          aria-label="Открыть профиль"
-        >
-          <span style={styles.avatar}>PG</span>
-          <span style={styles.profileText}>
-            <b>{profileName}</b>
-            <small>
-              {progress.operator.title} · LV {progress.operator.level}
-            </small>
+      <button type="button" style={styles.profile} onClick={onOpenProfile}>
+        <span style={styles.avatar}>PG</span>
+        <span style={styles.identity}>
+          <b>{name}</b>
+          <small>ОПЕРАТОР · УРОВЕНЬ {progress.operator.level}</small>
+          <span style={styles.xpTrack}>
+            <i style={{ ...styles.xpFill, width: `${percent}%` }} />
           </span>
-        </button>
-
-        <div style={styles.generationBadge}>
-          <small>STATION</small>
-          <b>G{progress.station.generation}</b>
-        </div>
-      </header>
-
-      <section style={styles.progressCard}>
-        <div style={styles.progressTop}>
-          <span>OPERATOR XP</span>
-          <b>
-            {progress.operator.xp} / {xpRequired}
-          </b>
-        </div>
-        <div style={styles.progressTrack}>
-          <div style={{ ...styles.progressFill, width: `${xpPercent}%` }} />
-        </div>
-        <div style={styles.quickStats}>
-          <Metric label="UGT" value={summary.gameUgt} />
-          <Metric label="STREAK" value={`${progress.operator.streak}D`} />
-          <Metric label="RATING" value={progress.game.rating || "—"} />
-        </div>
-      </section>
+        </span>
+        <span style={styles.generation}>G{progress.station.generation}</span>
+      </button>
 
       {!compact && (
-        <section style={styles.moduleRail} aria-label="Системы станции">
-          {COMPLEXES.map((complex) => {
-            const unlocked = progress.unlocks[complex.id] !== false;
-            return (
-              <button
-                key={complex.id}
-                type="button"
-                disabled={!unlocked}
-                onClick={() => onOpenModule?.(complex.id)}
-                style={{
-                  ...styles.moduleCard,
-                  borderColor: `${complex.color}42`,
-                  opacity: unlocked ? 1 : 0.5,
-                }}
-              >
-                <span
-                  style={{
-                    ...styles.moduleIcon,
-                    color: complex.color,
-                    boxShadow: `0 0 22px ${complex.color}22`,
-                  }}
-                >
-                  {complex.icon}
-                </span>
-                <span style={styles.moduleText}>
-                  <b>{complex.title}</b>
-                  <small>{unlocked ? complex.subtitle : "LOCKED"}</small>
-                </span>
-              </button>
-            );
-          })}
-        </section>
+        <div style={styles.hint}>
+          <span style={styles.hintDot} />
+          <span>Нажмите светящийся комплекс станции</span>
+        </div>
       )}
 
-      <section style={styles.bottomDock}>
-        <div style={styles.missionCard}>
-          <span style={styles.missionPulse} />
-          <div>
-            <small>CURRENT MISSION</small>
-            <b>
-              {trainingFinished
-                ? "Проверь системы станции"
-                : "Заверши первое обучение"}
-            </b>
-          </div>
-          <span style={styles.reward}>+XP</span>
-        </div>
-
-        <div style={styles.actions}>
-          <button
-            type="button"
-            style={styles.trainingButton}
-            onClick={onLaunchTraining}
-          >
-            <span>◎</span>
-            <span>
-              <small>NATIVE TRAINING</small>
-              <b>{primaryLabel}</b>
-            </span>
+      {!compact && (
+        <div style={styles.bottomRow}>
+          <button type="button" style={styles.mission} onClick={onLaunchTraining}>
+            <small>ПЕРВАЯ МИССИЯ</small>
+            <b>Обучение автоматизации</b>
+            <span>+XP</span>
           </button>
 
-          <button
-            type="button"
-            style={styles.arenaButton}
-            onClick={onLaunchArena}
-          >
-            <span style={styles.arenaIcon}>⚔</span>
-            <span>
-              <small>PVP SIGNAL ONLINE</small>
-              <b>В БОЙ</b>
-            </span>
+          <button type="button" style={styles.arena} onClick={onLaunchArena}>
+            <small>АРЕНА</small>
+            <b>В БОЙ</b>
           </button>
         </div>
-      </section>
-    </div>
-  );
-}
-
-function Metric({ label, value }) {
-  return (
-    <div style={styles.metric}>
-      <small>{label}</small>
-      <b>{value}</b>
+      )}
     </div>
   );
 }
 
 const css = `
-@keyframes stationHudPulse {
-  0%,100% { opacity:.55; transform:scale(.9); }
-  50% { opacity:1; transform:scale(1.15); }
-}
-@keyframes arenaGlow {
-  0%,100% { box-shadow:0 0 22px rgba(244,63,94,.22); }
-  50% { box-shadow:0 0 42px rgba(139,92,246,.34); }
-}
+@keyframes hudPulse { 0%,100%{opacity:.5} 50%{opacity:1} }
+@keyframes arenaPulse { 0%,100%{box-shadow:0 0 18px rgba(244,63,94,.22)} 50%{box-shadow:0 0 36px rgba(139,92,246,.38)} }
 `;
 
 const glass = {
-  background: "linear-gradient(145deg,rgba(5,12,27,.82),rgba(5,5,18,.68))",
-  border: "1px solid rgba(155,225,255,.14)",
-  backdropFilter: "blur(18px)",
-  WebkitBackdropFilter: "blur(18px)",
+  background: "linear-gradient(145deg,rgba(3,10,24,.82),rgba(7,5,20,.64))",
+  border: "1px solid rgba(150,220,255,.16)",
+  backdropFilter: "blur(16px)",
+  WebkitBackdropFilter: "blur(16px)",
 };
 
 const styles = {
-  root: {
-    position: "absolute",
-    inset: 0,
-    zIndex: 90,
-    pointerEvents: "none",
-    color: "#f4fbff",
-    fontFamily: "Inter,system-ui,-apple-system,'Segoe UI',sans-serif",
-  },
-  topBar: {
-    position: "absolute",
-    top: "max(10px, env(safe-area-inset-top))",
-    left: 10,
-    right: 10,
-    minHeight: 58,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    padding: "8px 9px",
-    borderRadius: 20,
-    boxSizing: "border-box",
-    pointerEvents: "auto",
-    ...glass,
-  },
-  profileButton: {
-    minWidth: 0,
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: 0,
-    border: 0,
-    background: "transparent",
-    color: "white",
-    textAlign: "left",
-    cursor: "pointer",
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    flexShrink: 0,
-    borderRadius: 13,
-    display: "grid",
-    placeItems: "center",
-    background: "linear-gradient(135deg,#0891b2,#7c3aed,#ec4899)",
-    boxShadow: "0 0 24px rgba(34,211,238,.22)",
-    fontSize: 11,
-    fontWeight: 950,
-  },
-  profileText: {
-    minWidth: 0,
-    display: "flex",
-    flexDirection: "column",
-  },
-  generationBadge: {
-    minWidth: 66,
-    height: 40,
-    borderRadius: 13,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(34,211,238,.08)",
-    border: "1px solid rgba(103,232,249,.2)",
-  },
-  progressCard: {
-    position: "absolute",
-    top: "calc(max(10px, env(safe-area-inset-top)) + 68px)",
-    left: 10,
-    right: 10,
-    padding: "9px 11px",
-    borderRadius: 17,
-    pointerEvents: "none",
-    ...glass,
-  },
-  progressTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 8,
-    letterSpacing: ".1em",
-    color: "rgba(220,240,255,.68)",
-  },
-  progressTrack: {
-    height: 5,
-    margin: "7px 0 8px",
-    overflow: "hidden",
-    borderRadius: 99,
-    background: "rgba(255,255,255,.08)",
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 99,
-    background: "linear-gradient(90deg,#22d3ee,#8b5cf6,#ec4899)",
-    boxShadow: "0 0 14px rgba(34,211,238,.45)",
-    transition: "width .35s ease",
-  },
-  quickStats: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3,1fr)",
-    gap: 6,
-  },
-  metric: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 5,
-    fontSize: 10,
-  },
-  moduleRail: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    top: "calc(max(10px, env(safe-area-inset-top)) + 126px)",
-    display: "grid",
-    gridTemplateColumns: "repeat(2,minmax(0,1fr))",
-    gap: 7,
-    pointerEvents: "auto",
-  },
-  moduleCard: {
-    minWidth: 0,
-    minHeight: 49,
-    padding: "7px 8px",
-    borderRadius: 15,
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    color: "white",
-    cursor: "pointer",
-    ...glass,
-  },
-  moduleIcon: {
-    width: 32,
-    height: 32,
-    flexShrink: 0,
-    display: "grid",
-    placeItems: "center",
-    borderRadius: 10,
-    background: "rgba(255,255,255,.045)",
-    fontSize: 17,
-  },
-  moduleText: {
-    minWidth: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
-    textAlign: "left",
-  },
-  bottomDock: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: "max(12px, env(safe-area-inset-bottom))",
-    display: "grid",
-    gap: 7,
-    pointerEvents: "auto",
-  },
-  missionCard: {
-    minHeight: 42,
-    padding: "7px 10px",
-    borderRadius: 15,
-    display: "grid",
-    gridTemplateColumns: "12px 1fr auto",
-    gap: 8,
-    alignItems: "center",
-    ...glass,
-  },
-  missionPulse: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    background: "#67e8f9",
-    boxShadow: "0 0 14px #22d3ee",
-    animation: "stationHudPulse 1.8s infinite",
-  },
-  reward: {
-    color: "#fde68a",
-    fontSize: 10,
-    fontWeight: 900,
-  },
-  actions: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1.08fr",
-    gap: 7,
-  },
-  trainingButton: {
-    minHeight: 58,
-    padding: "8px 10px",
-    borderRadius: 17,
-    border: "1px solid rgba(103,232,249,.22)",
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    background: "linear-gradient(135deg,rgba(6,78,99,.92),rgba(49,46,129,.88))",
-    color: "white",
-    textAlign: "left",
-    cursor: "pointer",
-  },
-  arenaButton: {
-    minHeight: 58,
-    padding: "8px 11px",
-    borderRadius: 17,
-    border: "1px solid rgba(251,113,133,.28)",
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    background: "linear-gradient(135deg,#be123c,#7c3aed 58%,#0369a1)",
-    color: "white",
-    textAlign: "left",
-    cursor: "pointer",
-    animation: "arenaGlow 2.2s infinite",
-  },
-  arenaIcon: {
-    fontSize: 22,
-    filter: "drop-shadow(0 0 8px rgba(255,255,255,.35))",
-  },
-  profileTextSmall: {},
+  root: { position:"absolute", inset:0, zIndex:90, pointerEvents:"none", color:"#f4fbff", fontFamily:"Inter,system-ui,sans-serif" },
+  profile: { position:"absolute", top:"max(10px,env(safe-area-inset-top))", left:10, right:10, minHeight:58, padding:"8px 10px", borderRadius:19, display:"grid", gridTemplateColumns:"40px 1fr 44px", alignItems:"center", gap:10, color:"white", textAlign:"left", pointerEvents:"auto", cursor:"pointer", ...glass },
+  avatar: { width:40, height:40, borderRadius:13, display:"grid", placeItems:"center", background:"linear-gradient(135deg,#0891b2,#7c3aed,#ec4899)", fontSize:11, fontWeight:950, boxShadow:"0 0 22px rgba(34,211,238,.22)" },
+  identity: { minWidth:0, display:"grid", gap:2 },
+  xpTrack: { height:3, marginTop:3, borderRadius:99, overflow:"hidden", background:"rgba(255,255,255,.09)" },
+  xpFill: { display:"block", height:"100%", borderRadius:99, background:"linear-gradient(90deg,#22d3ee,#8b5cf6,#ec4899)" },
+  generation: { width:40, height:40, borderRadius:13, display:"grid", placeItems:"center", background:"rgba(34,211,238,.08)", border:"1px solid rgba(103,232,249,.22)", fontWeight:900 },
+  hint: { position:"absolute", top:"calc(max(10px,env(safe-area-inset-top)) + 72px)", left:"50%", transform:"translateX(-50%)", display:"flex", alignItems:"center", gap:7, padding:"7px 10px", borderRadius:999, whiteSpace:"nowrap", fontSize:10, color:"rgba(225,242,255,.72)", pointerEvents:"none", ...glass },
+  hintDot: { width:6, height:6, borderRadius:"50%", background:"#67e8f9", boxShadow:"0 0 12px #22d3ee", animation:"hudPulse 1.6s infinite" },
+  bottomRow: { position:"absolute", left:10, right:10, bottom:"max(12px,env(safe-area-inset-bottom))", display:"grid", gridTemplateColumns:"1fr 112px", gap:8, pointerEvents:"auto" },
+  mission: { minHeight:48, padding:"8px 11px", borderRadius:16, color:"white", textAlign:"left", display:"grid", gridTemplateColumns:"1fr auto", border:"1px solid rgba(103,232,249,.18)", background:"linear-gradient(135deg,rgba(6,78,99,.8),rgba(49,46,129,.7))", cursor:"pointer" },
+  arena: { minHeight:48, padding:"8px 12px", borderRadius:16, border:"1px solid rgba(251,113,133,.28)", color:"white", display:"grid", alignContent:"center", textAlign:"left", background:"linear-gradient(135deg,#be123c,#7c3aed 58%,#0369a1)", cursor:"pointer", animation:"arenaPulse 2.2s infinite" },
 };
 
 
@@ -3851,20 +3553,12 @@ ungatus-lab-miniapp/components/station/StationThreeView.jsx
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
-  CAMERA_POSES,
-  OBSERVER_POSITION,
-  OBSERVER_LATERAL_SHIFT,
-  OBSERVER_SCREEN_DOWN_SHIFT,
-  OBSERVER_TO_BEAM_FRACTION,
-  OBSERVER_TO_PLATFORM,
-  OBSERVER_TO_FRAME_SEAM_STEP,
-  INITIAL_LOOK_TARGET,
-  HEAD_ROTATION,
-  LOOK_TARGETS,
-  SPACE_OBJECTS,
+  HOME_VIEW,
+  MODULE_FOCUS,
   SCENE_CONFIG,
+  SPACE_OBJECTS,
   STATION_MODEL_URL,
 } from "./stationConfig";
 import {
@@ -3872,32 +3566,19 @@ import {
   pulseStationBuilding,
 } from "./stationBuildings";
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function interpolatePose(start, end, t) {
-  return {
-    x: lerp(start.x, end.x, t),
-    y: lerp(start.y, end.y, t),
-    z: lerp(start.z, end.z, t),
-  };
-}
-
-export default function StationThreeView({ onSelectModule }) {
+export default function StationThreeView({
+  onSelectModule,
+  onCameraStateChange,
+  returnHomeSignal = 0,
+}) {
   const hostRef = useRef(null);
-  const rigRef = useRef(null);
-  const [coords, setCoords] = useState({
-    ...OBSERVER_POSITION,
-    tx: HEAD_ROTATION.startYawDeg,
-    ty: 0,
-    tz: 0,
-  });
-  const [panoramaFrame, setPanoramaFrame] = useState(1);
+  const selectRef = useRef(onSelectModule);
+  const stateRef = useRef(onCameraStateChange);
+  const returnRef = useRef(returnHomeSignal);
+
+  useEffect(() => { selectRef.current = onSelectModule; }, [onSelectModule]);
+  useEffect(() => { stateRef.current = onCameraStateChange; }, [onCameraStateChange]);
+  useEffect(() => { returnRef.current = returnHomeSignal; }, [returnHomeSignal]);
 
   useEffect(() => {
     let disposed = false;
@@ -3913,15 +3594,12 @@ export default function StationThreeView({ onSelectModule }) {
       const { GLTFLoader } = await import(
         /* webpackIgnore: true */ "https://esm.sh/three@0.167.1/examples/jsm/loaders/GLTFLoader.js"
       );
-
       if (disposed || !hostRef.current) return;
 
       const host = hostRef.current;
       const scene = new THREE.Scene();
-      scene.background = null;
-
       const camera = new THREE.PerspectiveCamera(
-        SCENE_CONFIG.cameraFov,
+        HOME_VIEW.fov,
         1,
         SCENE_CONFIG.cameraNear,
         SCENE_CONFIG.cameraFar
@@ -3933,20 +3611,18 @@ export default function StationThreeView({ onSelectModule }) {
         alpha: true,
         powerPreference: "high-performance",
       });
-      renderer.setClearColor(0x010207, 0.18);
+      renderer.setClearColor(0x010207, 0.12);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
-      renderer.domElement.style.width = "100%";
-      renderer.domElement.style.height = "100%";
-      renderer.domElement.style.display = "block";
-      renderer.domElement.style.touchAction = "none";
+      renderer.toneMappingExposure = 1.18;
+      Object.assign(renderer.domElement.style, {
+        width: "100%",
+        height: "100%",
+        display: "block",
+        touchAction: "manipulation",
+      });
       host.appendChild(renderer.domElement);
-
-      // Deep-space environment: layered stars, giant sun and a distant PvP rift.
-      const spaceRoot = new THREE.Group();
-      scene.add(spaceRoot);
 
       function createStarLayer(count, spread, size, color, opacity) {
         const positions = new Float32Array(count * 3);
@@ -3960,357 +3636,252 @@ export default function StationThreeView({ onSelectModule }) {
         }
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        const material = new THREE.PointsMaterial({
-          color,
-          size,
-          transparent: true,
-          opacity,
-          sizeAttenuation: true,
-          depthWrite: false,
-        });
-        return new THREE.Points(geometry, material);
+        return new THREE.Points(
+          geometry,
+          new THREE.PointsMaterial({
+            color, size, transparent: true, opacity,
+            sizeAttenuation: true, depthWrite: false,
+          })
+        );
       }
 
-      const farStars = createStarLayer(900, 175, 0.28, 0xb8d7ff, 0.72);
-      const nearStars = createStarLayer(260, 105, 0.48, 0xffffff, 0.88);
-      spaceRoot.add(farStars, nearStars);
+      const farStars = createStarLayer(850, 175, 0.28, 0xb8d7ff, 0.7);
+      const nearStars = createStarLayer(220, 105, 0.46, 0xffffff, 0.86);
+      scene.add(farStars, nearStars);
 
       const sunRoot = new THREE.Group();
-      sunRoot.position.set(-78, 48, -96);
       const sunCore = new THREE.Mesh(
         new THREE.SphereGeometry(15, 48, 32),
-        new THREE.MeshBasicMaterial({ color: 0xffe0a0 })
+        new THREE.MeshBasicMaterial({ color: 0xffcf78 })
       );
       const sunHalo = new THREE.Mesh(
         new THREE.SphereGeometry(22, 40, 28),
         new THREE.MeshBasicMaterial({
-          color: 0xff8a35,
-          transparent: true,
-          opacity: 0.11,
-          depthWrite: false,
-          side: THREE.BackSide,
+          color: 0xff8a35, transparent: true, opacity: 0.065,
+          depthWrite: false, side: THREE.BackSide,
         })
       );
       const sunCorona = new THREE.Mesh(
         new THREE.SphereGeometry(30, 36, 24),
         new THREE.MeshBasicMaterial({
-          color: 0xff5d57,
-          transparent: true,
-          opacity: 0.035,
-          depthWrite: false,
-          side: THREE.BackSide,
+          color: 0xff5d57, transparent: true, opacity: 0.018,
+          depthWrite: false, side: THREE.BackSide,
         })
       );
       sunRoot.add(sunCore, sunHalo, sunCorona);
-      spaceRoot.add(sunRoot);
+      scene.add(sunRoot);
 
-      const riftRoot = new THREE.Group();
-      riftRoot.position.set(68, 5, -115);
-      riftRoot.rotation.x = Math.PI / 2.35;
-      const riftOuter = new THREE.Mesh(
-        new THREE.TorusGeometry(12, 1.15, 18, 72),
-        new THREE.MeshBasicMaterial({
-          color: 0xff416c,
-          transparent: true,
-          opacity: 0.62,
-          depthWrite: false,
-        })
-      );
-      const riftInner = new THREE.Mesh(
-        new THREE.TorusGeometry(8.7, 0.34, 12, 64),
-        new THREE.MeshBasicMaterial({
-          color: 0x8f6bff,
-          transparent: true,
-          opacity: 0.72,
-          depthWrite: false,
-        })
-      );
-      riftRoot.add(riftOuter, riftInner);
-      spaceRoot.add(riftRoot);
-
-      const sunLight = new THREE.DirectionalLight(0xffb56b, 0.55);
-      sunLight.position.copy(sunRoot.position);
+      const sunLight = new THREE.DirectionalLight(0xffc47f, 1.0);
       scene.add(sunLight);
-
-      scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x07101f, 1.45));
-
-      const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
+      scene.add(new THREE.HemisphereLight(0xb9ddff, 0x172332, 1.35));
+      scene.add(new THREE.AmbientLight(0x6f8193, 0.24));
+      const keyLight = new THREE.DirectionalLight(0xd5ebff, 1.35);
       keyLight.position.set(8, 18, 16);
       scene.add(keyLight);
-
-      const rimLight = new THREE.DirectionalLight(0x65baff, 2);
+      const rimLight = new THREE.DirectionalLight(0x4aa8ff, 0.7);
       rimLight.position.set(-14, 7, -10);
       scene.add(rimLight);
 
-      const loader = new GLTFLoader();
-      loader.load(
+      let stationCenter = null;
+      let diskRadius = 1;
+      let buildings = null;
+      let homePosition = null;
+      let homeQuaternion = null;
+      let cameraMotion = null;
+      let cameraState = "home";
+      let focusedId = null;
+      let handledReturn = returnRef.current;
+      const parentWorldQuaternion = new THREE.Quaternion();
+      const inverseParentQuaternion = new THREE.Quaternion();
+
+      const reportState = (value) => {
+        cameraState = value;
+        stateRef.current?.(value);
+      };
+      const ease = (t) => t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const shortestAngle = (value) => {
+        let angle = value;
+        while (angle > Math.PI) angle -= Math.PI * 2;
+        while (angle < -Math.PI) angle += Math.PI * 2;
+        return angle;
+      };
+
+      const beginMove = (endPosition, endQuaternion, id, returning = false) => {
+        if (!stationCenter) return;
+        const startOffset = camera.position.clone().sub(stationCenter);
+        const endOffset = endPosition.clone().sub(stationCenter);
+        const startAngle = Math.atan2(startOffset.z, startOffset.x);
+        const endAngle = Math.atan2(endOffset.z, endOffset.x);
+        cameraMotion = {
+          startedAt: performance.now(),
+          startQuaternion: camera.quaternion.clone(),
+          endQuaternion: endQuaternion.clone(),
+          endPosition: endPosition.clone(),
+          startRadius: Math.hypot(startOffset.x, startOffset.z),
+          endRadius: Math.hypot(endOffset.x, endOffset.z),
+          startHeight: startOffset.y,
+          endHeight: endOffset.y,
+          startAngle,
+          angleDelta: shortestAngle(endAngle - startAngle),
+          id,
+          returning,
+        };
+        reportState(returning ? "returning" : "moving");
+      };
+
+      const returnHome = () => {
+        if (!homePosition || !homeQuaternion) return;
+        beginMove(homePosition, homeQuaternion, null, true);
+      };
+
+      new GLTFLoader().load(
         STATION_MODEL_URL,
         (gltf) => {
           if (disposed) return;
-
           const station = gltf.scene;
           station.rotation.x = -Math.PI / 2;
           scene.add(station);
           station.updateMatrixWorld(true);
 
           const bounds = new THREE.Box3().setFromObject(station);
-          const center = bounds.getCenter(new THREE.Vector3());
+          stationCenter = bounds.getCenter(new THREE.Vector3());
           const sphere = bounds.getBoundingSphere(new THREE.Sphere());
           const radius = sphere.radius;
 
-          // Fixed world-space observer, close to sector 9.
-          const observerWorld = center.clone().add(new THREE.Vector3(
-            radius * OBSERVER_POSITION.x / 100,
-            radius * OBSERVER_POSITION.y / 100,
-            radius * OBSERVER_POSITION.z / 100
-          ));
-          const initialTarget = center.clone().add(new THREE.Vector3(
-            radius * INITIAL_LOOK_TARGET.x / 100,
-            radius * INITIAL_LOOK_TARGET.y / 100,
-            radius * INITIAL_LOOK_TARGET.z / 100
-          ));
+          station.traverse((object) => {
+            if (!object.isMesh || !object.material) return;
+            const originals = Array.isArray(object.material)
+              ? object.material : [object.material];
+            const tinted = originals.map((source) => {
+              const material = source.clone();
+              const sourceColor = material.color?.clone?.() || new THREE.Color(0x8b98a6);
+              const luminance = sourceColor.r * 0.2126 + sourceColor.g * 0.7152 + sourceColor.b * 0.0722;
+              const targetColor = luminance > 0.58
+                ? new THREE.Color(0x506275) : new THREE.Color(0x172535);
+              material.color = sourceColor.lerp(targetColor, 0.68);
+              if ("metalness" in material) material.metalness = Math.max(material.metalness || 0, 0.58);
+              if ("roughness" in material) material.roughness = 0.34;
+              if ("emissive" in material) {
+                material.emissive = new THREE.Color(luminance > 0.7 ? 0x071725 : 0x02070d);
+                material.emissiveIntensity = luminance > 0.7 ? 0.1 : 0.025;
+              }
+              material.needsUpdate = true;
+              return material;
+            });
+            object.material = Array.isArray(object.material) ? tinted : tinted[0];
+          });
 
-          // Parallel translation to screen-right. Target follows by the same amount,
-          // preserving direction, distance, height and all panorama angles.
-          const initialDirection = initialTarget.clone()
-            .sub(observerWorld)
-            .normalize();
-          const screenRight = new THREE.Vector3()
-            .crossVectors(initialDirection, camera.up)
-            .normalize();
-          const lateralShift = screenRight.multiplyScalar(
-            radius * OBSERVER_LATERAL_SHIFT
+          const direction = new THREE.Vector3(
+            HOME_VIEW.direction.x,
+            HOME_VIEW.direction.y,
+            HOME_VIEW.direction.z
+          ).normalize();
+          const target = stationCenter.clone().add(
+            new THREE.Vector3(0, radius * HOME_VIEW.targetHeight, 0)
           );
-          const screenUp = new THREE.Vector3()
-            .crossVectors(screenRight, initialDirection)
-            .normalize();
-          const screenDownShift = screenUp.multiplyScalar(
-            -radius * OBSERVER_SCREEN_DOWN_SHIFT
-          );
-          const screenShift = lateralShift.add(screenDownShift);
-          observerWorld.add(screenShift);
-          initialTarget.add(screenShift);
+          camera.position.copy(target).addScaledVector(direction, radius * HOME_VIEW.distance);
+          camera.lookAt(target);
+          camera.near = Math.max(0.05, radius * 0.01);
+          camera.far = radius * 20;
+          camera.updateProjectionMatrix();
+          homePosition = camera.position.clone();
+          homeQuaternion = camera.quaternion.clone();
 
-          // Exact A -> B move from the observer toward the marked beam center.
-          // The target stays fixed. No orbit, no sideways drift and no radius-based direction.
-          observerWorld.lerp(initialTarget, OBSERVER_TO_BEAM_FRACTION);
-
-          // Move toward the selected circular platform, not toward the station center.
-          const modelSize = bounds.getSize(new THREE.Vector3());
-          const diskRadius = Math.min(modelSize.x, modelSize.z) * 0.5;
-          const platformAngle = THREE.MathUtils.degToRad(
-            OBSERVER_TO_PLATFORM.angleDeg
-          );
-          const platformTarget = new THREE.Vector3(
-            center.x + Math.cos(platformAngle) * diskRadius * OBSERVER_TO_PLATFORM.ring,
-            observerWorld.y,
-            center.z + Math.sin(platformAngle) * diskRadius * OBSERVER_TO_PLATFORM.ring
-          );
-          observerWorld.lerp(platformTarget, OBSERVER_TO_PLATFORM.fraction);
-
-          camera.position.copy(observerWorld);
-          camera.lookAt(initialTarget);
-          const baseQuaternion = camera.quaternion.clone();
-
-          // Exact old middle frame becomes the new start: yaw 45 degrees.
-          const startYawQuaternion = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            THREE.MathUtils.degToRad(HEAD_ROTATION.startYawDeg)
-          );
-          const endYawQuaternion = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            THREE.MathUtils.degToRad(HEAD_ROTATION.endYawDeg)
-          );
-          const startPitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(1, 0, 0),
-            THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg * 0.5)
-          );
-          const endPitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(1, 0, 0),
-            THREE.MathUtils.degToRad(HEAD_ROTATION.pitchLiftDeg)
-          );
-          const startQuaternion = baseQuaternion.clone()
-            .premultiply(startYawQuaternion)
-            .multiply(startPitchQuaternion);
-          const endQuaternion = baseQuaternion.clone()
-            .premultiply(endYawQuaternion)
-            .multiply(endPitchQuaternion);
-
-          // Destination is the angular seam between frame 1 left edge
-          // and frame 2 right edge. Move only the observer by the same
-          // absolute approach step used previously; keep gaze angles unchanged.
-          const middleQuaternion = new THREE.Quaternion().slerpQuaternions(
-            startQuaternion,
-            endQuaternion,
-            0.5
-          );
-          const halfVerticalFov = THREE.MathUtils.degToRad(camera.fov * 0.5);
-          const halfHorizontalFov = Math.atan(
-            Math.tan(halfVerticalFov) * camera.aspect
-          );
-          const frame1LeftDirection = new THREE.Vector3(
-            -Math.tan(halfHorizontalFov), 0, -1
-          ).normalize().applyQuaternion(startQuaternion);
-          const frame2RightDirection = new THREE.Vector3(
-            Math.tan(halfHorizontalFov), 0, -1
-          ).normalize().applyQuaternion(middleQuaternion);
-          const seamDirection = frame1LeftDirection
-            .add(frame2RightDirection)
-            .normalize();
-          const seamStepDistance =
-            observerWorld.distanceTo(initialTarget) * OBSERVER_TO_FRAME_SEAM_STEP;
-          observerWorld.addScaledVector(seamDirection, seamStepDistance);
-
-          // Preserve the approved gaze; only the observer position changes.
-          camera.position.copy(observerWorld);
-          camera.quaternion.copy(startQuaternion);
-
-          // Place the sun in the final left-looking horizon. Hide the temporary rift.
-          const endDirection = new THREE.Vector3(0, 0, -1)
-            .applyQuaternion(endQuaternion)
-            .normalize();
-          const endRight = new THREE.Vector3()
-            .crossVectors(endDirection, camera.up)
-            .normalize();
-          const endUp = new THREE.Vector3()
-            .crossVectors(endRight, endDirection)
-            .normalize();
-
-          sunRoot.position.copy(observerWorld)
-            .addScaledVector(endDirection, radius * SPACE_OBJECTS.sun.distance)
-            .addScaledVector(endRight, radius * SPACE_OBJECTS.sun.sideOffset)
-            .addScaledVector(endUp, radius * SPACE_OBJECTS.sun.heightOffset);
+          const forward = target.clone().sub(camera.position).normalize();
+          const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+          const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+          sunRoot.position.copy(camera.position)
+            .addScaledVector(forward, radius * SPACE_OBJECTS.sun.distance)
+            .addScaledVector(right, radius * SPACE_OBJECTS.sun.sideOffset)
+            .addScaledVector(up, radius * SPACE_OBJECTS.sun.heightOffset);
           sunRoot.scale.setScalar((radius * SPACE_OBJECTS.sun.radius) / 15);
           sunLight.position.copy(sunRoot.position);
-          riftRoot.visible = false;
+          sunLight.target.position.copy(stationCenter);
+          scene.add(sunLight.target);
 
-          const buildings = createStationBuildings({
-            THREE,
-            station,
-            bounds,
-            center,
+          const sunSideFill = new THREE.DirectionalLight(0xffc892, 0.48);
+          sunSideFill.position.copy(stationCenter)
+            .addScaledVector(right, -radius * 3.0)
+            .addScaledVector(up, radius * 1.8)
+            .addScaledVector(forward, -radius * 0.8);
+          sunSideFill.target.position.copy(stationCenter);
+          scene.add(sunSideFill, sunSideFill.target);
+
+          buildings = createStationBuildings({
+            THREE, station, bounds, center: stationCenter,
           });
+          diskRadius = buildings.diskRadius;
           scene.add(buildings.root);
 
-          const rig = {
-            progress: 0,
-            goal: 0,
-            setProgress(value, immediate = false) {
-              rig.goal = clamp(value, 0, 1);
-              if (immediate) rig.progress = rig.goal;
-            },
-            update() {
-              rig.progress +=
-                (rig.goal - rig.progress) * SCENE_CONFIG.swipeSmoothing;
-              camera.position.copy(observerWorld);
-              camera.quaternion.slerpQuaternions(
-                startQuaternion,
-                endQuaternion,
-                rig.progress
-              );
-            },
+          const focusModule = (moduleId) => {
+            const group = buildings.moduleGroups.get(moduleId);
+            if (!group || cameraMotion) return;
+            group.updateWorldMatrix(true, false);
+            const sectorCenter = group.getWorldPosition(new THREE.Vector3());
+            const outward = sectorCenter.clone().sub(stationCenter);
+            outward.y = 0;
+            outward.normalize();
+
+            // Camera sits outside the selected clock position and looks through it at Core.
+            const endPosition = stationCenter.clone()
+              .addScaledVector(outward, diskRadius * 1.42)
+              .addScaledVector(camera.up, diskRadius * 0.46);
+            const lookTarget = stationCenter.clone()
+              .addScaledVector(camera.up, diskRadius * 0.12);
+            const lookCamera = camera.clone();
+            lookCamera.position.copy(endPosition);
+            lookCamera.up.copy(camera.up);
+            lookCamera.lookAt(lookTarget);
+            beginMove(endPosition, lookCamera.quaternion, moduleId, false);
           };
-          rigRef.current = rig;
-          rig.update();
 
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
-          const swipe = {
-            down: false,
-            startX: 0,
-            startY: 0,
-            moved: 0,
-            startProgress: 0,
-          };
-
+          let pointerDown = null;
           const onPointerDown = (event) => {
-            swipe.down = true;
-            swipe.startX = event.clientX;
-            swipe.startY = event.clientY;
-            swipe.moved = 0;
-            swipe.startProgress = rig.goal;
-            renderer.domElement.setPointerCapture?.(event.pointerId);
+            pointerDown = { x: event.clientX, y: event.clientY };
           };
-
-          const onPointerMove = (event) => {
-            if (!swipe.down) return;
-
-            const dx = event.clientX - swipe.startX;
-            const dy = event.clientY - swipe.startY;
-            swipe.moved = Math.max(swipe.moved, Math.hypot(dx, dy));
-
-            const width = Math.max(1, host.clientWidth);
-            rig.setProgress(
-              swipe.startProgress +
-                dx / (width * 0.58)
-            );
-          };
-
           const onPointerUp = (event) => {
-            if (!swipe.down) return;
-            swipe.down = false;
-
-            if (swipe.moved < SCENE_CONFIG.tapThresholdPx) {
-              const rect = renderer.domElement.getBoundingClientRect();
-              pointer.set(
-                ((event.clientX - rect.left) / rect.width) * 2 - 1,
-                -((event.clientY - rect.top) / rect.height) * 2 + 1
-              );
-
-              raycaster.setFromCamera(pointer, camera);
-              const hit = raycaster
-                .intersectObjects(buildings.clickableBuildings, true)
-                .find((result) => result.object.userData.moduleId);
-
-              if (hit) {
-                const moduleId = hit.object.userData.moduleId;
-                pulseStationBuilding(buildings.moduleGroups, moduleId);
-                window.setTimeout(() => onSelectModule?.(moduleId), 120);
-              }
+            if (!pointerDown) return;
+            const moved = Math.hypot(
+              event.clientX - pointerDown.x,
+              event.clientY - pointerDown.y
+            );
+            pointerDown = null;
+            if (moved > SCENE_CONFIG.tapThresholdPx || cameraMotion) return;
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.set(
+              ((event.clientX - rect.left) / rect.width) * 2 - 1,
+              -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
+            raycaster.setFromCamera(pointer, camera);
+            const hit = raycaster
+              .intersectObjects(buildings.hologramClickables || [], true)
+              .find((result) => result.object.userData.moduleId);
+            if (!hit) return;
+            const moduleId = hit.object.userData.moduleId;
+            pulseStationBuilding(buildings.moduleGroups, moduleId);
+            if (cameraState === "focused" && focusedId === moduleId) {
+              selectRef.current?.(moduleId);
+              reportState("panel");
+            } else {
+              focusModule(moduleId);
             }
-
-            const snap = rig.goal < 0.25 ? 0 : rig.goal < 0.75 ? 0.5 : 1;
-            rig.setProgress(snap);
-            setPanoramaFrame(snap === 0 ? 1 : snap === 0.5 ? 2 : 3);
-
-            setCoords({
-              ...OBSERVER_POSITION,
-              tx: Math.round(
-                HEAD_ROTATION.startYawDeg +
-                (HEAD_ROTATION.endYawDeg - HEAD_ROTATION.startYawDeg) * snap
-              ),
-              ty: Math.round(
-                HEAD_ROTATION.pitchLiftDeg * (0.5 + 0.5 * snap)
-              ),
-              tz: 0,
-            });
           };
-
+          const onPointerCancel = () => { pointerDown = null; };
           renderer.domElement.addEventListener("pointerdown", onPointerDown);
-          renderer.domElement.addEventListener("pointermove", onPointerMove);
           renderer.domElement.addEventListener("pointerup", onPointerUp);
-          renderer.domElement.addEventListener("pointercancel", onPointerUp);
-
+          renderer.domElement.addEventListener("pointercancel", onPointerCancel);
           cleanups.push(() => {
-            renderer.domElement.removeEventListener(
-              "pointerdown",
-              onPointerDown
-            );
-            renderer.domElement.removeEventListener(
-              "pointermove",
-              onPointerMove
-            );
+            renderer.domElement.removeEventListener("pointerdown", onPointerDown);
             renderer.domElement.removeEventListener("pointerup", onPointerUp);
-            renderer.domElement.removeEventListener(
-              "pointercancel",
-              onPointerUp
-            );
+            renderer.domElement.removeEventListener("pointercancel", onPointerCancel);
           });
         },
         undefined,
-        (error) => {
-          console.error("Station GLB load failed", error);
-        }
+        (error) => console.error("Station GLB load failed", error)
       );
 
       const resize = () => {
@@ -4321,20 +3892,69 @@ export default function StationThreeView({ onSelectModule }) {
         camera.updateProjectionMatrix();
         renderer.setSize(width, height, false);
       };
-
       resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(host);
       resize();
 
       const render = () => {
-        rigRef.current?.update?.();
-        const panorama = rigRef.current?.progress || 0;
-        farStars.rotation.y = panorama * 0.035;
-        nearStars.rotation.y = panorama * 0.08;
-        riftOuter.rotation.z += 0.0018;
-        riftInner.rotation.z -= 0.0026;
-        const pulse = 1 + Math.sin(performance.now() * 0.0015) * 0.035;
-        sunHalo.scale.setScalar(pulse);
+        const now = performance.now();
+        farStars.rotation.y += 0.000015;
+        nearStars.rotation.y += 0.00003;
+        sunHalo.scale.setScalar(1 + Math.sin(now * 0.0014) * 0.025);
+
+        if (buildings?.hologramBillboards) {
+          buildings.hologramBillboards.forEach((billboard) => {
+            billboard.parent.getWorldQuaternion(parentWorldQuaternion);
+            inverseParentQuaternion.copy(parentWorldQuaternion).invert();
+            billboard.quaternion.copy(inverseParentQuaternion).multiply(camera.quaternion);
+            billboard.position.y =
+              billboard.userData.baseY +
+              Math.sin(now * 0.0017 + billboard.userData.phase) * diskRadius * 0.004;
+          });
+        }
+
+        if (returnRef.current !== handledReturn) {
+          handledReturn = returnRef.current;
+          returnHome();
+        }
+
+        if (cameraMotion && stationCenter) {
+          const raw = Math.min(1, (now - cameraMotion.startedAt) / MODULE_FOCUS.durationMs);
+          const t = ease(raw);
+          const angle = cameraMotion.startAngle + cameraMotion.angleDelta * t;
+          const orbitRadius = THREE.MathUtils.lerp(cameraMotion.startRadius, cameraMotion.endRadius, t);
+          const height = THREE.MathUtils.lerp(cameraMotion.startHeight, cameraMotion.endHeight, t)
+            + Math.sin(Math.PI * t) * diskRadius * 0.12;
+          camera.position.set(
+            stationCenter.x + Math.cos(angle) * orbitRadius,
+            stationCenter.y + height,
+            stationCenter.z + Math.sin(angle) * orbitRadius
+          );
+          camera.quaternion.slerpQuaternions(
+            cameraMotion.startQuaternion,
+            cameraMotion.endQuaternion,
+            t
+          );
+          if (raw >= 1) {
+            camera.position.copy(cameraMotion.endPosition);
+            camera.quaternion.copy(cameraMotion.endQuaternion);
+            focusedId = cameraMotion.id;
+            const completedId = cameraMotion.id;
+            const returning = cameraMotion.returning;
+            cameraMotion = null;
+
+            if (returning) {
+              focusedId = null;
+              reportState("home");
+            } else {
+              // The first tap is now a complete action: fly to the selected
+              // sector and open its existing React panel automatically.
+              reportState("panel");
+              selectRef.current?.(completedId);
+            }
+          }
+        }
+
         renderer.render(scene, camera);
         frameId = requestAnimationFrame(render);
       };
@@ -4343,49 +3963,30 @@ export default function StationThreeView({ onSelectModule }) {
       cleanups.push(() => {
         scene.traverse((object) => {
           object.geometry?.dispose?.();
-          if (object.material) {
-            const materials = Array.isArray(object.material)
-              ? object.material
-              : [object.material];
-            materials.forEach((material) => material.dispose?.());
-          }
+          const materials = object.material
+            ? Array.isArray(object.material) ? object.material : [object.material]
+            : [];
+          materials.forEach((material) => material.dispose?.());
         });
       });
     })();
 
     return () => {
       disposed = true;
-      rigRef.current = null;
       if (frameId) cancelAnimationFrame(frameId);
       resizeObserver?.disconnect();
       cleanups.forEach((cleanup) => cleanup());
       renderer?.dispose();
       if (hostRef.current) hostRef.current.replaceChildren();
     };
-  }, [onSelectModule]);
+  }, []);
 
   return (
-    <>
-      <div
-        ref={hostRef}
-        style={styles.stationModel}
-        aria-label="Интерактивная 3D-сцена орбитальной станции"
-      />
-
-      <div style={styles.panoramaPanel}>
-        <b>ПАНОРАМА {panoramaFrame} / 3</b>
-        <span>СВАЙП ВПРАВО ИЛИ ВЛЕВО</span>
-        <small>
-          CAM {Math.round(coords.x)} / {Math.round(coords.y)} /{" "}
-          {Math.round(coords.z)} · YAW {Math.round(coords.tx)}° · PITCH {Math.round(coords.ty)}°
-        </small>
-        <div style={styles.frameDots}>
-          <i className={panoramaFrame === 1 ? "active" : ""} />
-          <i className={panoramaFrame === 2 ? "active" : ""} />
-          <i className={panoramaFrame === 3 ? "active" : ""} />
-        </div>
-      </div>
-    </>
+    <div
+      ref={hostRef}
+      style={styles.stationModel}
+      aria-label="Интерактивная 3D-сцена орбитальной станции"
+    />
   );
 }
 
@@ -4396,33 +3997,8 @@ const styles = {
     width: "100%",
     height: "100%",
     background:
-      "radial-gradient(circle at 18% 28%,rgba(79,32,97,.32),transparent 28%), radial-gradient(circle at 78% 48%,rgba(13,69,105,.24),transparent 36%), linear-gradient(180deg,#020611 0%,#010207 72%)",
-    touchAction: "none",
-  },
-  panoramaPanel: {
-    position: "absolute",
-    zIndex: 85,
-    left: "50%",
-    bottom: "calc(max(18px, env(safe-area-inset-bottom)) + 54px)",
-    transform: "translateX(-50%)",
-    minWidth: 250,
-    padding: "9px 12px",
-    borderRadius: 14,
-    display: "grid",
-    gap: 3,
-    textAlign: "center",
-    background: "rgba(1,7,17,.82)",
-    border: "1px solid rgba(94,231,255,.25)",
-    backdropFilter: "blur(10px)",
-    pointerEvents: "none",
-    fontSize: 9,
-    color: "#bcecff",
-  },
-  frameDots: {
-    display: "flex",
-    justifyContent: "center",
-    gap: 7,
-    marginTop: 3,
+      "radial-gradient(circle at 14% 34%,rgba(63,29,93,.28),transparent 27%), radial-gradient(circle at 78% 42%,rgba(8,62,96,.24),transparent 37%), linear-gradient(180deg,#020611 0%,#010207 74%)",
+    touchAction: "manipulation",
   },
 };
 
@@ -4437,197 +4013,1003 @@ ungatus-lab-miniapp/components/station/stationBuildings.js
 
 import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 
-function createBodyMaterial(THREE, color) {
+// The original procedural complexes were technically present but too small to read
+// from the fixed home camera. 2.75 makes each complex fill most of its authored pad.
+// Full platform cap: the base intentionally covers the authored white circular pad.
+const COMPLEX_VISUAL_SCALE = 4.35;
+// Upper architecture grows with the full cap while retaining a small edge margin.
+const COMPLEX_FEATURE_SCALE = 1.02;
+const HOLOGRAM_UI_BLUE = 0x58d7ff;
+const WALLET_UI_BLUE = HOLOGRAM_UI_BLUE;
+
+function bodyMaterial(THREE) {
   return new THREE.MeshStandardMaterial({
-    color: 0x0d1b2a,
-    metalness: 0.86,
-    roughness: 0.34,
-    emissive: color,
-    emissiveIntensity: 0.16,
+    color: 0x40566b,
+    metalness: 0.88,
+    roughness: 0.3,
+    emissive: 0x07121d,
+    emissiveIntensity: 0.13,
   });
 }
 
-function createGlowMaterial(THREE, color) {
+function darkMaterial(THREE) {
+  return new THREE.MeshStandardMaterial({
+    color: 0x1b2b3b,
+    metalness: 0.9,
+    roughness: 0.34,
+    emissive: 0x03090f,
+    emissiveIntensity: 0.09,
+  });
+}
+
+function glowMaterial(THREE, color, opacity = 0.76) {
   return new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: 0.66,
+    opacity,
     depthWrite: false,
   });
 }
 
-function addMesh(group, geometry, material, y = 0) {
-  const mesh = new group.userData.THREE.Mesh(geometry, material);
-  mesh.position.y = y;
-  mesh.castShadow = false;
-  mesh.receiveShadow = false;
-  group.add(mesh);
-  return mesh;
-}
-
-function markModule(group, moduleId) {
-  group.traverse((object) => {
-    object.userData.moduleId = moduleId;
+function invisibleMaterial(THREE) {
+  return new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
   });
 }
 
-function createModuleBuilding(THREE, module, modelScale) {
-  const group = new THREE.Group();
-  group.name = `Module_${module.id}`;
-  group.userData.THREE = THREE;
-  group.userData.moduleId = module.id;
+function mesh(THREE, group, geometry, material, position = [0, 0, 0]) {
+  const object = new THREE.Mesh(geometry, material);
+  object.position.set(...position);
+  object.castShadow = false;
+  object.receiveShadow = false;
+  group.add(object);
+  return object;
+}
 
-  const baseRadius = modelScale * SCENE_CONFIG.buildingScale;
-  const baseHeight = baseRadius * 0.22;
-  const body = createBodyMaterial(THREE, module.colorHex);
-  const glow = createGlowMaterial(THREE, module.colorHex);
+function addBase(THREE, group, radius, color) {
+  const body = bodyMaterial(THREE);
+  const dark = darkMaterial(THREE);
+  const glow = glowMaterial(THREE, color, 0.72);
+  const capMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2a3e52,
+    metalness: 0.88,
+    roughness: 0.3,
+    emissive: 0x06111b,
+    emissiveIntensity: 0.11,
+  });
 
-  // Основание намеренно опущено ниже локального нуля.
-  // После установки ноль группы совпадает с поверхностью станции,
-  // поэтому часть основания выглядит встроенной в корпус.
-  addMesh(
+  // Lower skirt wraps the original socket edge.
+  mesh(
+    THREE,
     group,
-    new THREE.CylinderGeometry(baseRadius, baseRadius * 1.08, baseHeight, 24),
-    body,
-    -baseHeight * 0.18
+    new THREE.CylinderGeometry(radius * 1.13, radius * 1.17, radius * 0.2, 36),
+    dark,
+    [0, radius * 0.015, 0]
   );
 
-  const ring = addMesh(
+  // Opaque lid is fully above the raycast surface, so the white GLB pad cannot
+  // draw over it on the left or right side.
+  mesh(
+    THREE,
     group,
-    new THREE.TorusGeometry(baseRadius * 0.82, baseRadius * 0.055, 8, 28),
+    new THREE.CylinderGeometry(radius * 1.1, radius * 1.13, radius * 0.13, 36),
+    capMaterial,
+    [0, radius * 0.14, 0]
+  );
+
+  // Dark inset visually joins the upper architecture to the large cap.
+  mesh(
+    THREE,
+    group,
+    new THREE.CylinderGeometry(radius * 0.78, radius * 0.91, radius * 0.13, 32),
+    body,
+    [0, radius * 0.24, 0]
+  );
+
+  const ring = mesh(
+    THREE,
+    group,
+    new THREE.TorusGeometry(radius * 0.94, radius * 0.045, 9, 48),
     glow,
-    baseHeight * 0.38
+    [0, radius * 0.215, 0]
   );
   ring.rotation.x = Math.PI / 2;
 
-  if (module.type === "hangar") {
-    addMesh(
-      group,
-      new THREE.BoxGeometry(baseRadius * 1.22, baseRadius * 0.38, baseRadius * 0.82),
-      body,
-      baseRadius * 0.18
-    );
-  } else if (module.type === "dish") {
-    addMesh(
-      group,
-      new THREE.CylinderGeometry(baseRadius * 0.15, baseRadius * 0.25, baseRadius * 0.42, 16),
-      body,
-      baseRadius * 0.21
-    );
-    const dish = addMesh(
-      group,
-      new THREE.SphereGeometry(baseRadius * 0.48, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2),
-      body,
-      baseRadius * 0.48
-    );
-    dish.scale.y = 0.25;
-  } else if (module.type === "twins") {
-    [-0.3, 0.3].forEach((offset) => {
-      const tower = addMesh(
+  return { body, dark, glow, capMaterial };
+}
+
+function accentMaterial(THREE, color, intensity = 0.72) {
+  return new THREE.MeshStandardMaterial({
+    color: 0x172738,
+    metalness: 0.84,
+    roughness: 0.26,
+    emissive: color,
+    emissiveIntensity: intensity,
+  });
+}
+
+function addLightStrip(THREE, group, color, width, depth, x, y, z, rotationY = 0) {
+  const strip = mesh(
+    THREE,
+    group,
+    new THREE.BoxGeometry(width, width * 0.08, depth),
+    accentMaterial(THREE, color, 0.82),
+    [x, y, z]
+  );
+  strip.rotation.y = rotationY;
+  return strip;
+}
+
+function createRadialSectorGeometry(THREE, radius, options = {}) {
+  const outerHalf = radius * (options.outerHalf ?? 0.78);
+  const innerHalf = radius * (options.innerHalf ?? 0.48);
+  const length = radius * (options.length ?? 1.62);
+  const height = radius * (options.height ?? 0.18);
+  const outerZ = radius * (options.outerZ ?? 0.43);
+  const innerZ = outerZ - length;
+  const shoulderZ = outerZ - length * 0.56;
+
+  const shape = new THREE.Shape();
+  shape.moveTo(-outerHalf * 0.82, outerZ);
+  shape.quadraticCurveTo(-outerHalf, outerZ, -outerHalf, outerZ - radius * 0.16);
+  shape.lineTo(-innerHalf, innerZ);
+  shape.quadraticCurveTo(-innerHalf * 0.82, innerZ - radius * 0.08, 0, innerZ - radius * 0.08);
+  shape.quadraticCurveTo(innerHalf * 0.82, innerZ - radius * 0.08, innerHalf, innerZ);
+  shape.lineTo(outerHalf, outerZ - radius * 0.16);
+  shape.quadraticCurveTo(outerHalf, outerZ, outerHalf * 0.82, outerZ);
+  shape.lineTo(0, outerZ + radius * 0.08);
+  shape.closePath();
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: radius * 0.035,
+    bevelThickness: radius * 0.025,
+    curveSegments: 8,
+  });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.computeVertexNormals();
+  return { geometry, height, shoulderZ, innerZ, outerZ };
+}
+
+function addRadialHull(THREE, group, radius, materials, options = {}) {
+  const { body, dark } = materials;
+  const sector = createRadialSectorGeometry(THREE, radius, options);
+
+  const lower = mesh(
+    THREE,
+    group,
+    sector.geometry,
+    dark,
+    [0, radius * 0.205, 0]
+  );
+  lower.userData.part = "radial-sector-lower";
+
+  const upperSector = createRadialSectorGeometry(THREE, radius, {
+    ...options,
+    outerHalf: (options.outerHalf ?? 0.78) * 0.86,
+    innerHalf: (options.innerHalf ?? 0.48) * 0.84,
+    length: (options.length ?? 1.62) * 0.88,
+    height: (options.height ?? 0.18) * 0.56,
+    outerZ: (options.outerZ ?? 0.43) - 0.08,
+  });
+  const upper = mesh(
+    THREE,
+    group,
+    upperSector.geometry,
+    body,
+    [0, radius * 0.205 + sector.height, 0]
+  );
+  upper.userData.part = "radial-sector-upper";
+
+  return {
+    lower,
+    upper,
+    shoulderZ: sector.shoulderZ,
+    innerZ: sector.innerZ,
+    outerZ: sector.outerZ,
+  };
+}
+
+const GLYPH_Y = 0.735;
+
+function addGlyphBar(THREE, group, color, radius, width, depth, x, z, rotationY = 0) {
+  const bar = mesh(
+    THREE,
+    group,
+    new THREE.BoxGeometry(radius * width, radius * 0.065, radius * depth),
+    glowMaterial(THREE, color, 0.96),
+    [radius * x, radius * GLYPH_Y, radius * z]
+  );
+  bar.rotation.y = rotationY;
+  bar.userData.glyphPart = true;
+  return bar;
+}
+
+function addGlyphNode(THREE, group, color, radius, x, z, scale = 1) {
+  const node = mesh(
+    THREE,
+    group,
+    new THREE.CylinderGeometry(
+      radius * 0.115 * scale,
+      radius * 0.115 * scale,
+      radius * 0.07,
+      20
+    ),
+    glowMaterial(THREE, color, 0.98),
+    [radius * x, radius * (GLYPH_Y + 0.005), radius * z]
+  );
+  node.userData.glyphPart = true;
+  return node;
+}
+
+function addGlyphFrame(THREE, group, color, radius, x, z, width, height) {
+  addGlyphBar(THREE, group, color, radius, width, 0.065, x, z - height / 2);
+  addGlyphBar(THREE, group, color, radius, width, 0.065, x, z + height / 2);
+  addGlyphBar(THREE, group, color, radius, 0.065, height, x - width / 2, z);
+  addGlyphBar(THREE, group, color, radius, 0.065, height, x + width / 2, z);
+}
+
+function addArrowGlyph(THREE, group, color, radius, z, direction = 1) {
+  addGlyphBar(THREE, group, color, radius, 0.54, 0.075, 0, z);
+  addGlyphBar(
+    THREE,
+    group,
+    color,
+    radius,
+    0.22,
+    0.075,
+    direction * 0.25,
+    z - 0.1,
+    direction * 0.7
+  );
+  addGlyphBar(
+    THREE,
+    group,
+    color,
+    radius,
+    0.22,
+    0.075,
+    direction * 0.25,
+    z + 0.1,
+    -direction * 0.7
+  );
+}
+
+function addFlowNodeGlyph(THREE, group, radius) {
+  const color = 0x53f5df;
+  addGlyphNode(THREE, group, color, radius, 0, -0.48, 1.08);
+  addGlyphNode(THREE, group, color, radius, -0.34, -0.05, 0.78);
+  addGlyphNode(THREE, group, color, radius, 0.34, -0.05, 0.78);
+  addGlyphBar(THREE, group, color, radius, 0.09, 0.49, -0.17, -0.27, -0.67);
+  addGlyphBar(THREE, group, color, radius, 0.09, 0.49, 0.17, -0.27, 0.67);
+}
+
+function addScenarioFramesGlyph(THREE, group, radius) {
+  const color = 0xff8bc8;
+  addGlyphFrame(THREE, group, color, radius, 0, -0.28, 0.78, 0.62);
+  addGlyphBar(THREE, group, color, radius, 0.065, 0.52, -0.24, -0.28);
+  addGlyphBar(THREE, group, color, radius, 0.065, 0.52, 0, -0.28);
+  addGlyphBar(THREE, group, color, radius, 0.065, 0.52, 0.24, -0.28);
+}
+
+function addLinkedCoresGlyph(THREE, group, radius) {
+  const color = 0xb99cff;
+  addGlyphNode(THREE, group, color, radius, -0.31, -0.27, 1.08);
+  addGlyphNode(THREE, group, color, radius, 0.31, -0.27, 1.08);
+  addGlyphBar(THREE, group, color, radius, 0.46, 0.09, 0, -0.27);
+  addGlyphBar(THREE, group, color, radius, 0.56, 0.07, 0, -0.53);
+}
+
+function addWalletGlyph(THREE, group, radius) {
+  const color = WALLET_UI_BLUE;
+  const y = radius * 0.742;
+  const glow = glowMaterial(THREE, color, 0.98);
+
+  // Wallet body: a wide rounded outline, rotated with the module so it faces
+  // the home observer correctly on the near-left platform.
+  const bodyShape = new THREE.Shape();
+  const w = radius * 0.9;
+  const h = radius * 0.64;
+  const r = radius * 0.13;
+  bodyShape.moveTo(-w / 2 + r, -h / 2);
+  bodyShape.lineTo(w / 2 - r, -h / 2);
+  bodyShape.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  bodyShape.lineTo(w / 2, h / 2 - r);
+  bodyShape.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  bodyShape.lineTo(-w / 2 + r, h / 2);
+  bodyShape.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  bodyShape.lineTo(-w / 2, -h / 2 + r);
+  bodyShape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  bodyShape.closePath();
+
+  const hole = new THREE.Path();
+  const inset = radius * 0.1;
+  hole.moveTo(-w / 2 + r + inset, -h / 2 + inset);
+  hole.lineTo(w / 2 - r - inset, -h / 2 + inset);
+  hole.quadraticCurveTo(w / 2 - inset, -h / 2 + inset, w / 2 - inset, -h / 2 + r + inset);
+  hole.lineTo(w / 2 - inset, h / 2 - r - inset);
+  hole.quadraticCurveTo(w / 2 - inset, h / 2 - inset, w / 2 - r - inset, h / 2 - inset);
+  hole.lineTo(-w / 2 + r + inset, h / 2 - inset);
+  hole.quadraticCurveTo(-w / 2 + inset, h / 2 - inset, -w / 2 + inset, h / 2 - r - inset);
+  hole.lineTo(-w / 2 + inset, -h / 2 + r + inset);
+  hole.quadraticCurveTo(-w / 2 + inset, -h / 2 + inset, -w / 2 + r + inset, -h / 2 + inset);
+  hole.closePath();
+  bodyShape.holes.push(hole);
+
+  const body = mesh(
+    THREE,
+    group,
+    new THREE.ExtrudeGeometry(bodyShape, {
+      depth: radius * 0.055,
+      bevelEnabled: false,
+      curveSegments: 10,
+    }),
+    glow,
+    [0, y, -radius * 0.3]
+  );
+  body.rotation.x = -Math.PI / 2;
+  body.userData.glyphPart = true;
+
+  // Top opening/card lip makes the silhouette read as a wallet rather than a card.
+  addGlyphBar(THREE, group, color, radius, 0.64, 0.075, -0.07, -0.02, -0.13);
+
+  // Clasp tab and coin/button on the observer-facing right side of the icon.
+  addGlyphBar(THREE, group, color, radius, 0.34, 0.17, 0.3, -0.3);
+  addGlyphNode(THREE, group, color, radius, 0.37, -0.3, 0.66);
+}
+
+
+function holoMaterial(THREE, color, opacity = 0.82) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+function holoFillMaterial(THREE, color, opacity = 0.18) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+function holoColorMaterial(THREE, color, opacity = 0.78) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+  });
+}
+
+function holoLine(THREE, group, material, radius, width, height, x, y, rotationZ = 0, z = 0.02) {
+  const part = mesh(
+    THREE,
+    group,
+    new THREE.BoxGeometry(radius * width, radius * height, radius * 0.035),
+    material,
+    [radius * x, radius * y, radius * z]
+  );
+  part.rotation.z = rotationZ;
+  part.userData.hologramVisual = true;
+  return part;
+}
+
+function holoDisc(THREE, group, material, radius, x, y, scale = 1, z = 0.025) {
+  const disc = mesh(
+    THREE,
+    group,
+    new THREE.CircleGeometry(radius * 0.1 * scale, 28),
+    material,
+    [radius * x, radius * y, radius * z]
+  );
+  disc.userData.hologramVisual = true;
+  return disc;
+}
+
+function holoTriangle(THREE, group, material, radius, x, y, scale = 1, rotationZ = 0) {
+  const shape = new THREE.Shape();
+  const size = radius * 0.18 * scale;
+  shape.moveTo(size * 0.72, 0);
+  shape.lineTo(-size * 0.55, size * 0.62);
+  shape.lineTo(-size * 0.55, -size * 0.62);
+  shape.closePath();
+  const tri = mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(shape),
+    material,
+    [radius * x, radius * y, radius * 0.03]
+  );
+  tri.rotation.z = rotationZ;
+  tri.userData.hologramVisual = true;
+  return tri;
+}
+
+function createTokenShape(THREE, radius, scale = 1) {
+  const shape = new THREE.Shape();
+  const w = radius * 0.95 * scale;
+  const h = radius * 0.78 * scale;
+  const cut = w * 0.18;
+  shape.moveTo(-w / 2 + cut, h / 2);
+  shape.lineTo(w / 2 - cut, h / 2);
+  shape.lineTo(w / 2, 0);
+  shape.lineTo(w / 2 - cut, -h / 2);
+  shape.lineTo(-w / 2 + cut, -h / 2);
+  shape.lineTo(-w / 2, 0);
+  shape.closePath();
+  return shape;
+}
+
+function addHoloToken(THREE, group, color, radius) {
+  const back = mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(createTokenShape(THREE, radius, 1.05)),
+    holoFillMaterial(THREE, color, 0.16),
+    [0, 0, 0]
+  );
+  back.userData.hologramVisual = true;
+
+  const line = holoMaterial(THREE, color, 0.9);
+  holoLine(THREE, group, line, radius, 0.58, 0.035, 0, 0.42);
+  holoLine(THREE, group, line, radius, 0.58, 0.035, 0, -0.42);
+  holoLine(THREE, group, line, radius, 0.035, 0.34, -0.48, 0.17, -0.45);
+  holoLine(THREE, group, line, radius, 0.035, 0.34, -0.48, -0.17, 0.45);
+  holoLine(THREE, group, line, radius, 0.035, 0.34, 0.48, 0.17, 0.45);
+  holoLine(THREE, group, line, radius, 0.035, 0.34, 0.48, -0.17, -0.45);
+}
+
+function createRoundedRectShape(THREE, width, height, corner) {
+  const shape = new THREE.Shape();
+  const left = -width / 2;
+  const right = width / 2;
+  const top = height / 2;
+  const bottom = -height / 2;
+  shape.moveTo(left + corner, top);
+  shape.lineTo(right - corner, top);
+  shape.quadraticCurveTo(right, top, right, top - corner);
+  shape.lineTo(right, bottom + corner);
+  shape.quadraticCurveTo(right, bottom, right - corner, bottom);
+  shape.lineTo(left + corner, bottom);
+  shape.quadraticCurveTo(left, bottom, left, bottom + corner);
+  shape.lineTo(left, top - corner);
+  shape.quadraticCurveTo(left, top, left + corner, top);
+  shape.closePath();
+  return shape;
+}
+
+function createRoundedRectRingShape(THREE, width, height, corner, thickness) {
+  const outer = createRoundedRectShape(THREE, width, height, corner);
+  const innerWidth = width - thickness * 2;
+  const innerHeight = height - thickness * 2;
+  const innerCorner = Math.max(corner - thickness, thickness * 0.45);
+  const inner = createRoundedRectShape(THREE, innerWidth, innerHeight, innerCorner);
+  outer.holes.push(inner);
+  return outer;
+}
+
+function addModernTerminalShell(THREE, group, radius) {
+  const uiBlue = HOLOGRAM_UI_BLUE;
+  const uiBlueSoft = 0x2c94c7;
+  const darkCore = 0x06121f;
+
+  const aura = mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.94, radius * 1.02, radius * 0.23)
+    ),
+    holoFillMaterial(THREE, uiBlueSoft, 0.12),
+    [0, 0, -radius * 0.05]
+  );
+  aura.scale.setScalar(1.12);
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.82, radius * 0.92, radius * 0.2)
+    ),
+    holoFillMaterial(THREE, darkCore, 0.88),
+    [0, 0, 0]
+  );
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectRingShape(
+        THREE,
+        radius * 0.86,
+        radius * 0.96,
+        radius * 0.21,
+        radius * 0.045
+      )
+    ),
+    holoColorMaterial(THREE, uiBlue, 0.8),
+    [0, 0, radius * 0.018]
+  );
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectRingShape(
+        THREE,
+        radius * 0.72,
+        radius * 0.8,
+        radius * 0.16,
+        radius * 0.018
+      )
+    ),
+    holoColorMaterial(THREE, uiBlueSoft, 0.42),
+    [0, 0, radius * 0.028]
+  );
+
+  holoDisc(
+    THREE,
+    group,
+    holoColorMaterial(THREE, uiBlueSoft, 0.72),
+    radius,
+    0,
+    -0.37,
+    0.28,
+    0.045
+  );
+}
+
+function createGearShape(THREE, outerRadius, innerRadius, teeth = 10) {
+  const shape = new THREE.Shape();
+  for (let i = 0; i < teeth * 2; i += 1) {
+    const angle = (i / (teeth * 2)) * Math.PI * 2;
+    const size = i % 2 === 0 ? outerRadius : innerRadius;
+    const x = Math.cos(angle) * size;
+    const y = Math.sin(angle) * size;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, outerRadius * 0.36, 0, Math.PI * 2, false);
+  shape.holes.push(hole);
+  return shape;
+}
+
+function addPersonSilhouette(THREE, group, material, radius, x, y, scale = 1) {
+  holoDisc(THREE, group, material, radius, x, y + 0.115 * scale, 0.72 * scale, 0.07);
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(
+        THREE,
+        radius * 0.23 * scale,
+        radius * 0.19 * scale,
+        radius * 0.09 * scale
+      )
+    ),
+    material,
+    [radius * x, radius * (y - 0.06 * scale), radius * 0.06]
+  );
+}
+
+function addMarketplaceTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
+
+  // Marketplace: shopping bag containing a compact 2x2 catalog grid.
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.58, radius * 0.48, radius * 0.075)
+    ),
+    blue,
+    [0, -radius * 0.055, radius * 0.055]
+  );
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.48, radius * 0.38, radius * 0.05)
+    ),
+    dark,
+    [0, -radius * 0.055, radius * 0.075]
+  );
+
+  // Two short handles clearly separate Marketplace from the Wallet symbol.
+  holoLine(THREE, group, blue, radius, 0.055, 0.22, -0.15, 0.23, -0.35, 0.08);
+  holoLine(THREE, group, blue, radius, 0.055, 0.22, 0.15, 0.23, 0.35, 0.08);
+  holoLine(THREE, group, blue, radius, 0.28, 0.05, 0, 0.31, 0, 0.08);
+
+  // Catalog tiles.
+  [-0.12, 0.12].forEach((x) => {
+    [-0.14, 0.08].forEach((y) => {
+      mesh(
+        THREE,
         group,
-        new THREE.CylinderGeometry(baseRadius * 0.17, baseRadius * 0.23, baseRadius * 0.65, 14),
-        body,
-        baseRadius * 0.32
+        new THREE.ShapeGeometry(
+          createRoundedRectShape(THREE, radius * 0.16, radius * 0.14, radius * 0.025)
+        ),
+        blue,
+        [radius * x, radius * y, radius * 0.09]
       );
-      tower.position.x = offset * baseRadius;
     });
-    addMesh(
-      group,
-      new THREE.BoxGeometry(baseRadius * 0.78, baseRadius * 0.08, baseRadius * 0.08),
-      glow,
-      baseRadius * 0.4
-    );
-  } else if (module.type === "gate") {
-    [-0.36, 0.36].forEach((offset) => {
-      const post = addMesh(
-        group,
-        new THREE.BoxGeometry(baseRadius * 0.16, baseRadius * 0.72, baseRadius * 0.22),
-        body,
-        baseRadius * 0.36
-      );
-      post.position.x = offset * baseRadius;
-    });
-    addMesh(
-      group,
-      new THREE.BoxGeometry(baseRadius * 0.9, baseRadius * 0.14, baseRadius * 0.22),
-      glow,
-      baseRadius * 0.68
-    );
-  } else if (module.type === "reactor") {
-    addMesh(
-      group,
-      new THREE.CylinderGeometry(baseRadius * 0.38, baseRadius * 0.52, baseRadius * 0.42, 20),
-      body,
-      baseRadius * 0.2
-    );
-    addMesh(
-      group,
-      new THREE.IcosahedronGeometry(baseRadius * 0.27, 1),
-      glow,
-      baseRadius * 0.48
-    );
-  } else if (module.type === "vault") {
-    addMesh(
-      group,
-      new THREE.BoxGeometry(baseRadius * 0.92, baseRadius * 0.44, baseRadius * 0.74),
-      body,
-      baseRadius * 0.21
-    );
-  } else if (module.type === "citadel") {
-    addMesh(
-      group,
-      new THREE.CylinderGeometry(baseRadius * 0.24, baseRadius * 0.42, baseRadius * 0.72, 18),
-      body,
-      baseRadius * 0.35
-    );
-    addMesh(
-      group,
-      new THREE.ConeGeometry(baseRadius * 0.17, baseRadius * 0.4, 14),
-      glow,
-      baseRadius * 0.82
-    );
-  } else {
-    addMesh(
-      group,
-      new THREE.CylinderGeometry(baseRadius * 0.11, baseRadius * 0.25, baseRadius * 0.58, 14),
-      body,
-      baseRadius * 0.28
-    );
-    addMesh(
-      group,
-      new THREE.OctahedronGeometry(baseRadius * 0.2),
-      glow,
-      baseRadius * 0.66
-    );
+  });
+
+  // Small offer/transaction marker.
+  holoDisc(THREE, group, blue, radius, 0.31, -0.22, 0.38, 0.105);
+}
+
+function addCollaborationTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+  // Conventional group icon with one central and two supporting participants.
+  addPersonSilhouette(THREE, group, blue, radius, 0, 0.025, 1.18);
+  addPersonSilhouette(THREE, group, blue, radius, -0.25, -0.04, 0.9);
+  addPersonSilhouette(THREE, group, blue, radius, 0.25, -0.04, 0.9);
+  holoLine(THREE, group, blue, radius, 0.64, 0.055, 0, -0.28, 0, 0.055);
+}
+
+function addAutomationTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.98);
+
+  // Robot Macro Core: one robot face remains the dominant silhouette.
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.48, radius * 0.42, radius * 0.11)
+    ),
+    blue,
+    [-radius * 0.06, radius * 0.015, radius * 0.055]
+  );
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.39, radius * 0.32, radius * 0.075)
+    ),
+    dark,
+    [-radius * 0.06, radius * 0.015, radius * 0.075]
+  );
+
+  // Antenna and eyes.
+  holoLine(THREE, group, blue, radius, 0.04, 0.17, -0.06, 0.29, 0, 0.085);
+  holoDisc(THREE, group, blue, radius, -0.06, 0.37, 0.3, 0.09);
+  holoDisc(THREE, group, blue, radius, -0.18, 0.09, 0.31, 0.09);
+  holoDisc(THREE, group, blue, radius, 0.06, 0.09, 0.31, 0.09);
+
+  // Play is embedded in the robot face.
+  holoTriangle(THREE, group, blue, radius, -0.045, -0.105, 0.55, 0);
+
+  // Half-gear hugs the right side rather than becoming a separate icon.
+  [-1.05, -0.7, -0.35, 0, 0.35, 0.7, 1.05].forEach((angle) => {
+    const x = 0.19 + Math.cos(angle) * 0.24;
+    const y = 0.015 + Math.sin(angle) * 0.24;
+    holoLine(THREE, group, blue, radius, 0.115, 0.045, x, y, angle, 0.083);
+  });
+
+  // Short mind-map branch with two scene nodes.
+  holoLine(THREE, group, blue, radius, 0.2, 0.035, 0.17, -0.19, -0.45, 0.085);
+  holoLine(THREE, group, blue, radius, 0.14, 0.035, 0.29, -0.27, 0.7, 0.085);
+  holoDisc(THREE, group, blue, radius, 0.37, -0.33, 0.28, 0.09);
+}
+
+function addWalletTerminal(THREE, group, color, radius) {
+  const uiBlue = HOLOGRAM_UI_BLUE;
+  const darkCore = 0x06121f;
+  addModernTerminalShell(THREE, group, radius);
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.58, radius * 0.4, radius * 0.09)
+    ),
+    holoColorMaterial(THREE, uiBlue, 0.94),
+    [-radius * 0.035, -radius * 0.025, radius * 0.05]
+  );
+
+  const fold = new THREE.Shape();
+  fold.moveTo(-radius * 0.24, radius * 0.07);
+  fold.lineTo(radius * 0.1, radius * 0.17);
+  fold.lineTo(radius * 0.23, radius * 0.07);
+  fold.closePath();
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(fold),
+    holoFillMaterial(THREE, darkCore, 0.78),
+    [0, radius * 0.055, radius * 0.065]
+  );
+
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.3, radius * 0.17, radius * 0.055)
+    ),
+    holoFillMaterial(THREE, darkCore, 0.94),
+    [radius * 0.25, -radius * 0.025, radius * 0.075]
+  );
+  holoDisc(
+    THREE,
+    group,
+    holoColorMaterial(THREE, uiBlue, 1),
+    radius,
+    0.29,
+    -0.025,
+    0.4,
+    0.09
+  );
+}
+
+function addWalletHolo(THREE, group, material, radius) {
+  // Readable wallet: body, flap, side clasp dot.
+  holoLine(THREE, group, material, radius, 0.68, 0.07, -0.04, -0.2);
+  holoLine(THREE, group, material, radius, 0.68, 0.07, -0.04, 0.2);
+  holoLine(THREE, group, material, radius, 0.07, 0.42, -0.38, 0);
+  holoLine(THREE, group, material, radius, 0.07, 0.42, 0.28, 0);
+  holoLine(THREE, group, material, radius, 0.42, 0.055, -0.02, 0.06, -0.22);
+  holoLine(THREE, group, material, radius, 0.22, 0.16, 0.39, 0.0);
+  holoDisc(THREE, group, material, radius, 0.43, 0, 0.52);
+}
+
+function addMarketHolo(THREE, group, material, radius) {
+  // Storefront: awning, posts, counter.
+  holoLine(THREE, group, material, radius, 0.8, 0.06, 0, 0.25);
+  [-0.3, -0.1, 0.1, 0.3].forEach((x, index) => {
+    holoLine(THREE, group, material, radius, 0.18, 0.16, x, 0.14, index % 2 ? 0.12 : -0.12);
+  });
+  holoLine(THREE, group, material, radius, 0.62, 0.06, 0, -0.28);
+  holoLine(THREE, group, material, radius, 0.06, 0.48, -0.31, -0.04);
+  holoLine(THREE, group, material, radius, 0.06, 0.48, 0.31, -0.04);
+  holoLine(THREE, group, material, radius, 0.22, 0.08, 0, -0.04);
+}
+
+function addCollabHolo(THREE, group, material, radius) {
+  // Collab room: three participants around a shared table/project core.
+  holoDisc(THREE, group, material, radius, -0.28, 0.18, 0.9);
+  holoDisc(THREE, group, material, radius, 0.28, 0.18, 0.9);
+  holoDisc(THREE, group, material, radius, 0, -0.28, 0.9);
+  holoLine(THREE, group, material, radius, 0.22, 0.08, -0.28, -0.02, -0.12);
+  holoLine(THREE, group, material, radius, 0.22, 0.08, 0.28, -0.02, 0.12);
+  holoLine(THREE, group, material, radius, 0.22, 0.08, 0, -0.44);
+  holoDisc(THREE, group, material, radius, 0, -0.02, 0.62);
+  holoLine(THREE, group, material, radius, 0.36, 0.045, -0.14, 0.08, 0.45);
+  holoLine(THREE, group, material, radius, 0.36, 0.045, 0.14, 0.08, -0.45);
+  holoLine(THREE, group, material, radius, 0.28, 0.045, 0, -0.15);
+}
+
+function addAutomationHolo(THREE, group, material, radius) {
+  // Project catalog + automation: project window with scenario blocks and play node.
+  holoLine(THREE, group, material, radius, 0.66, 0.055, 0, 0.3);
+  holoLine(THREE, group, material, radius, 0.66, 0.055, 0, -0.32);
+  holoLine(THREE, group, material, radius, 0.055, 0.62, -0.33, -0.01);
+  holoLine(THREE, group, material, radius, 0.055, 0.62, 0.33, -0.01);
+  [-0.17, 0.04, 0.25].forEach((x, index) => {
+    holoLine(THREE, group, material, radius, 0.16, 0.12, x, 0.08 - index * 0.16);
+  });
+  holoLine(THREE, group, material, radius, 0.24, 0.04, -0.06, 0.02, -0.55);
+  holoLine(THREE, group, material, radius, 0.24, 0.04, 0.14, -0.14, -0.55);
+  holoTriangle(THREE, group, material, radius, -0.2, -0.22, 0.8);
+}
+
+function addModuleHologram(THREE, group, module, radius) {
+  const hologramColor = HOLOGRAM_UI_BLUE;
+  const projector = new THREE.Group();
+  projector.name = `HologramProjector_${module.id}`;
+  projector.position.set(
+    0,
+    radius * 0.72,
+    module.id === "market" ? -radius * 0.16 : radius * 0.02
+  );
+  group.add(projector);
+
+  mesh(
+    THREE,
+    projector,
+    new THREE.CylinderGeometry(radius * 0.13, radius * 0.2, radius * 0.08, 24),
+    holoMaterial(THREE, hologramColor, 0.52),
+    [0, 0, 0]
+  );
+  const halo = mesh(
+    THREE,
+    projector,
+    new THREE.TorusGeometry(radius * 0.24, radius * 0.018, 8, 36),
+    holoMaterial(THREE, hologramColor, 0.52),
+    [0, radius * 0.055, 0]
+  );
+  halo.rotation.x = Math.PI / 2;
+  mesh(
+    THREE,
+    projector,
+    new THREE.CylinderGeometry(radius * 0.09, radius * 0.17, radius * 0.78, 22, 1, true),
+    holoMaterial(THREE, hologramColor, 0.07),
+    [0, radius * 0.44, 0]
+  );
+
+  const billboard = new THREE.Group();
+  billboard.name = `HologramBillboard_${module.id}`;
+  billboard.position.set(
+    0,
+    radius * 0.9,
+    0
+  );
+  billboard.userData.baseY = billboard.position.y;
+  billboard.userData.phase = module.id.length * 0.73;
+  projector.add(billboard);
+
+  if (module.id === "wallet") {
+    addWalletTerminal(THREE, billboard, hologramColor, radius);
+  } else if (module.id === "market") {
+    addMarketplaceTerminal(THREE, billboard, radius);
+  } else if (module.id === "collab") {
+    addCollaborationTerminal(THREE, billboard, radius);
+  } else if (module.id === "scanner") {
+    addAutomationTerminal(THREE, billboard, radius);
   }
 
-  const hitArea = addMesh(
+  const hitArea = mesh(
+    THREE,
+    billboard,
+    new THREE.PlaneGeometry(
+      radius * 1.08,
+      radius * 1.16
+    ),
+    invisibleMaterial(THREE),
+    [0, 0, radius * 0.08]
+  );
+  hitArea.name = `HologramButton_${module.id}`;
+  hitArea.userData.moduleId = module.id;
+  hitArea.userData.hologramButton = true;
+
+  group.userData.hologramBillboard = billboard;
+  group.userData.hologramClickArea = hitArea;
+}
+
+function addPlatformServiceCylinders(THREE, group, radius, platformMaterial) {
+  [-0.39, 0.39].forEach((offset) => {
+    const cylinder = mesh(
+      THREE,
+      group,
+      new THREE.CapsuleGeometry(radius * 0.22, radius * 0.62, 8, 18),
+      platformMaterial,
+      [offset * radius, radius * 0.5, -radius * 0.31]
+    );
+    cylinder.rotation.z = Math.PI / 2;
+    cylinder.rotation.y = Math.PI / 2;
+    cylinder.userData.part = "platform-service-cylinder";
+  });
+}
+
+function createStandardModulePlatform(THREE, group, radius, materials) {
+  addRadialHull(THREE, group, radius, materials, {
+    width: 1.6,
+    length: 1.7,
+    height: 0.21,
+    centerOffset: 0.32,
+  });
+  addPlatformServiceCylinders(THREE, group, radius, materials.body);
+}
+
+function createAutomationStudio(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
+}
+
+function createProjectLibrary(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
+}
+
+function createCommunityRelay(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
+}
+
+function createWalletMarket(THREE, group, radius, materials) {
+  createStandardModulePlatform(THREE, group, radius, materials);
+}
+
+function createFallbackBuilding(THREE, group, radius, materials) {
+  mesh(
+    THREE,
     group,
-    new THREE.CylinderGeometry(baseRadius * 1.18, baseRadius * 1.18, baseRadius * 1.15, 14),
-    new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-    }),
-    baseRadius * 0.38
+    new THREE.CylinderGeometry(radius * 0.22, radius * 0.34, radius * 0.5, 18),
+    materials.body,
+    [0, radius * 0.34, 0]
+  );
+  mesh(
+    THREE,
+    group,
+    new THREE.OctahedronGeometry(radius * 0.16),
+    materials.glow,
+    [0, radius * 0.68, 0]
+  );
+}
+
+function createModuleBuilding(THREE, module, diskRadius) {
+  const group = new THREE.Group();
+  group.name = `Module_${module.id}`;
+  group.userData.moduleId = module.id;
+
+  const radius =
+    diskRadius * SCENE_CONFIG.buildingScale * COMPLEX_VISUAL_SCALE;
+  group.userData.visualRadius = radius;
+  group.userData.focusAnchorLocal = { x: 0, y: radius * 0.58, z: 0 };
+  // Module geometry points inward along local -Z, therefore +Z is the outer edge.
+  group.userData.outwardLocal = { x: 0, y: 0, z: 1 };
+  const moduleAccentColor = HOLOGRAM_UI_BLUE;
+  const materials = addBase(THREE, group, radius, moduleAccentColor);
+  const featureRadius = radius * COMPLEX_FEATURE_SCALE;
+  // Identity comes from the module silhouette, not another circular plate.
+  if (module.id === "scanner") {
+    createAutomationStudio(THREE, group, featureRadius, materials);
+  } else if (module.id === "market") {
+    createProjectLibrary(THREE, group, featureRadius, materials);
+  } else if (module.id === "collab") {
+    createCommunityRelay(THREE, group, featureRadius, materials);
+  } else if (module.id === "wallet") {
+    createWalletMarket(THREE, group, featureRadius, materials);
+  } else {
+    createFallbackBuilding(THREE, group, featureRadius, materials);
+  }
+
+  group.traverse((object) => {
+    if (object.userData.glyphPart && object.material) {
+      object.material.transparent = true;
+      object.material.opacity = Math.min(object.material.opacity ?? 1, 0.28);
+      object.material.depthWrite = false;
+    }
+  });
+  addModuleHologram(THREE, group, module, radius);
+
+  const hitArea = mesh(
+    THREE,
+    group,
+    new THREE.CylinderGeometry(radius * 1.08, radius * 1.08, radius * 1.5, 18),
+    invisibleMaterial(THREE),
+    [0, radius * 0.42, 0]
   );
   hitArea.name = `HitArea_${module.id}`;
+  hitArea.userData.moduleId = module.id;
+  group.userData.baseHitArea = hitArea;
 
-  markModule(group, module.id);
-  delete group.userData.THREE;
+  group.traverse((object) => {
+    object.userData.moduleId = module.id;
+  });
+
   return group;
 }
 
-function getDiskRadius(bounds) {
-  const size = bounds.getSize(bounds.min.clone());
+function getDiskRadius(THREE, bounds) {
+  const size = bounds.getSize(new THREE.Vector3());
   return Math.min(size.x, size.z) * 0.5;
 }
 
 function findSurfaceHit(THREE, station, x, z, bounds, diskRadius) {
   const raycaster = new THREE.Raycaster();
-  const origin = new THREE.Vector3(x, bounds.max.y + diskRadius, z);
-  raycaster.set(origin, new THREE.Vector3(0, -1, 0));
-
+  raycaster.set(
+    new THREE.Vector3(x, bounds.max.y + diskRadius, z),
+    new THREE.Vector3(0, -1, 0)
+  );
   return raycaster
     .intersectObject(station, true)
     .find((hit) => hit.face && hit.object.visible !== false);
@@ -4639,7 +5021,9 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
 
   const clickableBuildings = [];
   const moduleGroups = new Map();
-  const diskRadius = getDiskRadius(bounds);
+  const hologramBillboards = [];
+  const hologramClickables = [];
+  const diskRadius = getDiskRadius(THREE, bounds);
 
   MODULE_ANCHORS.forEach((anchor) => {
     const module = MODULE_BY_ID[anchor.id];
@@ -4649,24 +5033,34 @@ export function createStationBuildings({ THREE, station, bounds, center }) {
     const x = center.x + Math.cos(angle) * diskRadius * anchor.ring;
     const z = center.z + Math.sin(angle) * diskRadius * anchor.ring;
     const hit = findSurfaceHit(THREE, station, x, z, bounds, diskRadius);
-
-    // Не создаём объект без подтверждённой поверхности.
     if (!hit) return;
 
     const building = createModuleBuilding(THREE, module, diskRadius);
-    building.position.set(x, hit.point.y, z);
+    const embed =
+      building.userData.visualRadius * 0.0;
+    building.position.set(x, hit.point.y - embed, z);
     building.rotation.y = -angle + Math.PI / 2;
     building.userData.surfaceObjectName = hit.object.name || "unnamed-surface";
 
     root.add(building);
-    clickableBuildings.push(building);
+    if (building.userData.baseHitArea) {
+      clickableBuildings.push(building.userData.baseHitArea);
+    }
     moduleGroups.set(module.id, building);
+    if (building.userData.hologramBillboard) {
+      hologramBillboards.push(building.userData.hologramBillboard);
+    }
+    if (building.userData.hologramClickArea) {
+      hologramClickables.push(building.userData.hologramClickArea);
+    }
   });
 
   return {
     root,
     clickableBuildings,
     moduleGroups,
+    hologramBillboards,
+    hologramClickables,
     diskRadius,
   };
 }
@@ -4675,18 +5069,22 @@ export function pulseStationBuilding(moduleGroups, moduleId) {
   const group = moduleGroups.get(moduleId);
   if (!group) return;
 
+  const initialScale = group.scale.clone();
+  group.scale.multiplyScalar(1.025);
+
   group.traverse((object) => {
     if (object.material?.emissiveIntensity !== undefined) {
       object.userData.previousEmissiveIntensity = object.material.emissiveIntensity;
-      object.material.emissiveIntensity = 1.25;
+      object.material.emissiveIntensity = 0.72;
     }
   });
 
   window.setTimeout(() => {
+    group.scale.copy(initialScale);
     group.traverse((object) => {
       if (object.material?.emissiveIntensity !== undefined) {
         object.material.emissiveIntensity =
-          object.userData.previousEmissiveIntensity ?? 0.16;
+          object.userData.previousEmissiveIntensity ?? 0.11;
       }
     });
   }, 180);
@@ -4703,12 +5101,12 @@ ungatus-lab-miniapp/components/station/stationConfig.js
 
 export const MODULES = [
   { id: "device", title: "DEVICE", subtitle: "Emulator Hangar", color: "#5ee7ff", colorHex: 0x5ee7ff, icon: "▣", type: "hangar" },
-  { id: "scanner", title: "SCANNER", subtitle: "Etalon Laboratory", color: "#53f5df", colorHex: 0x53f5df, icon: "◉", type: "dish" },
-  { id: "collab", title: "COLLAB", subtitle: "Link Hub", color: "#b99cff", colorHex: 0xb99cff, icon: "◈", type: "twins" },
-  { id: "market", title: "MARKET", subtitle: "Trade Dock", color: "#ff8bc8", colorHex: 0xff8bc8, icon: "◍", type: "hangar" },
+  { id: "scanner", title: "AUTOMATION", subtitle: "Scanner · Recorder · Scenarios", color: "#53f5df", colorHex: 0x53f5df, icon: "◉", type: "dish" },
+  { id: "collab", title: "COMMUNITY", subtitle: "Squad · Collab · Friends", color: "#b99cff", colorHex: 0xb99cff, icon: "◈", type: "twins" },
+  { id: "market", title: "PROJECTS", subtitle: "Library · Catalog · Rentals", color: "#ff8bc8", colorHex: 0xff8bc8, icon: "◍", type: "hangar" },
   { id: "premium", title: "PREMIUM", subtitle: "Status Reactor", color: "#6df0ad", colorHex: 0x6df0ad, icon: "◇", type: "reactor" },
   { id: "center", title: "CORE", subtitle: "Account Citadel", color: "#8cecff", colorHex: 0x8cecff, icon: "◎", type: "citadel" },
-  { id: "wallet", title: "WALLET", subtitle: "UGT Vault", color: "#ffe693", colorHex: 0xffe693, icon: "⇄", type: "vault" },
+  { id: "wallet", title: "WALLET & MARKET", subtitle: "UGT · Premium · Allocation", color: "#ffe693", colorHex: 0xffe693, icon: "⇄", type: "vault" },
   { id: "squad", title: "SQUAD", subtitle: "Relay Array", color: "#ca9cff", colorHex: 0xca9cff, icon: "⬡", type: "beacon" },
   { id: "earn", title: "EARN", subtitle: "Mission Beacon", color: "#ffe45c", colorHex: 0xffe45c, icon: "✦", type: "beacon" },
   { id: "game", title: "ARENA", subtitle: "PvP Rift", color: "#ff6f91", colorHex: 0xff6f91, icon: "⚔", type: "gate" },
@@ -4791,64 +5189,40 @@ export const MODULE_DETAILS = {
 
 export const STATION_MODEL_URL = "/orbital_station_edge_view.glb";
 
-// Fixed observer placed very close to the right-front edge, sector 9.
-export const OBSERVER_POSITION = { x: 150, y: 54, z: 74 };
-// Parallel screen-right translation in model-radius units.
-// Observer and look target move together, so the gaze direction and distance do not change.
-export const OBSERVER_LATERAL_SHIFT = 0.70;
-// Slight downward component matching the dotted guide on the screenshot.
-export const OBSERVER_SCREEN_DOWN_SHIFT = 0.05;
-// Move the observer along the exact straight segment from observer to the beam target.
-// 0.12 means 12% of the current observer-to-beam distance.
-export const OBSERVER_TO_BEAM_FRACTION = 0.32;
-// Additional move toward the visible pink circular platform between frames 1 and 2.
-// The destination is calculated from the platform's actual polar position on the disk.
-export const OBSERVER_TO_PLATFORM = {
-  angleDeg: 338,
-  ring: 0.661,
-  fraction: 0.10,
-  preserveEyeHeight: true,
+// One stable home composition. No mandatory panorama frames on the main screen.
+export const HOME_VIEW = {
+  direction: { x: 0.86, y: 0.34, z: 0.36 },
+  distance: 3.92,
+  targetHeight: 0.13,
+  fov: 37,
 };
-// One additional move toward the angular seam between:
-// frame 1 left edge and frame 2 right edge.
-// 0.1056 repeats the previous absolute approach step.
-export const OBSERVER_TO_FRAME_SEAM_STEP = 0.2112;
-export const INITIAL_LOOK_TARGET = { x: 150, y: 18, z: -26 };
-export const HEAD_ROTATION = {
-  startYawDeg: 60,
-  endYawDeg: 105,
-  pitchLiftDeg: 5,
-};
-export const LOOK_TARGETS = {
-  right: INITIAL_LOOK_TARGET,
-  center: { x: 0, y: 0, z: 0 },
-  left: { x: -100, y: 0, z: 0 },
-};
-export const CAMERA_POSES = {
-  start: { camera: OBSERVER_POSITION, target: INITIAL_LOOK_TARGET },
-  end: { camera: OBSERVER_POSITION, target: LOOK_TARGETS.left },
-};
+
 export const SPACE_OBJECTS = {
-  sun: { distance: 12.5, sideOffset: -0.9, heightOffset: 0.7, radius: 0.36 },
+  sun: {
+    distance: 8.9,
+    sideOffset: -0.92,
+    heightOffset: 0.78,
+    radius: 0.29,
+  },
   rift: { visible: false },
 };
-// Временно сохраняем текущие места. На следующем этапе заменим их
-// на точные точки крепления к деталям GLB.
+
 export const MODULE_ANCHORS = [
-  // Calibration stage: only the four authored circular platforms.
-  // GLB platform centers were authored at radius 7.35 inside a disk radius about 11.12,
-  // therefore the normalized ring is 0.661.
   { id: "market", zone: "platform", platform: 1, angle: 338, ring: 0.661, focusFrame: 1 },
-  { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 2 },
-  { id: "device", zone: "platform", platform: 3, angle: 158, ring: 0.661, focusFrame: 2 },
-  { id: "game", zone: "platform", platform: 4, angle: 68,  ring: 0.661, focusFrame: 3, action: "launch-game" },
+  { id: "scanner", zone: "platform", platform: 2, angle: 248, ring: 0.661, focusFrame: 1 },
+  { id: "collab", zone: "platform", platform: 3, angle: 158, ring: 0.661, focusFrame: 2 },
+  { id: "wallet", zone: "platform", platform: 4, angle: 68, ring: 0.661, focusFrame: 3 },
 ];
 
 export const MODULE_FOCUS = {
-  enabled: false,
-  distanceScale: 1.35,
-  heightScale: 0.38,
-  durationMs: 520,
+  enabled: true,
+  durationMs: 760,
+  distanceByRadius: 0.92,
+  heightByRadius: 0.36,
+  targetInsetByRadius: 0.12,
+  targetHeightByRadius: 0.08,
+  arcLiftByRadius: 0.28,
+  arcSideByRadius: 0.18,
 };
 
 export const SCENE_CONFIG = {
@@ -4861,7 +5235,6 @@ export const SCENE_CONFIG = {
   buildingScale: 0.042,
   buildingEmbed: 0.22,
 };
-
 
 
 -
@@ -5495,6 +5868,7 @@ export const translations = {
     profile_reset_entrance: "Lähtesta Mini App sissepääs",
   },
 };
+
 
 
 ---
