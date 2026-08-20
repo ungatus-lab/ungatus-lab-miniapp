@@ -6,6 +6,7 @@ import { MODULE_ANCHORS, MODULE_BY_ID, SCENE_CONFIG } from "./stationConfig";
 const COMPLEX_VISUAL_SCALE = 4.35;
 // Upper architecture grows with the full cap while retaining a small edge margin.
 const COMPLEX_FEATURE_SCALE = 1.02;
+const WALLET_UI_BLUE = 0x58d7ff;
 
 function bodyMaterial(THREE) {
   return new THREE.MeshStandardMaterial({
@@ -291,7 +292,7 @@ function addLinkedCoresGlyph(THREE, group, radius) {
 }
 
 function addWalletGlyph(THREE, group, radius) {
-  const color = 0xffd76b;
+  const color = WALLET_UI_BLUE;
   const y = radius * 0.742;
   const glow = glowMaterial(THREE, color, 0.98);
 
@@ -489,7 +490,7 @@ function createRoundedRectRingShape(THREE, width, height, corner, thickness) {
 }
 
 function addWalletTerminal(THREE, group, color, radius) {
-  const uiBlue = 0x58d7ff;
+  const uiBlue = WALLET_UI_BLUE;
   const uiBlueSoft = 0x2c94c7;
   const darkCore = 0x06121f;
 
@@ -661,13 +662,13 @@ function addAutomationHolo(THREE, group, material, radius) {
 }
 
 function addModuleHologram(THREE, group, module, radius) {
-  const hologramColor = module.id === "wallet" ? 0x58d7ff : module.colorHex;
+  const hologramColor = module.id === "wallet" ? WALLET_UI_BLUE : module.colorHex;
   const projector = new THREE.Group();
   projector.name = `HologramProjector_${module.id}`;
   projector.position.set(
     0,
     radius * 0.72,
-    module.id === "wallet" ? -radius * 0.42 : -radius * 0.3
+    module.id === "wallet" ? radius * 0.02 : -radius * 0.3
   );
   group.add(projector);
 
@@ -818,7 +819,7 @@ function createWalletMarket(THREE, group, radius, materials) {
     THREE,
     group,
     new THREE.CylinderGeometry(radius * 0.16, radius * 0.21, radius * 0.075, 20),
-    accentMaterial(THREE, 0xffd76b, 0.9),
+    accentMaterial(THREE, WALLET_UI_BLUE, 0.9),
     [0, radius * 0.62, -radius * 0.28]
   );
   core.rotation.y = Math.PI / 8;
@@ -854,7 +855,9 @@ function createModuleBuilding(THREE, module, diskRadius) {
   group.userData.focusAnchorLocal = { x: 0, y: radius * 0.58, z: 0 };
   // Module geometry points inward along local -Z, therefore +Z is the outer edge.
   group.userData.outwardLocal = { x: 0, y: 0, z: 1 };
-  const materials = addBase(THREE, group, radius, module.colorHex);
+  const moduleAccentColor =
+    module.id === "wallet" ? WALLET_UI_BLUE : module.colorHex;
+  const materials = addBase(THREE, group, radius, moduleAccentColor);
   const featureRadius = radius * COMPLEX_FEATURE_SCALE;
   // Identity comes from the module silhouette, not another circular plate.
   if (module.id === "scanner") {
