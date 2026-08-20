@@ -599,22 +599,49 @@ function addMarketplaceTerminal(THREE, group, radius) {
   addModernTerminalShell(THREE, group, radius);
   const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
   const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
-  // Marketplace storefront: awning, supports, counter and product marker.
-  holoLine(THREE, group, blue, radius, 0.66, 0.07, 0, 0.22, 0, 0.075);
-  [-0.22, 0, 0.22].forEach((x, i) =>
-    holoLine(THREE, group, blue, radius, 0.18, 0.14, x, 0.12, i % 2 ? 0.1 : -0.1, 0.075)
-  );
-  holoLine(THREE, group, blue, radius, 0.06, 0.42, -0.29, -0.06, 0, 0.075);
-  holoLine(THREE, group, blue, radius, 0.06, 0.42, 0.29, -0.06, 0, 0.075);
-  holoLine(THREE, group, blue, radius, 0.6, 0.065, 0, -0.28, 0, 0.075);
+
+  // Marketplace: shopping bag containing a compact 2x2 catalog grid.
   mesh(
     THREE,
     group,
-    new THREE.ShapeGeometry(createRoundedRectShape(THREE, radius * 0.27, radius * 0.18, radius * 0.05)),
-    dark,
-    [0, -radius * 0.08, radius * 0.09]
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.58, radius * 0.48, radius * 0.075)
+    ),
+    blue,
+    [0, -radius * 0.055, radius * 0.055]
   );
-  holoDisc(THREE, group, blue, radius, 0, -0.08, 0.38, 0.1);
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.48, radius * 0.38, radius * 0.05)
+    ),
+    dark,
+    [0, -radius * 0.055, radius * 0.075]
+  );
+
+  // Two short handles clearly separate Marketplace from the Wallet symbol.
+  holoLine(THREE, group, blue, radius, 0.055, 0.22, -0.15, 0.23, -0.35, 0.08);
+  holoLine(THREE, group, blue, radius, 0.055, 0.22, 0.15, 0.23, 0.35, 0.08);
+  holoLine(THREE, group, blue, radius, 0.28, 0.05, 0, 0.31, 0, 0.08);
+
+  // Catalog tiles.
+  [-0.12, 0.12].forEach((x) => {
+    [-0.14, 0.08].forEach((y) => {
+      mesh(
+        THREE,
+        group,
+        new THREE.ShapeGeometry(
+          createRoundedRectShape(THREE, radius * 0.16, radius * 0.14, radius * 0.025)
+        ),
+        blue,
+        [radius * x, radius * y, radius * 0.09]
+      );
+    });
+  });
+
+  // Small offer/transaction marker.
+  holoDisc(THREE, group, blue, radius, 0.31, -0.22, 0.38, 0.105);
 }
 
 function addCollaborationTerminal(THREE, group, radius) {
@@ -630,19 +657,48 @@ function addCollaborationTerminal(THREE, group, radius) {
 function addAutomationTerminal(THREE, group, radius) {
   addModernTerminalShell(THREE, group, radius);
   const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
-  const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
-  // Automation: gear, play control and REC indicator.
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.98);
+
+  // Robot Macro Core: one robot face remains the dominant silhouette.
   mesh(
     THREE,
     group,
-    new THREE.ShapeGeometry(createGearShape(THREE, radius * 0.27, radius * 0.22, 10)),
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.48, radius * 0.42, radius * 0.11)
+    ),
     blue,
-    [-radius * 0.03, -radius * 0.02, radius * 0.06]
+    [-radius * 0.06, radius * 0.015, radius * 0.055]
   );
-  holoDisc(THREE, group, dark, radius, -0.03, -0.02, 0.72, 0.08);
-  holoTriangle(THREE, group, blue, radius, -0.01, -0.02, 0.7, 0);
-  holoDisc(THREE, group, blue, radius, 0.28, 0.27, 0.38, 0.085);
-  holoLine(THREE, group, blue, radius, 0.18, 0.04, 0.19, 0.19, -0.62, 0.08);
+  mesh(
+    THREE,
+    group,
+    new THREE.ShapeGeometry(
+      createRoundedRectShape(THREE, radius * 0.39, radius * 0.32, radius * 0.075)
+    ),
+    dark,
+    [-radius * 0.06, radius * 0.015, radius * 0.075]
+  );
+
+  // Antenna and eyes.
+  holoLine(THREE, group, blue, radius, 0.04, 0.17, -0.06, 0.29, 0, 0.085);
+  holoDisc(THREE, group, blue, radius, -0.06, 0.37, 0.3, 0.09);
+  holoDisc(THREE, group, blue, radius, -0.18, 0.09, 0.31, 0.09);
+  holoDisc(THREE, group, blue, radius, 0.06, 0.09, 0.31, 0.09);
+
+  // Play is embedded in the robot face.
+  holoTriangle(THREE, group, blue, radius, -0.045, -0.105, 0.55, 0);
+
+  // Half-gear hugs the right side rather than becoming a separate icon.
+  [-1.05, -0.7, -0.35, 0, 0.35, 0.7, 1.05].forEach((angle) => {
+    const x = 0.19 + Math.cos(angle) * 0.24;
+    const y = 0.015 + Math.sin(angle) * 0.24;
+    holoLine(THREE, group, blue, radius, 0.115, 0.045, x, y, angle, 0.083);
+  });
+
+  // Short mind-map branch with two scene nodes.
+  holoLine(THREE, group, blue, radius, 0.2, 0.035, 0.17, -0.19, -0.45, 0.085);
+  holoLine(THREE, group, blue, radius, 0.14, 0.035, 0.29, -0.27, 0.7, 0.085);
+  holoDisc(THREE, group, blue, radius, 0.37, -0.33, 0.28, 0.09);
 }
 
 function addWalletTerminal(THREE, group, color, radius) {
