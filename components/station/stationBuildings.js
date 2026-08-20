@@ -560,93 +560,89 @@ function addModernTerminalShell(THREE, group, radius) {
   );
 }
 
-function addMarketplaceTerminal(THREE, group, radius) {
-  addModernTerminalShell(THREE, group, radius);
-  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
-  const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
+function createGearShape(THREE, outerRadius, innerRadius, teeth = 10) {
+  const shape = new THREE.Shape();
+  for (let i = 0; i < teeth * 2; i += 1) {
+    const angle = (i / (teeth * 2)) * Math.PI * 2;
+    const size = i % 2 === 0 ? outerRadius : innerRadius;
+    const x = Math.cos(angle) * size;
+    const y = Math.sin(angle) * size;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, outerRadius * 0.36, 0, Math.PI * 2, false);
+  shape.holes.push(hole);
+  return shape;
+}
 
-  // Familiar shopping bag with two short handles and a small price tag.
+function addPersonSilhouette(THREE, group, material, radius, x, y, scale = 1) {
+  holoDisc(THREE, group, material, radius, x, y + 0.115 * scale, 0.72 * scale, 0.07);
   mesh(
     THREE,
     group,
     new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.54, radius * 0.48, radius * 0.07)
+      createRoundedRectShape(
+        THREE,
+        radius * 0.23 * scale,
+        radius * 0.19 * scale,
+        radius * 0.09 * scale
+      )
     ),
-    blue,
-    [0, -radius * 0.055, radius * 0.05]
+    material,
+    [radius * x, radius * (y - 0.06 * scale), radius * 0.06]
   );
-  const handle = new THREE.Shape();
-  handle.absarc(0, 0, radius * 0.16, Math.PI, 0, false);
-  const handleHole = new THREE.Path();
-  handleHole.absarc(0, 0, radius * 0.105, Math.PI, 0, false);
-  handle.holes.push(handleHole);
+}
+
+function addMarketplaceTerminal(THREE, group, radius) {
+  addModernTerminalShell(THREE, group, radius);
+  const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
+  // Marketplace storefront: awning, supports, counter and product marker.
+  holoLine(THREE, group, blue, radius, 0.66, 0.07, 0, 0.22, 0, 0.075);
+  [-0.22, 0, 0.22].forEach((x, i) =>
+    holoLine(THREE, group, blue, radius, 0.18, 0.14, x, 0.12, i % 2 ? 0.1 : -0.1, 0.075)
+  );
+  holoLine(THREE, group, blue, radius, 0.06, 0.42, -0.29, -0.06, 0, 0.075);
+  holoLine(THREE, group, blue, radius, 0.06, 0.42, 0.29, -0.06, 0, 0.075);
+  holoLine(THREE, group, blue, radius, 0.6, 0.065, 0, -0.28, 0, 0.075);
   mesh(
     THREE,
     group,
-    new THREE.ShapeGeometry(handle),
-    blue,
-    [0, radius * 0.19, radius * 0.055]
+    new THREE.ShapeGeometry(createRoundedRectShape(THREE, radius * 0.27, radius * 0.18, radius * 0.05)),
+    dark,
+    [0, -radius * 0.08, radius * 0.09]
   );
-  holoDisc(THREE, group, dark, radius, 0.18, -0.03, 0.5, 0.07);
+  holoDisc(THREE, group, blue, radius, 0, -0.08, 0.38, 0.1);
 }
 
 function addCollaborationTerminal(THREE, group, radius) {
   addModernTerminalShell(THREE, group, radius);
   const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
-
-  // Conventional three-person group: three heads and one shared shoulder base.
-  holoDisc(THREE, group, blue, radius, 0, 0.18, 0.94, 0.06);
-  holoDisc(THREE, group, blue, radius, -0.25, 0.09, 0.76, 0.055);
-  holoDisc(THREE, group, blue, radius, 0.25, 0.09, 0.76, 0.055);
-  mesh(
-    THREE,
-    group,
-    new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.34, radius * 0.2, radius * 0.1)
-    ),
-    blue,
-    [0, -radius * 0.12, radius * 0.05]
-  );
-  mesh(
-    THREE,
-    group,
-    new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.68, radius * 0.16, radius * 0.08)
-    ),
-    blue,
-    [0, -radius * 0.27, radius * 0.045]
-  );
+  // Conventional group icon with one central and two supporting participants.
+  addPersonSilhouette(THREE, group, blue, radius, 0, 0.025, 1.18);
+  addPersonSilhouette(THREE, group, blue, radius, -0.25, -0.04, 0.9);
+  addPersonSilhouette(THREE, group, blue, radius, 0.25, -0.04, 0.9);
+  holoLine(THREE, group, blue, radius, 0.64, 0.055, 0, -0.28, 0, 0.055);
 }
 
 function addAutomationTerminal(THREE, group, radius) {
   addModernTerminalShell(THREE, group, radius);
   const blue = holoColorMaterial(THREE, HOLOGRAM_UI_BLUE, 0.96);
-  const dark = holoFillMaterial(THREE, 0x06121f, 0.94);
-
-  // Macro recorder: project card with a gesture path, tap target and REC dot.
+  const dark = holoFillMaterial(THREE, 0x06121f, 0.96);
+  // Automation: gear, play control and REC indicator.
   mesh(
     THREE,
     group,
-    new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.58, radius * 0.5, radius * 0.07)
-    ),
+    new THREE.ShapeGeometry(createGearShape(THREE, radius * 0.27, radius * 0.22, 10)),
     blue,
-    [0, -radius * 0.02, radius * 0.045]
+    [-radius * 0.03, -radius * 0.02, radius * 0.06]
   );
-  mesh(
-    THREE,
-    group,
-    new THREE.ShapeGeometry(
-      createRoundedRectShape(THREE, radius * 0.48, radius * 0.39, radius * 0.05)
-    ),
-    dark,
-    [0, -radius * 0.02, radius * 0.065]
-  );
-  holoDisc(THREE, group, blue, radius, -0.17, 0.11, 0.48, 0.08);
-  holoDisc(THREE, group, blue, radius, 0.13, -0.13, 0.5, 0.08);
-  holoLine(THREE, group, blue, radius, 0.34, 0.045, -0.02, -0.01, -0.62, 0.08);
-  holoTriangle(THREE, group, blue, radius, 0.2, 0.12, 0.62, 0);
-  holoDisc(THREE, group, blue, radius, 0.25, 0.28, 0.34, 0.085);
+  holoDisc(THREE, group, dark, radius, -0.03, -0.02, 0.72, 0.08);
+  holoTriangle(THREE, group, blue, radius, -0.01, -0.02, 0.7, 0);
+  holoDisc(THREE, group, blue, radius, 0.28, 0.27, 0.38, 0.085);
+  holoLine(THREE, group, blue, radius, 0.18, 0.04, 0.19, 0.19, -0.62, 0.08);
 }
 
 function addWalletTerminal(THREE, group, color, radius) {
@@ -756,7 +752,7 @@ function addModuleHologram(THREE, group, module, radius) {
   projector.position.set(
     0,
     radius * 0.72,
-    radius * 0.02
+    module.id === "market" ? -radius * 0.16 : radius * 0.02
   );
   group.add(projector);
 
@@ -822,6 +818,21 @@ function addModuleHologram(THREE, group, module, radius) {
   group.userData.hologramClickArea = hitArea;
 }
 
+function addPlatformServicePods(THREE, group, radius, color) {
+  [-0.39, 0.39].forEach((offset) => {
+    const pod = mesh(
+      THREE,
+      group,
+      new THREE.CapsuleGeometry(radius * 0.17, radius * 0.46, 8, 16),
+      accentMaterial(THREE, color, 0.46),
+      [offset * radius, radius * 0.49, -radius * 0.31]
+    );
+    pod.rotation.z = Math.PI / 2;
+    pod.rotation.y = Math.PI / 2;
+    pod.userData.part = "platform-service-pod";
+  });
+}
+
 function createAutomationStudio(THREE, group, radius, materials) {
   addRadialHull(THREE, group, radius, materials, {
     width: 1.52,
@@ -867,18 +878,6 @@ function createCommunityRelay(THREE, group, radius, materials) {
     length: 1.7,
     height: 0.21,
     centerOffset: 0.32,
-  });
-
-  [-0.39, 0.39].forEach((offset) => {
-    const capsule = mesh(
-      THREE,
-      group,
-      new THREE.CapsuleGeometry(radius * 0.22, radius * 0.62, 8, 18),
-      bodyMaterial(THREE),
-      [offset * radius, radius * 0.50, -radius * 0.31]
-    );
-    capsule.rotation.z = Math.PI / 2;
-    capsule.rotation.y = Math.PI / 2;
   });
 
 }
@@ -955,6 +954,7 @@ function createModuleBuilding(THREE, module, diskRadius) {
   } else {
     createFallbackBuilding(THREE, group, featureRadius, materials);
   }
+  addPlatformServicePods(THREE, group, featureRadius, module.colorHex);
 
   group.traverse((object) => {
     if (object.userData.glyphPart && object.material) {
