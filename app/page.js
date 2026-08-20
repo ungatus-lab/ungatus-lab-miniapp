@@ -276,6 +276,7 @@ export default function Home() {
         <AccountStationPrototype
           open={stationOpen}
           onClose={closeStationPrototype}
+          onOpenProfile={() => setDrawerOpen(true)}
           onLaunchGame={openGame}
           telegramUser={telegramUser}
           t={t}
