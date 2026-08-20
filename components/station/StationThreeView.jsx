@@ -305,7 +305,7 @@ export default function StationThreeView({
             );
             raycaster.setFromCamera(pointer, camera);
             const hit = raycaster
-              .intersectObjects(buildings.clickableBuildings, true)
+              .intersectObjects(buildings.hologramClickables || [], true)
               .find((result) => result.object.userData.moduleId);
             if (!hit) return;
             const moduleId = hit.object.userData.moduleId;
