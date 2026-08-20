@@ -811,20 +811,20 @@ function createWalletMarket(THREE, group, radius, materials) {
     group,
     new THREE.CylinderGeometry(radius * 0.49, radius * 0.62, radius * 0.16, 8),
     bodyMaterial(THREE),
-    [0, radius * 0.50, -radius * 0.28]
+    [0, radius * 0.50, radius * 0.02]
   );
   vault.rotation.y = Math.PI / 8;
+  vault.userData.part = "wallet-projector-plinth";
 
   const core = mesh(
     THREE,
     group,
     new THREE.CylinderGeometry(radius * 0.16, radius * 0.21, radius * 0.075, 20),
     accentMaterial(THREE, WALLET_UI_BLUE, 0.9),
-    [0, radius * 0.62, -radius * 0.28]
+    [0, radius * 0.62, radius * 0.02]
   );
   core.rotation.y = Math.PI / 8;
-
-  addWalletGlyph(THREE, group, radius);
+  core.userData.part = "wallet-projector-core";
 }
 
 function createFallbackBuilding(THREE, group, radius, materials) {
