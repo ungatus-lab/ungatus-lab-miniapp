@@ -667,7 +667,7 @@ const trainingIntroTimerRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    if (screen !== "arena" && screen !== "city") return;
+    if (screen !== "arena") return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -695,12 +695,6 @@ const trainingIntroTimerRef = useRef(null);
         forceLandingPreviewRender();
       }
 
-      if (screen === "city") {
-        // clampCityCameraToWorld calculates the current minimum zoom itself.
-        // Do not reference local camera/minimumZoom variables from resize().
-        clampCityCameraToWorld();
-        forceBuildPreviewRender();
-      }
     }
 
     resize();
@@ -712,16 +706,13 @@ const trainingIntroTimerRef = useRef(null);
       const dt = Math.min(40, time - lastTimeRef.current);
       lastTimeRef.current = time;
 
-      updateCity(dt / 1000);
+      updateCoreProduction(dt / 1000);
 
       if (screen === "arena") {
         updateArena(dt / 1000);
         drawArena();
       }
 
-      if (screen === "city") {
-        drawCity();
-      }
 
       rafRef.current = window.requestAnimationFrame(loop);
     }
@@ -1272,7 +1263,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.nextLevelXp = getNextLevelXp(stats.level);
     setCityStats({ ...stats });
     setHud({ level: stats.level, score: 0, cooldown: 0, teleportMode: false, status: "DEV LAB" });
-    setScreen("city");
+    setScreen("arena");
   }
 
   function getCitadelFootprint(level) {
@@ -2006,40 +1997,15 @@ const trainingIntroTimerRef = useRef(null);
     if (!devLabRef.current) return;
     const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
     const stats = cityStatsRef.current;
-    const previousLevel = stats.level;
-    saveDiagnosticSnapshot(previousLevel);
-    const citadel = getCitadelBuilding();
-    if (!citadel || target === previousLevel) return;
-
-    resizeDeveloperCityWorld(target);
-
-    const citadelMoves = resizeCitadelForLevel(citadel, target);
-
+    if (target === stats.level) return;
     stats.level = target;
     stats.xp = 0;
     stats.nextLevelXp = getNextLevelXp(target);
     stats.guardCap = getCoreArmyCapacity(target);
-    citadel.level = target;
-    citadel.pendingLevel = null;
-    citadel.upgrading = false;
-    citadel.underConstruction = false;
-    constructionQueueRef.current = constructionQueueRef.current.filter((id) => id !== citadel.id);
-    const rebuildReport = target > previousLevel ? autoFitDeveloperCity(previousLevel, target) : [];
-    if (citadelMoves.length > 0) {
-      rebuildReport.unshift({ type: "Citadel ring", before: citadelMoves.length, complexes: citadelMoves.length, reserve: 0, synthetic: 0, moved: citadelMoves.length });
-    }
-    if (rebuildReport.length > 0) showDeveloperRebuildReport(target, rebuildReport);
     if (playerRef.current) playerRef.current.level = target;
-    cityCameraRef.current.x = CITY_WIDTH / 2;
-    cityCameraRef.current.y = CITY_HEIGHT / 2;
-    const cityCanvas = canvasRef.current;
-    cityCameraRef.current.zoom = getCityFitMinZoom(cityCanvas, 140);
-    clampCityCameraToWorld();
-    forceBuildPreviewRender();
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
-    setHud((current) => ({ ...current, level: target, status: `DEV LEVEL ${target}` }));
+    setHud((current) => ({ ...current, level: target, status: `CORE LEVEL ${target}` }));
     setCityStats({ ...stats });
-    setTimeout(() => saveDiagnosticSnapshot(target), 0);
   }
 
   function addDeveloperResources() {
@@ -2336,54 +2302,13 @@ const trainingIntroTimerRef = useRef(null);
     }
   }
 
-  function updateCity(dt) {
+  function updateCoreProduction(dt) {
     const stats = cityStatsRef.current;
-    const buildings = cityRef.current.buildings;
-
-    const activeConstructionId = constructionQueueRef.current[0];
-    if (activeConstructionId) {
-      const building = buildings.find((item) => item.id === activeConstructionId);
-      if (!building) {
-        constructionQueueRef.current.shift();
-      } else {
-        building.buildElapsed = Math.min(
-          building.buildDuration,
-          (building.buildElapsed || 0) + dt
-        );
-        if (building.buildElapsed >= building.buildDuration) {
-          building.underConstruction = false;
-          constructionQueueRef.current.shift();
-          const wasUpgrade = Boolean(building.upgrading);
-          if (wasUpgrade) completeBuildingUpgrade(building);
-          const completedType = building.type;
-          const completedCount = buildings.filter((item) => item.type === completedType && !item.underConstruction).length;
-          const completedTarget = completedType === "House" ? TUTORIAL_HOUSE_TARGET : completedType === "CrystalPoint" ? TUTORIAL_CRYSTAL_TARGET : completedType === "Barracks" ? TUTORIAL_BARRACKS_TARGET : 0;
-          if (!wasUpgrade && completedTarget > 0 && completedCount >= completedTarget && !tutorialMissionComplete) {
-            const labels = { House: "HOUSING ONLINE", CrystalPoint: "CRYSTAL NETWORK ONLINE", Barracks: "DEFENSE GRID ONLINE" };
-            setTutorialMissionComplete({ icon: "✓", title: "OBJECTIVE COMPLETE", detail: labels[completedType] });
-            if (tutorialMissionTimerRef.current) clearTimeout(tutorialMissionTimerRef.current);
-            setBuildMenuTutorialReady(false);
-            tutorialMissionTimerRef.current = setTimeout(() => setTutorialMissionComplete(null), 1250);
-          }
-
-          if (building.type === "House") {
-            const economy = getBuildingEconomy("House", building.level || 1);
-            stats.workers = Math.min(stats.workerCap + economy.workerCapacity, stats.workers + economy.workerCapacity);
-          }
-          recalculateCityEconomy();
-        }
-      }
-    }
-
-    if (!Number.isFinite(stats.crystals)) {
-      stats.crystals = 0;
-    }
-
-    // Crystals are active map loot only. Mines and passive income are disabled.
+    if (!Number.isFinite(stats.crystals)) stats.crystals = 0;
     stats.crystalRate = 0;
 
-    // One invisible self-growing Barracks lives inside Core. It has no city cells,
-    // no placement, no House dependency and no crystal ammunition cost.
+    // Preserve only the old Barracks output result. No city cells, twins,
+    // placement, extra buildings or crystal ammunition are simulated.
     const coreBarracks = coreBarracksRef.current;
     const coreBarracksLevel = Math.max(1, Math.round(stats.level || 1));
     coreBarracks.level = coreBarracksLevel;
@@ -2407,7 +2332,6 @@ const trainingIntroTimerRef = useRef(null);
     }
 
     cityStatsUiTimerRef.current += dt;
-
     if (cityStatsUiTimerRef.current >= 0.2) {
       cityStatsUiTimerRef.current = 0;
       setCityStats({ ...stats });
@@ -4802,16 +4726,7 @@ const trainingIntroTimerRef = useRef(null);
           @keyframes tutorialMissionComplete { 0% { opacity:0; transform:translate(-50%,-50%) scale(.78); } 55% { opacity:1; transform:translate(-50%,-50%) scale(1.05); } 100% { opacity:1; transform:translate(-50%,-50%) scale(1); } }
         `}
       </style>
-
-      {devLab && devRebuildReport && (screen === "arena" || screen === "city") && (
-        <div style={styles.devRebuildReport}>
-          <strong>AUTO FIT · LEVEL {devRebuildReport.level}</strong>
-          {devRebuildReport.items.map((item) => (
-            <small key={item.type}>{item.type}: {item.before} → {item.complexes} complexes{item.synthetic ? ` · +${item.synthetic} auto twins` : ""}{item.moved ? ` · ${item.moved} relocated` : ""}</small>
-          ))}
-        </div>
-      )}
-      {devLab && (screen === "arena" || screen === "city") && (
+      {devLab && screen === "arena" && (
         <div style={getDeveloperLabPanelStyle()}>
           <div style={styles.devLabHeader} onPointerDown={beginDeveloperLabPanelDrag} onPointerMove={moveDeveloperLabPanelDrag} onPointerUp={endDeveloperLabPanelDrag} onPointerCancel={endDeveloperLabPanelDrag} onDoubleClick={() => setDevLabPanelPosition(null)} title="Drag panel · double tap to auto-place"><span>⠿ DEV LAB</span><b>LV {cityStats.level}</b></div>
           <div style={styles.devLabControls}>
@@ -4820,86 +4735,9 @@ const trainingIntroTimerRef = useRef(null);
             <button onClick={addDeveloperResources}>∞</button>
             <button onClick={exitDeveloperLab}>×</button>
           </div>
-          <div style={styles.devLabCityLine}>
-            <small>{CITY_WIDTH / CITY_GRID_STEP}×{CITY_HEIGHT / CITY_GRID_STEP} CITY</small>
-            <button style={styles.devLabGridReportButton} onClick={openCityGridReport} title="City primary-cell diagnostics">▦ DATA</button>
-          </div>
+          <div style={styles.devLabCityLine}><small>CORE B{cityStats.level} · CAP {cityStats.guardCap}</small></div>
         </div>
       )}
-
-      {devLab && cityGridReportOpen && (screen === "arena" || screen === "city") && (() => {
-        const report = getCityGridReport();
-        return (
-          <div style={styles.cityGridReportBackdrop} onPointerDown={(event) => { if (event.target === event.currentTarget) setCityGridReportOpen(false); }}>
-            <section style={styles.cityGridReportModal} role="dialog" aria-modal="true" aria-label="City grid diagnostics">
-              <div style={styles.cityGridReportHeader}>
-                <div><small>DEV LAB · 20 GENERATIONS</small><strong>CELL STRUCTURE · LV {report.level}</strong></div>
-                <button onClick={() => setCityGridReportOpen(false)} aria-label="Close city grid diagnostics">×</button>
-              </div>
-
-              <div style={{...styles.cityGridReportStatus,...(report.ok ? styles.cityGridReportStatusOk : styles.cityGridReportStatusBad)}}>
-                <b>{report.ok ? "THEORY = ACTUAL" : "MISMATCH DETECTED"}</b>
-                <small>One object of each type · independent of how many buildings are placed</small>
-              </div>
-
-              <p style={styles.cityGridReportNote}>Each next-generation cell combines 4 cells of the previous generation. Transparency means disappearance of the internal lines: 0% keeps all inner borders visible, while 100% removes them so four cells read as one larger cell.</p>
-
-              {(() => {
-                const snapshot = buildDiagnosticSnapshot();
-                return (<>
-                  <div style={styles.cityGridCopyBar}>
-                    <button onClick={() => copyDiagnosticData("current")}>COPY CURRENT</button>
-                    <button onClick={() => copyDiagnosticData("history")}>COPY HISTORY · {diagnosticHistoryRef.current.length}</button>
-                    <small>{diagnosticCopyStatus || `SESSION LEVELS: ${diagnosticHistoryRef.current.map((item) => item.level).join(", ")}`}</small>
-                  </div>
-                  <div style={styles.cityGridBalanceGrid}>
-                    <div><small>MAP</small><b>{snapshot.city.width}×{snapshot.city.height}</b><span>{snapshot.city.primaryCells} cells</span></div>
-                    <div><small>OCCUPIED</small><b>{snapshot.city.occupiedPercent}%</b><span>{snapshot.city.occupiedCells} cells</span></div>
-                    <div><small>ARMY</small><b>{snapshot.army.totalOwnedGuards}</b><span>{snapshot.army.marchingGuards} marching</span></div>
-                    <div><small>CRYSTALS</small><b>+{snapshot.economy.crystalRate}/s</b><span>{snapshot.economy.crystals} stored</span></div>
-                  </div>
-                  <div style={styles.cityGridReportTableWrap}>
-                    <table style={styles.cityGridBalanceTable}>
-                      <thead><tr><th>TYPE</th><th>BUILT</th><th>ONE CELLS</th><th>ONE %</th><th>ALL %</th><th>ONE EFFECT</th><th>ALL EFFECT</th></tr></thead>
-                      <tbody>{snapshot.buildings.map((item) => {
-                        const effect = item.one.effects;
-                        const total = item.allBuilt.effects;
-                        const effectText = item.type === "House" ? `+${effect.workerCapacity} workers · +${effect.guardCapacity} cap` : item.type === "CrystalPoint" ? `+${effect.crystalRate}/s` : item.type === "Barracks" ? `${effect.barracksBatch}/cycle` : "territory";
-                        const totalText = item.type === "House" ? `+${total.workerCapacity} workers · +${total.guardCapacity} cap` : item.type === "CrystalPoint" ? `+${total.crystalRate}/s` : item.type === "Barracks" ? `${total.barracksBatch}/cycle` : "territory";
-                        return <tr key={item.type}><td><b>{item.label}</b></td><td>{item.built}</td><td>{item.one.primaryCells}</td><td>{item.one.mapPercent}%</td><td>{item.allBuilt.mapPercent}%</td><td>{effectText}</td><td>{totalText}</td></tr>;
-                      })}</tbody>
-                    </table>
-                  </div>
-                </>);
-              })()}
-
-              <div style={styles.cityGridObjectList}>{report.objects.map((object) => (
-                <article key={object.type} style={styles.cityGridObjectCard}>
-                  <div style={styles.cityGridObjectHeader}>
-                    <div><small>ONE OBJECT · CURRENT LEVEL {report.level}</small><strong>{object.label}</strong></div>
-                    <div><small>PRIMARY CELLS · THEORY / ACTUAL</small><b style={object.theoryPrimary === object.actualPrimary ? styles.cityGridReportOkText : styles.cityGridReportBadText}>{object.theoryPrimary} / {object.actualPrimary}</b><span>{object.theoryFootprint} / {object.actualFootprint}</span></div>
-                  </div>
-                  <div style={styles.cityGridReportTableWrap}>
-                    <table style={styles.cityGridGenerationTable}>
-                      <thead><tr><th>GEN</th><th>CELL SIZE</th><th>CELLS T / A</th><th>TRANSP. T / A</th><th>FIRST LV T / A</th><th>CHECK</th></tr></thead>
-                      <tbody>{object.generations.filter((item) => item.theoryCells > 0 || item.actualCells > 0).map((item) => (
-                        <tr key={item.generation} style={item.active ? styles.cityGridGenerationActive : {}}>
-                          <td><b>G{item.generation}</b></td>
-                          <td>{item.cellScale}×{item.cellScale}</td>
-                          <td>{item.theoryCells} / {item.actualCells}</td>
-                          <td>{item.theoryTransparency}% / {item.actualTransparency}%</td>
-                          <td>{item.theoryFirstLevel || "—"} / {item.actualFirstLevel || "—"}</td>
-                          <td style={item.ok ? styles.cityGridReportOkText : styles.cityGridReportBadText}>{item.ok ? "OK" : "Δ"}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                </article>
-              ))}</div>
-            </section>
-          </div>
-        );
-      })()}
 
       {screen === "menu" && (
         <section style={styles.menuScreen}>
@@ -5013,7 +4851,7 @@ const trainingIntroTimerRef = useRef(null);
         </section>
       )}
 
-      {(screen === "arena" || screen === "city") && (
+      {screen === "arena" && (
         <section style={styles.arena}>
           <canvas
             ref={canvasRef}
@@ -5166,19 +5004,7 @@ const trainingIntroTimerRef = useRef(null);
                   </>
                 )}
 
-              {enterCoreVisible && enterScreen && tutorialFlowPhase !== "enterCity" && tutorialFlowPhase !== "citadelUpgrade" && (
-                <div
-                  style={{
-                    ...styles.enterCoreActions,
-                    left: clamp(enterScreen.x + 28, 12, viewport.width - 104),
-                    top: clamp(enterScreen.y - 58, 86, viewport.height - 150),
-                  }}
-                >
-                  <button style={styles.enterButton} onClick={enterCity}>
-                    ⌂
-                  </button>
-                </div>
-              )}
+              
 
               {selectedMonster && selectedMonsterThreat && (
                 <div
@@ -5348,350 +5174,12 @@ const trainingIntroTimerRef = useRef(null);
               <footer style={styles.arenaControls}>
                 <button style={{...styles.iconControlButton,...(monsterSearchOpen?styles.controlButtonActive:{})}} onClick={toggleMonsterSearch} title="Monster Search"><span style={styles.controlIcon}>⌕</span></button>
                 <button style={{...styles.iconControlButton,...styles.teleportControlButton,...(hud.teleportMode?styles.controlButtonActive:{}),...(hud.cooldown>0?styles.teleportControlButtonCooldown:{})}} onClick={activateTeleport} disabled={hud.cooldown>0} title="Teleport"><span style={styles.teleportIcon}><span style={styles.teleportIconTopRing}/><span style={styles.teleportIconBeam}/><span style={styles.teleportIconBottomRing}/></span>{hud.cooldown>0&&<span style={styles.teleportCooldownText}>{hud.cooldown}</span>}</button>
-                <button style={styles.iconControlButton} onClick={enterCity} title="City"><span style={styles.controlIcon}>⌂</span></button>
                 <button style={styles.iconControlButton} onClick={centerCamera} title="Center"><span style={styles.controlIcon}>◎</span></button>
                 <button style={{...styles.iconControlButton,...(utilityMenuOpen?styles.controlButtonActive:{})}} onClick={toggleUtilityMenu} title="Menu"><span style={styles.controlIcon}>☰</span></button>
               </footer>
             </>
           )}
 
-          {screen === "city" && (
-            <>
-              <div style={styles.topInterfacePanel} />
-              <div style={styles.bottomInterfacePanel} />
-              <header style={styles.cityTopBar}>
-                <div style={{...styles.topResourceChip,...(tutorialFlowPhase==="levelProgress"?styles.tutorialLevelChipGlow:{})}} title="Level">
-                  <span>★</span>
-                  <strong>{cityStats.level}</strong>
-                  <small>
-                    {cityStats.xp < 10 && cityStats.xp % 1 !== 0 ? cityStats.xp.toFixed(2) : Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
-                  </small>
-                </div>
-                <div style={styles.topResourceChip} title="Army · internal Core Barracks">
-                  <span>⚔</span>
-                  <strong>
-                    {totalGuards}/{armyCap}
-                  </strong>
-                  <small>CORE B{cityStats.level}</small>
-                </div>
-
-                <div
-                  style={{
-                    ...styles.topResourceChip,
-                    ...(tutorialStep === "crystals" ? styles.tutorialChipGlow : {}),
-                  }}
-                  title="Crystals"
-                >
-                  <span>💎</span>
-                  <strong>{Math.floor(cityStats.crystals)}</strong>
-                </div>
-              </header>
-
-              {!devLab && tutorialMission && cityTutorialReady && !tutorialMissionComplete && (
-                <div style={styles.tutorialMissionCard}>
-                  <div style={styles.tutorialMissionIcon}>{tutorialMission.icon}</div>
-                  <div style={styles.tutorialMissionBody}>
-                    <div style={styles.tutorialMissionTop}><span>CORE FOUNDATION · {tutorialMission.index}/{tutorialMission.total}</span><b>{tutorialMission.type ? `${tutorialMissionProgress}/${tutorialMission.target}` : "ACTIVE"}</b></div>
-                    <strong>{tutorialMission.title}</strong>
-                    <small>{isTutorialConstructionWaiting() ? "CONSTRUCTION IN PROGRESS" : tutorialMission.detail}</small>
-                    <div style={styles.tutorialMissionTrack}><i style={{...styles.tutorialMissionFill,width:`${tutorialMission.type ? (tutorialMissionProgress/tutorialMission.target)*100 : 18}%`}} /></div>
-                  </div>
-                </div>
-              )}
-              {!devLab && tutorialMissionComplete && (
-                <div style={styles.tutorialMissionCompleteToast}>
-                  <span>{tutorialMissionComplete.icon}</span><div><strong>{tutorialMissionComplete.title}</strong><small>{tutorialMissionComplete.detail}</small></div>
-                </div>
-              )}
-              {shouldShowBuildTutorialArrow() && (
-                <div style={styles.tutorialBuildArrow}>
-                  <div style={styles.macroPointer}>☟︎</div>
-                </div>
-              )}
-
-              {buildMenuOpen && tutorialDragType && buildMenuTutorialReady && tutorialDragDropScreen && (
-                <>
-                  <div
-                    style={{
-                      ...styles.tutorialHouseDropTarget,
-                      left: tutorialDragDropScreen.x,
-                      top: tutorialDragDropScreen.y,
-                      width: tutorialDragDropWidth,
-                      height: tutorialDragDropHeight,
-                      color: tutorialDragColor,
-                      borderColor: tutorialDragColor,
-                    }}
-                  >
-                    <span>{tutorialDragSymbol}</span>
-                  </div>
-                  <div
-                    style={{
-                      ...styles.tutorialHouseDropBeacon,
-                      left: tutorialDragDropScreen.x,
-                      top: tutorialDragDropScreen.y,
-                      borderColor: tutorialDragColor,
-                      boxShadow: `0 0 18px ${tutorialDragColor}`,
-                    }}
-                  />
-                </>
-              )}
-              {buildMenuOpen && (
-                <div style={styles.buildMenu}>
-                  {tutorialDragType && buildMenuTutorialReady && !buildCardDrag && tutorialDragDropScreen && (
-                    <div
-                      style={{
-                        ...styles.tutorialHouseDragGuide,
-                        left:
-                          tutorialDragType === "CrystalPoint"
-                            ? "12.5%"
-                            : tutorialDragType === "Barracks"
-                              ? "62.5%"
-                              : "37.5%",
-                        "--tutorial-drag-x": `${
-                          tutorialDragDropScreen.x -
-                          viewport.width *
-                            (tutorialDragType === "CrystalPoint"
-                              ? 0.125
-                              : tutorialDragType === "Barracks"
-                                ? 0.625
-                                : 0.375)
-                        }px`,
-                        "--tutorial-drag-y": `${tutorialDragDropScreen.y - (viewport.height - 128)}px`,
-                        "--tutorial-drag-color": tutorialDragColor,
-                      }}
-                    >
-                      <div
-                        style={{
-                          ...styles.tutorialHouseDragGhost,
-                          color: tutorialDragColor,
-                          borderColor: tutorialDragColor,
-                          boxShadow: `0 0 20px ${tutorialDragColor}`,
-                        }}
-                      >
-                        {tutorialDragSymbol}
-                      </div>
-                      <div style={styles.tutorialHouseDragHand}>☝︎</div>
-                    </div>
-                  )}
-
-                  <div style={styles.buildCardGrid}>
-
-
-
-
-                    <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled title="Locked">
-                      <span>◎</span>
-                      <small>—</small>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {buildCardReturn && (
-                <div style={{ ...styles.buildCardDragGhost, ...styles.buildCardReturnGhost,
-                  left: buildCardReturn.returning ? buildCardReturn.toX : buildCardReturn.x,
-                  top: buildCardReturn.returning ? buildCardReturn.toY : buildCardReturn.y }}>
-                  <span style={{ color: buildCardReturn.type === "CrystalPoint" ? "#67e8f9" : buildCardReturn.type === "Barracks" ? "#fbbf24" : "#86efac" }}>
-                    {buildCardReturn.type === "CrystalPoint" ? "◆" : buildCardReturn.type === "Barracks" ? "▲" : "■"}
-                  </span>
-                </div>
-              )}
-              {buildCardDrag && (
-                <div
-                  style={{
-                    ...styles.buildCardDragGhost,
-                    left: buildCardDrag.x,
-                    top: buildCardDrag.y,
-                  }}
-                >
-                  <span style={{ color: buildCardDrag.type === "CrystalPoint" ? "#67e8f9" : buildCardDrag.type === "Barracks" ? "#fbbf24" : "#86efac" }}>
-                    {buildCardDrag.type === "CrystalPoint" ? "◆" : buildCardDrag.type === "Barracks" ? "▲" : "■"}
-                  </span>
-                  <small>
-                    {buildCardDrag.type === "CrystalPoint" ? "CRYSTAL" : buildCardDrag.type === "Barracks" ? "BARRACKS" : "HOUSE"}
-                  </small>
-                </div>
-              )}
-              {buildPreview && buildScreen && (
-                <div
-                  style={{
-                    ...styles.buildControlAnchor,
-                    left: buildScreen.x,
-                    top: buildScreen.y,
-                  }}
-                >
-                  <button
-                    style={{
-                      ...styles.placeButton,
-                      ...(batchSummary.valid > 0 ? {} : styles.placeButtonDisabled),
-                      ...(!tutorialBatchReady ? styles.placeButtonTutorialPending : {}),
-                    }}
-                    onClick={placeBuilding}
-                    onPointerDown={beginPlaceButtonPointer}
-                    onPointerMove={movePlaceButtonPointer}
-                    onPointerUp={endPlaceButtonPointer}
-                    onPointerCancel={endPlaceButtonPointer}
-                    disabled={batchSummary.valid <= 0}
-                    title="Place"
-                  >
-                    {tutorialBatchReady ? "✓" : <span style={styles.tutorialPlaceDot} />}
-                  </button>
-
-                  <div
-                    style={{
-                      ...styles.buildControlConnector,
-                      ...(buildPanelOnRight
-                        ? styles.buildControlConnectorRight
-                        : styles.buildControlConnectorLeft),
-                    }}
-                  />
-
-                  <div
-                    style={{
-                      ...styles.buildControlPanel,
-                      ...(buildPanelOnRight
-                        ? styles.buildControlPanelRight
-                        : styles.buildControlPanelLeft),
-                    }}
-                  >
-                    <button style={styles.cancelButton} onClick={cancelBuildOrMove}>×</button>
-                    {devLab && buildControlPreview.w !== buildControlPreview.h && (
-                      <button style={styles.buildRotateButton} onClick={rotateCurrentBuildPreview} title="Rotate">↻</button>
-                    )}
-                    <div style={styles.buildCostBadge}>
-                      {batchSummary.workerCost > 0
-                        ? `👥${batchSummary.workerCost}`
-                        : `💎${batchSummary.crystalCost}`}
-                      {batchSummary.valid > 1 ? ` x${batchSummary.valid}` : ""}
-                    </div>
-                  </div>
-
-                  {!isTutorialConstructionWaiting() && tutorialStep !== "done" && buildBatchPreview.length <= 1 && (
-                    <>
-                      <div
-                        style={{
-                          ...styles.tutorialGhostPlace,
-                          ...((tutorialStep === "crystals" || tutorialStep === "barracks")
-                            ? styles.tutorialGhostPlaceCrystal
-                            : styles.tutorialGhostPlaceHouse),
-                        }}
-                      >
-                        ✓
-                      </div>
-                      <div
-                        style={{
-                          ...styles.tutorialFinger,
-                          ...((tutorialStep === "crystals" || tutorialStep === "barracks")
-                            ? styles.tutorialFingerCrystal
-                            : styles.tutorialFingerHouse),
-                        }}
-                      >
-                        ●
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              {tutorialFlowPhase === "citadelUpgrade" && citadelPointerReady && !selectedBuilding && citadelTutorialScreen && (
-                <div style={{...styles.tutorialCitadelPointer,left:citadelTutorialScreen.x,top:citadelTutorialScreen.y}}>
-                  <div style={styles.macroPointer}>☟︎</div>
-                </div>
-              )}
-              {groupSelection.active && groupSelection.ids.length > 0 && (
-                <div style={{...styles.buildingPanel,...styles.groupBuildingPanel}}>
-                  <button style={styles.panelClose} onClick={clearGroupSelection}>×</button>
-                  <div style={{...styles.panelIcon,...styles.groupPanelIcon}}>▦</div>
-                  <div style={styles.panelInfo}><strong>GROUP · {groupSelection.ids.length}</strong><small>{groupSelection.phase === "armed" ? "Drag from selection to expand" : groupSelection.phase === "move" ? "Drag the selected area" : "Selected buildings"}</small></div>
-                  <div style={styles.buildingActionGroup}>
-                    <button style={styles.moveBuildingButton} onClick={armGroupMove} title="Move group">✥</button>
-                    <button style={styles.upgradeButton} onClick={openGroupUpgrade} title="Upgrade group">⇧ CHECK</button>
-                    <button style={styles.deleteBuildingButton} onClick={()=>publishGroupDialog({type:"delete"})} title="Delete group">⌫</button>
-                  </div>
-                </div>
-              )}
-              {groupDialog && (
-                <div style={styles.groupDialogBackdrop}>
-                  <div style={{...styles.groupDialog,...(groupDialog.type === "delete" ? styles.groupDialogDanger : {})}}>
-                    <div style={styles.groupDialogIcon}>{groupDialog.type === "delete" ? "!" : "⇧"}</div>
-                    <strong>{groupDialog.type === "delete" ? `DELETE ${groupSelection.ids.length} BUILDINGS?` : "GROUP UPGRADE"}</strong>
-                    <small>{groupDialog.type === "delete" ? "This action cannot be undone." : `${(groupDialog.plan||[]).filter(x=>x.affordable).length} of ${groupSelection.ids.length} can be upgraded now.`}</small>
-                    <div style={styles.groupDialogActions}><button onClick={()=>publishGroupDialog(null)}>CANCEL</button><button onClick={groupDialog.type === "delete" ? confirmGroupDelete : confirmGroupUpgrade}>{groupDialog.type === "delete" ? "DELETE" : "UPGRADE"}</button></div>
-                  </div>
-                </div>
-              )}
-              {!groupSelection.active && selectedBuilding && (
-                <div
-                  key={`${selectedBuilding.id}-${buildingPanelVersion}`}
-                  style={{...styles.buildingPanel,...(selectedBuilding.type === "Citadel" ? styles.citadelBuildingPanel : {})}}
-                >
-                  <div style={styles.buildingPanelAccent} />
-                  <button style={styles.panelClose} onClick={() => updateSelectedBuilding(null)}>
-                    ×
-                  </button>
-
-                  <div style={{...styles.panelIcon,...styles.panelBuildingPortrait}}>
-                    <BuildingPortrait type={selectedBuilding.type} level={selectedBuilding.level || 1} width={58} height={54} compact />
-                  </div>
-
-                  <div style={styles.panelInfo}>
-                    <strong>Lv {selectedBuilding.level || 1}</strong>
-                    <small>
-                      {selectedBuilding.type === "CrystalPoint"
-                        ? `+${getBuildingEconomy("CrystalPoint", selectedBuilding.level || 1).crystalRate}/s`
-                        : selectedBuilding.type === "House"
-                          ? `+${getBuildingEconomy("House", selectedBuilding.level || 1).workerCapacity}👥 +${getBuildingEconomy("House", selectedBuilding.level || 1).guardCapacity}⚔`
-                          : selectedBuilding.type === "Barracks"
-                            ? `${getBuildingEconomy("Barracks", selectedBuilding.level || 1).barracksBatch} guards/cycle · Lv${selectedBuilding.level || 1}`
-                            : `CORE CITADEL · ARMY CAP ${cityStats.guardCap}`}
-                    </small>
-                  </div>
-
-                  {selectedBuilding.type === "Citadel" && (
-                    <div style={styles.citadelUpgradeBenefits}>
-                      <span>NEW TERRITORY <b>{getCityCellsForLevel(Math.min(100, cityStats.level + 1))}×{getCityCellsForLevel(Math.min(100, cityStats.level + 1))}</b></span>
-                      <span>UNLOCK PREVIEW <b>TECHNOLOGY CENTER</b></span>
-                    </div>
-                  )}
-                  <div style={styles.buildingActionGroup}>
-                    {selectedBuilding.type === "Citadel" ? (
-                      <>
-                        <div style={styles.citadelLevelGate}>★ {cityStats.level} / {Math.min(MAX_BUILDING_LEVEL, (selectedBuilding.level || 1) + 1)}</div>
-                        <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled), position:"relative" }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Level up Citadel">
-                          ⇧ {getUpgradeCostLabel(selectedBuilding)}
-                          {tutorialFlowPhase === "citadelUpgrade" && citadelUpgradePointerReady && <span style={styles.upgradeButtonTutorialPointer}>☟︎</span>}
-                        </button>
-                        <div style={styles.citadelLevelGate}>MAX {cityStats.level}</div>
-                      </>
-                    ) : (
-                      <>
-                        <button style={styles.moveBuildingButton} disabled={!isFreeCityEditMode()} onClick={() => beginMovingBuilding(selectedBuilding)} title="Move">✥</button>
-                        {devLab && selectedBuilding.w !== selectedBuilding.h && (
-                          <button style={{...styles.rotateBuildingButton,...(!canRotateBuilding(selectedBuilding)?styles.upgradeButtonDisabled:{})}} disabled={!canRotateBuilding(selectedBuilding)} onClick={rotateSelectedBuilding} title="Rotate">↻</button>
-                        )}
-                        <button style={{ ...styles.upgradeButton, ...(canUpgradeBuilding(selectedBuilding) ? {} : styles.upgradeButtonDisabled) }} disabled={!canUpgradeBuilding(selectedBuilding)} onClick={upgradeSelectedBuilding} title="Upgrade">⇧ {getUpgradeCostLabel(selectedBuilding)}</button>
-                        <button style={styles.deleteBuildingButton} disabled={!isFreeCityEditMode()} onClick={deleteSelectedBuilding} title="Delete">⌫</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {shouldShowMapTutorialArrow() && (
-                <div style={styles.tutorialMapArrow}>
-                  <div style={styles.macroPointer}>☟︎</div>
-                </div>
-              )}
-
-              {utilityMenuOpen && <div style={styles.utilityMenuPanel}><button style={styles.utilityMenuButton} onClick={endRun}><span>◼</span><small>END</small></button><button style={styles.utilityMenuButton} onClick={onClose}><span>×</span><small>EXIT</small></button></div>}
-              <footer style={styles.cityControls}>
-                <button style={styles.iconControlButton} onClick={runCityServiceAction} title="Service"><span style={styles.controlIcon}>↺</span></button>
-
-                <button style={styles.iconControlButton} onClick={backToMap} title="World Map"><span style={styles.controlIcon}>🗺</span></button>
-                <button style={styles.iconControlButton} onClick={centerCityCamera} title="Center"><span style={styles.controlIcon}>◎</span></button>
-                <button style={{...styles.iconControlButton,...(utilityMenuOpen?styles.controlButtonActive:{})}} onClick={toggleUtilityMenu} title="Menu"><span style={styles.controlIcon}>☰</span></button>
-              </footer>
-            </>
-          )}
         </section>
       )}
     </div>
