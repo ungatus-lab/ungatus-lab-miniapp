@@ -143,8 +143,8 @@ function createCityStats() {
     crystals: 80,
     crystalRate: 0,
 
-    workers: 0,
-    workerCap: 0,
+    workers: 5,
+    workerCap: 5,
 
     guardsByLevel: {
       1: 0,
@@ -410,7 +410,6 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const playerRef = useRef(null);
   const cityRef = useRef(createCityState());
   const cityStatsRef = useRef(createCityStats());
-  const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
   // One invisible Barracks now lives inside the map Core. Its output still uses
   // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
   const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
@@ -1116,7 +1115,6 @@ const trainingIntroTimerRef = useRef(null);
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
-    coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -1268,9 +1266,9 @@ const trainingIntroTimerRef = useRef(null);
 
     const stats = cityStatsRef.current;
     stats.crystals = 5000;
-    stats.workers = 0; stats.workerCap = 0;
+    stats.workers = stats.workerCap;
     stats.guardsByLevel = { 1: 85 };
-    stats.guardCap = getCoreArmyCapacity(stats.level);
+    stats.guardCap = Math.max(stats.guardCap, 100);
     stats.nextLevelXp = getNextLevelXp(stats.level);
     setCityStats({ ...stats });
     setHud({ level: stats.level, score: 0, cooldown: 0, teleportMode: false, status: "DEV LAB" });
@@ -1886,7 +1884,7 @@ const trainingIntroTimerRef = useRef(null);
       return null;
     };
 
-    for (const type of []) {
+    for (const type of ["House", "CrystalPoint"]) {
       let pool = source
         .filter((building) => building.type === type)
         .map((building) => ({
@@ -2020,7 +2018,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.level = target;
     stats.xp = 0;
     stats.nextLevelXp = getNextLevelXp(target);
-    stats.guardCap = getCoreArmyCapacity(target);
+    stats.guardCap = Math.max(stats.guardCap, 20 + target * 5);
     citadel.level = target;
     citadel.pendingLevel = null;
     citadel.upgrading = false;
@@ -2048,7 +2046,7 @@ const trainingIntroTimerRef = useRef(null);
     if (!devLabRef.current) return;
     const stats = cityStatsRef.current;
     stats.crystals += 10000;
-    stats.workers = 0; stats.workerCap = 0;
+    stats.workers = stats.workerCap;
     stats.guardsByLevel[stats.level] = (stats.guardsByLevel[stats.level] || 0) + 100;
     stats.guardCap = Math.max(stats.guardCap, getTotalGuardsFromStats(stats));
     setCityStats({ ...stats });
@@ -2381,28 +2379,37 @@ const trainingIntroTimerRef = useRef(null);
       stats.crystals = 0;
     }
 
-    // Crystals are active map loot only. Mines and passive income are disabled.
-    stats.crystalRate = 0;
+    stats.crystalRate = buildings
+      .filter(
+        (building) => building.type === "CrystalPoint" && !building.underConstruction
+      )
+      .reduce((sum, building) => sum + (building.level || 1), 0);
 
-    // One invisible self-growing Barracks lives inside Core. It has no city cells,
-    // no placement, no House dependency and no crystal ammunition cost.
+    stats.crystals += stats.crystalRate * dt;
+
+    // CORE BARRACKS: one invisible self-growing military complex lives inside Core.
+    // Its level follows Core level, while getBuildingEconomy keeps the old
+    // 1 -> 2 -> twin/merge auto-fit growth mathematics without city placement.
     const coreBarracks = coreBarracksRef.current;
     const coreBarracksLevel = Math.max(1, Math.round(stats.level || 1));
     coreBarracks.level = coreBarracksLevel;
     const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
-    if (ownedArmyTotal >= stats.guardCap) {
+    if (ownedArmyTotal >= stats.guardCap || stats.crystals < GUARD_CRYSTAL_COST) {
       coreBarracks.trainTimer = 0;
     } else {
       const barracksEconomy = getBuildingEconomy("Barracks", coreBarracksLevel);
+      const productionTime = 1;
       coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
-      if (coreBarracks.trainTimer >= 1) {
-        coreBarracks.trainTimer -= 1;
+      if (coreBarracks.trainTimer >= productionTime) {
+        coreBarracks.trainTimer -= productionTime;
         const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
         const requestedBatch = Math.max(1, Math.floor(exactBatch));
         coreBarracks.trainCarry = exactBatch - requestedBatch;
         const capacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
-        const produced = Math.min(requestedBatch, capacity);
+        const affordable = Math.floor(stats.crystals / GUARD_CRYSTAL_COST);
+        const produced = Math.min(requestedBatch, capacity, affordable);
         if (produced > 0) {
+          stats.crystals -= produced * GUARD_CRYSTAL_COST;
           stats.guardsByLevel[coreBarracksLevel] = (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
         }
       }
@@ -2416,28 +2423,45 @@ const trainingIntroTimerRef = useRef(null);
     }
   }
 
-  function getCoreArmyCapacity(level) {
-    // Former Citadel capacity curve, now owned directly by the map Core.
-    return Math.max(10, Math.round(100 * getBuildingOutputScale(level || 1)));
-  }
-
   function recalculateCityEconomy() {
     const stats = cityStatsRef.current;
-    if (!Number.isFinite(stats.crystals)) stats.crystals = 0;
-    stats.crystalRate = 0;
-    stats.workers = 0;
-    stats.workerCap = 0;
-    stats.guardCap = getCoreArmyCapacity(stats.level);
+
+    if (!Number.isFinite(stats.crystals)) {
+      stats.crystals = 0;
+    }
+
+    const completedBuildings = cityRef.current.buildings.filter((building) => !building.underConstruction);
+    stats.crystalRate = completedBuildings
+      .filter((building) => building.type === "CrystalPoint")
+      .reduce((sum, building) => sum + getBuildingEconomy("CrystalPoint", building.level || 1).crystalRate, 0);
+
+    const houseEconomy = completedBuildings
+      .filter((building) => building.type === "House")
+      .reduce((totals, building) => {
+        const economy = getBuildingEconomy("House", building.level || 1);
+        totals.workers += economy.workerCapacity;
+        totals.guards += economy.guardCapacity;
+        return totals;
+      }, { workers: 0, guards: 0 });
+    const citadelHouse = getBuildingEconomy("House", stats.level || 1);
+    const citadelWorkerCapacity = citadelHouse.workerCapacity * 4;
+    const citadelGuardCapacity = citadelHouse.guardCapacity * 4;
+    stats.workerCap = citadelWorkerCapacity + houseEconomy.workers;
+    stats.workers = Math.min(stats.workers, stats.workerCap);
+    stats.guardCap = citadelGuardCapacity + houseEconomy.guards;
+
     setCityStats({ ...stats });
   }
 
   function applyLevelUpEffects() {
     const stats = cityStatsRef.current;
     stats.nextLevelXp = getNextLevelXp(stats.level);
-    stats.guardCap = getCoreArmyCapacity(stats.level);
+    stats.guardCap += 5;
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
+    if (stats.level === 5) stats.guardCap += 10;
+    if (stats.level === 10) stats.guardCap += 25;
+    if (stats.level === 20) stats.guardCap += 50;
   }
-
   function awardMonsterVictoryXp(monster) {
     const stats = cityStatsRef.current;
     const player = playerRef.current;
@@ -5059,7 +5083,18 @@ const trainingIntroTimerRef = useRef(null);
                   <small>CORE B{cityStats.level}</small>
                 </div>
 
-
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "houses" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Workers"
+                >
+                  <span>👥</span>
+                  <strong>
+                    {cityStats.workers}/{cityStats.workerCap}
+                  </strong>
+                </div>
 
                 <div
                   style={{
@@ -5070,6 +5105,7 @@ const trainingIntroTimerRef = useRef(null);
                 >
                   <span>💎</span>
                   <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
 
@@ -5376,7 +5412,18 @@ const trainingIntroTimerRef = useRef(null);
                   </strong>
                   <small>CORE B{cityStats.level}</small>
                 </div>
-
+                <div
+                  style={{
+                    ...styles.topResourceChip,
+                    ...(tutorialStep === "houses" ? styles.tutorialChipGlow : {}),
+                  }}
+                  title="Workers"
+                >
+                  <span>👥</span>
+                  <strong>
+                    {cityStats.workers}/{cityStats.workerCap}
+                  </strong>
+                </div>
                 <div
                   style={{
                     ...styles.topResourceChip,
@@ -5386,6 +5433,7 @@ const trainingIntroTimerRef = useRef(null);
                 >
                   <span>💎</span>
                   <strong>{Math.floor(cityStats.crystals)}</strong>
+                  <small>+{cityStats.crystalRate}/s</small>
                 </div>
               </header>
 
@@ -5477,9 +5525,45 @@ const trainingIntroTimerRef = useRef(null);
                   )}
 
                   <div style={styles.buildCardGrid}>
+                    <button
+                      style={{
+                        ...styles.buildCard,
+                        ...(shouldShowCrystalMenuHint() ? styles.buildCardTutorial : {}),
+                        ...(isTutorialBuildStep() && tutorialDragType !== "CrystalPoint" ? styles.buildCardTutorialLocked : {}),
+                      }}
+                      onClick={() => {
+                        if (tutorialStep !== "crystals") chooseBuilding("CrystalPoint");
+                      }}
+                      onPointerDown={(event) => beginBuildCardDrag("CrystalPoint", event)}
+                      onPointerMove={moveBuildCardDrag}
+                      onPointerUp={endBuildCardDrag}
+                      onPointerCancel={endBuildCardDrag}
+                      title={tutorialStep === "crystals" ? "Drag Crystal Point to the city grid" : "Crystal Point"}
+                      disabled={isTutorialBuildStep() && tutorialDragType !== "CrystalPoint"}
+                    >
+                      <BuildingPortrait type="CrystalPoint" level={cityStats.level} width={68} height={54} compact />
+                      <small>Lv{cityStats.level} · 👥{getBuildingEconomy("CrystalPoint", cityStats.level).workerCost}</small>
+                    </button>
 
-
-
+                    <button
+                      style={{
+                        ...styles.buildCard,
+                        ...(shouldShowHouseMenuHint() ? styles.buildCardTutorial : {}),
+                        ...(isTutorialBuildStep() && tutorialDragType !== "House" ? styles.buildCardTutorialLocked : {}),
+                      }}
+                      onClick={() => {
+                        if (tutorialStep !== "houses") chooseBuilding("House");
+                      }}
+                      onPointerDown={(event) => beginBuildCardDrag("House", event)}
+                      onPointerMove={moveBuildCardDrag}
+                      onPointerUp={endBuildCardDrag}
+                      onPointerCancel={endBuildCardDrag}
+                      title={tutorialStep === "houses" ? "Drag House to the city grid" : "House"}
+                      disabled={isTutorialBuildStep() && tutorialDragType !== "House"}
+                    >
+                      <BuildingPortrait type="House" level={cityStats.level} width={68} height={54} compact />
+                      <small>Lv{cityStats.level} · 💎{getBuildingEconomy("House", cityStats.level).crystalCost}</small>
+                    </button>
 
                     <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled title="Locked">
                       <span>◎</span>
@@ -5644,7 +5728,7 @@ const trainingIntroTimerRef = useRef(null);
                           ? `+${getBuildingEconomy("House", selectedBuilding.level || 1).workerCapacity}👥 +${getBuildingEconomy("House", selectedBuilding.level || 1).guardCapacity}⚔`
                           : selectedBuilding.type === "Barracks"
                             ? `${getBuildingEconomy("Barracks", selectedBuilding.level || 1).barracksBatch} guards/cycle · Lv${selectedBuilding.level || 1}`
-                            : `CORE CITADEL · ARMY CAP ${cityStats.guardCap}`}
+                            : `Territory ${CITY_WIDTH / CITY_GRID_STEP}×${CITY_HEIGHT / CITY_GRID_STEP} · +${getBuildingEconomy("House", cityStats.level).workerCapacity * 4}👥 +${getBuildingEconomy("House", cityStats.level).guardCapacity * 4}⚔`}
                     </small>
                   </div>
 
@@ -5687,7 +5771,7 @@ const trainingIntroTimerRef = useRef(null);
               {utilityMenuOpen && <div style={styles.utilityMenuPanel}><button style={styles.utilityMenuButton} onClick={endRun}><span>◼</span><small>END</small></button><button style={styles.utilityMenuButton} onClick={onClose}><span>×</span><small>EXIT</small></button></div>}
               <footer style={styles.cityControls}>
                 <button style={styles.iconControlButton} onClick={runCityServiceAction} title="Service"><span style={styles.controlIcon}>↺</span></button>
-
+                <button style={{...styles.iconControlButton,...(buildMode||buildMenuOpen?styles.controlButtonActive:{})}} onClick={openBuildMenu} title="Build"><span style={styles.controlIcon}>🔨</span></button>
                 <button style={styles.iconControlButton} onClick={backToMap} title="World Map"><span style={styles.controlIcon}>🗺</span></button>
                 <button style={styles.iconControlButton} onClick={centerCityCamera} title="Center"><span style={styles.controlIcon}>◎</span></button>
                 <button style={{...styles.iconControlButton,...(utilityMenuOpen?styles.controlButtonActive:{})}} onClick={toggleUtilityMenu} title="Menu"><span style={styles.controlIcon}>☰</span></button>
