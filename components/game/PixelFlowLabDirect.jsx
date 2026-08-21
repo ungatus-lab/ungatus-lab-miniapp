@@ -410,6 +410,9 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const playerRef = useRef(null);
   const cityRef = useRef(createCityState());
   const cityStatsRef = useRef(createCityStats());
+  // One invisible Barracks now lives inside the map Core. Its output still uses
+  // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
+  const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
@@ -1111,6 +1114,7 @@ const trainingIntroTimerRef = useRef(null);
     CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
+    coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -1880,7 +1884,7 @@ const trainingIntroTimerRef = useRef(null);
       return null;
     };
 
-    for (const type of ["House", "CrystalPoint", "Barracks"]) {
+    for (const type of ["House", "CrystalPoint"]) {
       let pool = source
         .filter((building) => building.type === type)
         .map((building) => ({
@@ -2383,35 +2387,30 @@ const trainingIntroTimerRef = useRef(null);
 
     stats.crystals += stats.crystalRate * dt;
 
-    for (const building of buildings) {
-      if (building.type !== "Barracks" || building.underConstruction) continue;
-
-      const buildingLevel = building.level || 1;
-      const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
-      if (ownedArmyTotal >= stats.guardCap) {
-        building.trainTimer = 0;
-        continue;
-      }
-
-      if (stats.crystals < GUARD_CRYSTAL_COST) {
-        building.trainTimer = 0;
-        continue;
-      }
-
-      const barracksEconomy = getBuildingEconomy("Barracks", buildingLevel);
+    // CORE BARRACKS: one invisible self-growing military complex lives inside Core.
+    // Its level follows Core level, while getBuildingEconomy keeps the old
+    // 1 -> 2 -> twin/merge auto-fit growth mathematics without city placement.
+    const coreBarracks = coreBarracksRef.current;
+    const coreBarracksLevel = Math.max(1, Math.round(stats.level || 1));
+    coreBarracks.level = coreBarracksLevel;
+    const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
+    if (ownedArmyTotal >= stats.guardCap || stats.crystals < GUARD_CRYSTAL_COST) {
+      coreBarracks.trainTimer = 0;
+    } else {
+      const barracksEconomy = getBuildingEconomy("Barracks", coreBarracksLevel);
       const productionTime = 1;
-      building.trainTimer = (building.trainTimer || 0) + dt;
-      if (building.trainTimer >= productionTime) {
-        building.trainTimer -= productionTime;
-        const exactBatch = barracksEconomy.barracksBatch + (building.trainCarry || 0);
+      coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
+      if (coreBarracks.trainTimer >= productionTime) {
+        coreBarracks.trainTimer -= productionTime;
+        const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
         const requestedBatch = Math.max(1, Math.floor(exactBatch));
-        building.trainCarry = exactBatch - requestedBatch;
+        coreBarracks.trainCarry = exactBatch - requestedBatch;
         const capacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
         const affordable = Math.floor(stats.crystals / GUARD_CRYSTAL_COST);
         const produced = Math.min(requestedBatch, capacity, affordable);
         if (produced > 0) {
           stats.crystals -= produced * GUARD_CRYSTAL_COST;
-          stats.guardsByLevel[buildingLevel] = (stats.guardsByLevel[buildingLevel] || 0) + produced;
+          stats.guardsByLevel[coreBarracksLevel] = (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
         }
       }
     }
@@ -3926,11 +3925,8 @@ const trainingIntroTimerRef = useRef(null);
       5: 0,
     };
 
-    for (const building of cityRef.current.buildings) {
-      if (building.type === "Barracks") {
-        building.trainTimer = 0;
-      }
-    }
+    // A launched legion restarts the production cycle of the internal Core Barracks.
+    coreBarracksRef.current.trainTimer = 0;
 
     const marchId = `attack-${Date.now()}-${Math.random()}`;
     const durationSeconds = getMarchDuration(player.x, player.y, monster.x, monster.y, "attack");
@@ -5079,11 +5075,12 @@ const trainingIntroTimerRef = useRef(null);
                   </small>
                 </div>
 
-                <div style={styles.topResourceChip} title="Army">
+                <div style={styles.topResourceChip} title="Army · internal Core Barracks">
                   <span>⚔</span>
                   <strong>
                     {totalGuards}/{armyCap}
                   </strong>
+                  <small>CORE B{cityStats.level}</small>
                 </div>
 
                 <div
@@ -5408,11 +5405,12 @@ const trainingIntroTimerRef = useRef(null);
                     {cityStats.xp < 10 && cityStats.xp % 1 !== 0 ? cityStats.xp.toFixed(2) : Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
                   </small>
                 </div>
-                <div style={styles.topResourceChip} title="Army">
+                <div style={styles.topResourceChip} title="Army · internal Core Barracks">
                   <span>⚔</span>
                   <strong>
                     {totalGuards}/{armyCap}
                   </strong>
+                  <small>CORE B{cityStats.level}</small>
                 </div>
                 <div
                   style={{
@@ -5565,22 +5563,6 @@ const trainingIntroTimerRef = useRef(null);
                     >
                       <BuildingPortrait type="House" level={cityStats.level} width={68} height={54} compact />
                       <small>Lv{cityStats.level} · 💎{getBuildingEconomy("House", cityStats.level).crystalCost}</small>
-                    </button>
-
-                    <button
-                      style={{ ...styles.buildCard, ...(shouldShowBarracksMenuHint() ? styles.buildCardTutorial : {}), ...(isTutorialBuildStep() && tutorialDragType !== "Barracks" ? styles.buildCardTutorialLocked : {}) }}
-                      onClick={() => {
-                        if (tutorialStep !== "barracks") chooseBuilding("Barracks");
-                      }}
-                      onPointerDown={(event) => beginBuildCardDrag("Barracks", event)}
-                      onPointerMove={moveBuildCardDrag}
-                      onPointerUp={endBuildCardDrag}
-                      onPointerCancel={endBuildCardDrag}
-                      title={tutorialStep === "barracks" ? "Drag Barracks to the city grid" : "Barracks"}
-                      disabled={isTutorialBuildStep() && tutorialDragType !== "Barracks"}
-                    >
-                      <BuildingPortrait type="Barracks" level={cityStats.level} width={68} height={54} compact />
-                      <small>Lv{cityStats.level} · 💎{getBuildingEconomy("Barracks", cityStats.level).crystalCost}</small>
                     </button>
 
                     <button style={{ ...styles.buildCard, ...styles.buildCardLocked }} disabled title="Locked">
