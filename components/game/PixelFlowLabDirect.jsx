@@ -5442,76 +5442,98 @@ function drawTeleportEffectRings(ctx, effect) {
   }
 }
 
-function drawOrbitGuards(ctx, player, guardsByLevel) {
-  if (!player || !guardsByLevel) return;
+function getArmyRepresentativeWeight(level) {
+  return getBuildingModuleCount(level);
+}
 
-  const expanded = [];
-
-  for (const [level, count] of Object.entries(guardsByLevel)) {
-    for (let i = 0; i < Math.floor(count); i += 1) {
-      expanded.push(Number(level));
+function buildArmyRepresentatives(guardsByLevel) {
+  const result = [];
+  for (const [rawLevel, rawCount] of Object.entries(guardsByLevel || {})) {
+    const level = Number(rawLevel);
+    const realCount = Math.max(0, Math.floor(rawCount || 0));
+    const weight = getArmyRepresentativeWeight(level);
+    const visibleCount = Math.ceil(realCount / weight);
+    for (let index = 0; index < visibleCount; index += 1) {
+      const representedCount = Math.min(weight, realCount - index * weight);
+      result.push({
+        level,
+        weight,
+        representedCount,
+        fillRatio: representedCount / weight,
+        generation: Math.floor(Math.max(0, level - 1) / 5),
+        cycleStep: ((Math.max(1, level) - 1) % 5) + 1,
+      });
     }
   }
+  return result.sort((left, right) => left.level - right.level);
+}
 
-  const count = expanded.length;
-  if (count <= 0) return;
-
-  const now = Date.now() / 1000;
-  const layerSize = 42;
-
+function drawMergedGuard(ctx, unit, x, y, angle, visual) {
+  const size = visual.size + Math.min(2.4, unit.generation * 0.32 + unit.cycleStep * 0.08);
+  const tangentX = -Math.sin(angle);
+  const tangentY = Math.cos(angle);
+  const normalX = Math.cos(angle);
+  const normalY = Math.sin(angle);
   ctx.save();
-
-  for (let i = 0; i < count; i += 1) {
-    const troopLevel = expanded[i];
-    const visual = getGuardVisual(troopLevel);
-
-    const layer = Math.floor(i / layerSize);
-    const indexInLayer = i % layerSize;
-    const itemsInLayer = Math.min(layerSize, count - layer * layerSize);
-
-    const radius = player.r + 34 + layer * 16;
-    const speed = 1.25 - layer * 0.12;
-    const angle =
-      now * speed +
-      (indexInLayer / Math.max(1, itemsInLayer)) * Math.PI * 2 +
-      layer * 0.8;
-
-    const x = player.x + Math.cos(angle) * radius;
-    const y = player.y + Math.sin(angle) * radius;
-
-    const tailX = player.x + Math.cos(angle - 0.08) * radius;
-    const tailY = player.y + Math.sin(angle - 0.08) * radius;
-
-    ctx.beginPath();
-    ctx.strokeStyle = visual.tail;
-    ctx.lineWidth = 2;
-    ctx.moveTo(tailX, tailY);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.fillStyle = visual.fill;
-    ctx.shadowColor = visual.glow;
-    ctx.shadowBlur = 10;
-    ctx.arc(x, y, visual.size, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (visual.core) {
+  ctx.globalAlpha = 0.45 + unit.fillRatio * 0.55;
+  ctx.fillStyle = visual.fill;
+  ctx.shadowColor = visual.glow;
+  ctx.shadowBlur = 10 + unit.generation * 2;
+  if (unit.cycleStep === 1) {
+    ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+  } else if (unit.cycleStep === 2) {
+    const spread = size * 0.72;
+    for (const side of [-1, 1]) {
       ctx.beginPath();
-      ctx.fillStyle = visual.core;
-      ctx.arc(x, y, visual.size * 0.42, 0, Math.PI * 2);
+      ctx.arc(x + tangentX * spread * side, y + tangentY * spread * side, size * 0.72, 0, Math.PI * 2);
       ctx.fill();
     }
-
-    ctx.shadowBlur = 0;
+  } else {
+    const spread = size * (0.72 + Math.min(0.28, unit.generation * 0.08));
+    for (const [along, across] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      ctx.beginPath();
+      ctx.arc(x + tangentX * spread * along + normalX * spread * across, y + tangentY * spread * along + normalY * spread * across, size * 0.52, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(x, y, size * 0.48, 0, Math.PI * 2); ctx.fill();
   }
+  if (visual.core) {
+    ctx.shadowBlur = 0; ctx.fillStyle = visual.core;
+    ctx.beginPath(); ctx.arc(x, y, Math.max(1.1, size * 0.28), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
 
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "900 13px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(`${count}`, player.x, player.y + player.r + 54);
-
+function drawOrbitGuards(ctx, player, guardsByLevel) {
+  if (!player || !guardsByLevel) return;
+  const units = buildArmyRepresentatives(guardsByLevel);
+  if (!units.length) return;
+  const now = Date.now() / 1000;
+  const layerSize = 42;
+  ctx.save();
+  for (let i = 0; i < units.length; i += 1) {
+    const unit = units[i];
+    const visual = getGuardVisual(unit.level);
+    const layer = Math.floor(i / layerSize);
+    const indexInLayer = i % layerSize;
+    const itemsInLayer = Math.min(layerSize, units.length - layer * layerSize);
+    const radius = player.r + 34 + layer * 16 + unit.generation * 3;
+    const direction = unit.generation % 2 === 0 ? 1 : -1;
+    const speed = Math.max(0.28, 1.25 - layer * 0.12 - unit.generation * 0.035) * direction;
+    const angle = now * speed + indexInLayer / Math.max(1, itemsInLayer) * Math.PI * 2 + layer * 0.8 + unit.level * 0.07;
+    const x = player.x + Math.cos(angle) * radius;
+    const y = player.y + Math.sin(angle) * radius;
+    const tailAngle = angle - 0.08 * direction;
+    ctx.beginPath();
+    ctx.strokeStyle = visual.tail;
+    ctx.globalAlpha = 0.45 + unit.fillRatio * 0.45;
+    ctx.lineWidth = 1.4 + Math.min(1.6, unit.generation * 0.25);
+    ctx.moveTo(player.x + Math.cos(tailAngle) * radius, player.y + Math.sin(tailAngle) * radius);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    drawMergedGuard(ctx, unit, x, y, angle, visual);
+  }
   ctx.restore();
 }
 
