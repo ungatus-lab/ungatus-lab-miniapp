@@ -2017,6 +2017,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.xp = 0;
     stats.nextLevelXp = getNextLevelXp(target);
     stats.guardCap = getCoreArmyCapacity(target);
+    coreBarracksRef.current.trainTimer = 0;
     if (playerRef.current) playerRef.current.level = target;
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
     setHud((current) => ({ ...current, level: target, status: `CORE LEVEL ${target}` }));
@@ -2317,31 +2318,62 @@ const trainingIntroTimerRef = useRef(null);
     }
   }
 
+  function getHighestOutdatedGuardLevel(guardsByLevel, currentLevel) {
+    return Object.keys(guardsByLevel || {})
+      .map(Number)
+      .filter((level) => level < currentLevel && Math.floor(guardsByLevel[level] || 0) > 0)
+      .sort((left, right) => right - left)[0] ?? null;
+  }
+
   function updateCoreProduction(dt) {
     const stats = cityStatsRef.current;
     if (!Number.isFinite(stats.crystals)) stats.crystals = 0;
     stats.crystalRate = 0;
 
-    // Preserve only the old Barracks output result. No city cells, twins,
-    // placement, extra buildings or crystal ammunition are simulated.
     const coreBarracks = coreBarracksRef.current;
     const coreBarracksLevel = Math.max(1, Math.round(stats.level || 1));
     coreBarracks.level = coreBarracksLevel;
-    const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
-    if (ownedArmyTotal >= stats.guardCap) {
-      coreBarracks.trainTimer = 0;
-    } else {
-      const barracksEconomy = getBuildingEconomy("Barracks", coreBarracksLevel);
+    const barracksEconomy = getBuildingEconomy("Barracks", coreBarracksLevel);
+    const outdatedLevel = getHighestOutdatedGuardLevel(stats.guardsByLevel, coreBarracksLevel);
+
+    // Upgrade Queue has strict priority over new production. Existing soldiers
+    // keep their exact real count, but move to the current level in faster
+    // batches. The current level's representative weight then merges their
+    // visible forms naturally, so old pairs cannot remain beside new quads.
+    if (outdatedLevel !== null) {
       coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
-      if (coreBarracks.trainTimer >= 1) {
-        coreBarracks.trainTimer -= 1;
-        const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
-        const requestedBatch = Math.max(1, Math.floor(exactBatch));
-        coreBarracks.trainCarry = exactBatch - requestedBatch;
-        const capacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
-        const produced = Math.min(requestedBatch, capacity);
-        if (produced > 0) {
-          stats.guardsByLevel[coreBarracksLevel] = (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
+      const upgradeInterval = 0.5;
+      if (coreBarracks.trainTimer >= upgradeInterval) {
+        coreBarracks.trainTimer -= upgradeInterval;
+        const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
+        const upgradeBatch = Math.min(
+          available,
+          Math.max(1, Math.floor(barracksEconomy.barracksBatch * 2))
+        );
+        if (upgradeBatch > 0) {
+          stats.guardsByLevel[outdatedLevel] = available - upgradeBatch;
+          if (stats.guardsByLevel[outdatedLevel] <= 0) delete stats.guardsByLevel[outdatedLevel];
+          stats.guardsByLevel[coreBarracksLevel] =
+            (stats.guardsByLevel[coreBarracksLevel] || 0) + upgradeBatch;
+        }
+      }
+    } else {
+      const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
+      if (ownedArmyTotal >= stats.guardCap) {
+        coreBarracks.trainTimer = 0;
+      } else {
+        coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
+        if (coreBarracks.trainTimer >= 1) {
+          coreBarracks.trainTimer -= 1;
+          const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
+          const requestedBatch = Math.max(1, Math.floor(exactBatch));
+          coreBarracks.trainCarry = exactBatch - requestedBatch;
+          const capacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
+          const produced = Math.min(requestedBatch, capacity);
+          if (produced > 0) {
+            stats.guardsByLevel[coreBarracksLevel] =
+              (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
+          }
         }
       }
     }
@@ -2372,6 +2404,7 @@ const trainingIntroTimerRef = useRef(null);
     const stats = cityStatsRef.current;
     stats.nextLevelXp = getNextLevelXp(stats.level);
     stats.guardCap = getCoreArmyCapacity(stats.level);
+    coreBarracksRef.current.trainTimer = 0;
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
   }
 
