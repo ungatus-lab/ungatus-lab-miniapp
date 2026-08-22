@@ -154,7 +154,7 @@ function createCityStats() {
       5: 0,
     },
 
-    guardCap: 10,
+    guardCap: 100,
 
     xp: 0,
     level: 1,
@@ -205,6 +205,12 @@ function formatCompactNumber(value) {
   const compact = safe / scale.value;
   const digits = compact >= 100 ? 0 : compact >= 10 ? 1 : 2;
   return `${Number(compact.toFixed(digits))}${scale.suffix}`;
+}
+
+function formatCompactXp(value) {
+  const safe = Math.max(0, Number(value) || 0);
+  if (safe < 10 && safe % 1 !== 0) return safe.toFixed(2);
+  return formatCompactNumber(safe);
 }
 function getTotalGuardsInMarches(marches) {
   return (marches || []).reduce(
@@ -4981,7 +4987,7 @@ const trainingIntroTimerRef = useRef(null);
                   <span>★</span>
                   <strong>{cityStats.level}</strong>
                   <small>
-                    {cityStats.xp < 10 && cityStats.xp % 1 !== 0 ? cityStats.xp.toFixed(2) : Math.floor(cityStats.xp)}/{getNextLevelXp(cityStats.level)}
+                    {formatCompactXp(cityStats.xp)}/{formatCompactXp(getNextLevelXp(cityStats.level))}
                   </small>
                 </div>
 
