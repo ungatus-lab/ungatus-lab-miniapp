@@ -164,8 +164,32 @@ function createCityStats() {
   };
 }
 
+function getGuardUnitWeight(level) {
+  // T3(8): one visible guard representative carries a first-level-equivalent
+  // weight equal to its army level. L1=1, L2=2, L3=3 ... L100=100.
+  return Math.max(1, Math.round(Number(level) || 1));
+}
+
+function getGuardEntryRealCount(level, count) {
+  return Math.max(0, Math.floor(count || 0)) * getGuardUnitWeight(level);
+}
+
+function getTotalGuardElementsFromMap(guardsByLevel) {
+  return Object.values(guardsByLevel || {}).reduce(
+    (sum, value) => sum + Math.max(0, Math.floor(value || 0)),
+    0
+  );
+}
+
 function getTotalGuardsFromStats(stats) {
-  return Object.values(stats.guardsByLevel || {}).reduce((sum, value) => sum + value, 0);
+  return Object.entries(stats.guardsByLevel || {}).reduce(
+    (sum, [level, count]) => sum + getGuardEntryRealCount(level, count),
+    0
+  );
+}
+
+function getTotalGuardElementsFromStats(stats) {
+  return getTotalGuardElementsFromMap(stats.guardsByLevel || {});
 }
 
 function formatCompactNumber(value) {
@@ -188,8 +212,17 @@ function getTotalGuardsInMarches(marches) {
     0
   );
 }
+function getTotalGuardElementsInMarches(marches) {
+  return (marches || []).reduce(
+    (sum, march) => sum + getTotalGuardElementsFromMap(march.guardsByLevel || {}),
+    0
+  );
+}
 function getTotalOwnedGuards(stats, marches) {
   return getTotalGuardsFromStats(stats) + getTotalGuardsInMarches(marches);
+}
+function getTotalOwnedGuardElements(stats, marches) {
+  return getTotalGuardElementsFromStats(stats) + getTotalGuardElementsInMarches(marches);
 }
 
 function getXpRequiredForLevel(level) {
@@ -840,8 +873,10 @@ const trainingIntroTimerRef = useRef(null);
           };
         }
         const effectiveArmy = Object.entries(cityStats.guardsByLevel || {}).reduce(
-          (sum, [level, count]) =>
-            sum + count * (Number(level) >= selectedMonster.armor ? Number(level) : 0.25),
+          (sum, [level, count]) => {
+            const realCount = getGuardEntryRealCount(level, count);
+            return sum + realCount * (Number(level) >= selectedMonster.armor ? Number(level) : 0.25);
+          },
           0
         );
         const ratio = effectiveArmy / Math.max(1, selectedMonster.hp);
@@ -2336,10 +2371,9 @@ const trainingIntroTimerRef = useRef(null);
     const barracksEconomy = getBuildingEconomy("Barracks", coreBarracksLevel);
     const outdatedLevel = getHighestOutdatedGuardLevel(stats.guardsByLevel, coreBarracksLevel);
 
-    // Upgrade Queue has strict priority over new production. Existing soldiers
-    // keep their exact real count, but move to the current level in faster
-    // batches. The current level's representative weight then merges their
-    // visible forms naturally, so old pairs cannot remain beside new quads.
+    // Upgrade Queue has strict priority over new production. Existing visible
+    // representatives keep their element count, but move to the current army level.
+    // The HUD/cap then counts every upgraded representative by its level weight.
     if (outdatedLevel !== null) {
       coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
       const upgradeInterval = 0.5;
@@ -2358,8 +2392,9 @@ const trainingIntroTimerRef = useRef(null);
         }
       }
     } else {
-      const ownedArmyTotal = getTotalOwnedGuards(stats, marchesRef.current);
-      if (ownedArmyTotal >= stats.guardCap) {
+      const ownedVisualElements = getTotalOwnedGuardElements(stats, marchesRef.current);
+      const visualCapacity = getCoreArmyVisualCapacity(coreBarracksLevel);
+      if (ownedVisualElements >= visualCapacity) {
         coreBarracks.trainTimer = 0;
       } else {
         coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
@@ -2368,7 +2403,10 @@ const trainingIntroTimerRef = useRef(null);
           const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
           const requestedBatch = Math.max(1, Math.floor(exactBatch));
           coreBarracks.trainCarry = exactBatch - requestedBatch;
-          const capacity = Math.max(0, stats.guardCap - getTotalOwnedGuards(stats, marchesRef.current));
+          const capacity = Math.max(
+            0,
+            visualCapacity - getTotalOwnedGuardElements(stats, marchesRef.current)
+          );
           const produced = Math.min(requestedBatch, capacity);
           if (produced > 0) {
             stats.guardsByLevel[coreBarracksLevel] =
@@ -2385,9 +2423,18 @@ const trainingIntroTimerRef = useRef(null);
     }
   }
 
+  function getCoreArmyVisualCapacity(level) {
+    // T3(8): visual orbit growth is capped and predictable.
+    // Level 1 starts with 100 visible representatives; each next level adds 10.
+    const safeLevel = Math.max(1, Math.round(level || 1));
+    return 100 + (safeLevel - 1) * 10;
+  }
+
   function getCoreArmyCapacity(level) {
-    // Former Citadel capacity curve, now owned directly by the map Core.
-    return Math.max(10, Math.round(100 * getBuildingOutputScale(level || 1)));
+    // Real first-level-equivalent capacity is derived from visible representatives.
+    // A level-N representative counts as N first-level soldiers.
+    const safeLevel = Math.max(1, Math.round(level || 1));
+    return getCoreArmyVisualCapacity(safeLevel) * getGuardUnitWeight(safeLevel);
   }
 
   function recalculateCityEconomy() {
@@ -2508,19 +2555,22 @@ const trainingIntroTimerRef = useRef(null);
       .sort((a, b) => b - a);
 
     for (const level of levels) {
-      const count = Math.floor(guardsByLevel[level] || 0);
-      if (count <= 0) continue;
+      const elementCount = Math.floor(guardsByLevel[level] || 0);
+      if (elementCount <= 0) continue;
 
+      const unitWeight = getGuardUnitWeight(level);
+      const realCount = elementCount * unitWeight;
       const fullDamage = level >= monster.armor;
       const damagePerUnit = fullDamage ? level : 0.25;
 
-      const needed = Math.ceil(remainingHp / damagePerUnit);
-      const used = Math.min(count, needed);
-      const damage = used * damagePerUnit;
+      const neededRealUnits = Math.ceil(remainingHp / damagePerUnit);
+      const usedRealUnits = Math.min(realCount, neededRealUnits);
+      const usedElements = Math.min(elementCount, Math.ceil(usedRealUnits / unitWeight));
+      const damage = usedRealUnits * damagePerUnit;
 
       remainingHp = Math.max(0, remainingHp - damage);
 
-      const returned = count - used;
+      const returned = elementCount - usedElements;
 
       if (returned > 0) {
         nextReturn[level] = (nextReturn[level] || 0) + returned;
@@ -5491,7 +5541,7 @@ function drawTeleportEffectRings(ctx, effect) {
 }
 
 function getArmyRepresentativeWeight(level) {
-  return getBuildingModuleCount(level);
+  return getGuardUnitWeight(level);
 }
 
 const ARMY_GENERATION_PALETTES = [
@@ -5517,12 +5567,10 @@ function buildArmyRepresentatives(guardsByLevel) {
   const result = [];
   for (const [rawLevel, rawCount] of Object.entries(guardsByLevel || {})) {
     const level = Number(rawLevel);
-    const realCount = Math.max(0, Math.floor(rawCount || 0));
+    const visibleCount = Math.max(0, Math.floor(rawCount || 0));
     const weight = getArmyRepresentativeWeight(level);
-    const visibleCount = Math.ceil(realCount / weight);
     for (let index = 0; index < visibleCount; index += 1) {
-      const representedCount = Math.min(weight, realCount - index * weight);
-      result.push({ level, weight, representedCount, fillRatio: representedCount / weight,
+      result.push({ level, weight, representedCount: weight, fillRatio: 1,
         generation: Math.floor(Math.max(0, level - 1) / 5), cycleStep: ((Math.max(1, level) - 1) % 5) + 1 });
     }
   }
@@ -5610,7 +5658,8 @@ function drawMarches(ctx, marches) {
     const returning = march.type === "return";
     const baseGlow = returning ? "#22c55e" : "#67e8f9";
     const pathColor = returning ? "rgba(34,197,94,0.12)" : "rgba(103,232,249,0.12)";
-    const visibleCount = Math.min(count, 110);
+    const visualElementCount = getTotalGuardElementsFromMap(march.guardsByLevel || {});
+    const visibleCount = Math.min(Math.max(1, visualElementCount || count), 110);
     const layers = Math.max(1, Math.ceil(visibleCount / 28));
 
     ctx.save();
