@@ -5557,15 +5557,66 @@ const ARMY_GENERATION_PALETTES = [
   [56,189,248],[253,230,138],[225,29,72],[203,213,225],[255,255,255],
 ];
 
-function getArmyGenerationPalette(generation) {
-  const [r,g,b] = ARMY_GENERATION_PALETTES[generation % ARMY_GENERATION_PALETTES.length];
+const ARMY_GENERATION_MORPH_BY_STEP = [0, 0.18, 0.4, 0.68, 0.9];
+
+function smoothArmyMorph(value) {
+  const t = Math.max(0, Math.min(1, Number(value) || 0));
+  return t * t * (3 - 2 * t);
+}
+
+function mixNumber(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function mixRgb(left, right, t) {
+  return [
+    Math.round(mixNumber(left[0], right[0], t)),
+    Math.round(mixNumber(left[1], right[1], t)),
+    Math.round(mixNumber(left[2], right[2], t)),
+  ];
+}
+
+function rgbString(rgb) {
+  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+}
+
+function rgbaString(rgb, alpha) {
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+}
+
+function getLevelGenerationState(level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  const generation = Math.floor(Math.max(0, safeLevel - 1) / 5);
+  const cycleStep = ((safeLevel - 1) % 5) + 1;
+  const hasNextGeneration = generation < ARMY_GENERATION_PALETTES.length - 1;
   return {
-    fill: `rgba(${r},${g},${b},0.96)`,
-    secondary: `rgba(${Math.min(255,r+24)},${Math.min(255,g+24)},${Math.min(255,b+24)},0.86)`,
-    tail: `rgba(${r},${g},${b},0.28)`,
-    glow: `rgb(${r},${g},${b})`,
-    core: generation === 0 ? null : "rgba(255,255,255,0.94)",
-    size: 3.4 + Math.min(1.8, generation * 0.09),
+    level: safeLevel,
+    generation,
+    cycleStep,
+    morphToNext: hasNextGeneration ? ARMY_GENERATION_MORPH_BY_STEP[cycleStep - 1] : 0,
+  };
+}
+
+function getArmyGenerationPalette(source) {
+  const state = typeof source === "object" && source !== null
+    ? source
+    : getLevelGenerationState((Number(source) || 0) * 5 + 1);
+  const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, Math.round(state.generation || 0)));
+  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
+  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(state.morphToNext || 0);
+  const base = ARMY_GENERATION_PALETTES[generation];
+  const next = ARMY_GENERATION_PALETTES[nextGeneration];
+  const [r, g, b] = mixRgb(base, next, morph);
+  const secondaryRgb = [Math.min(255, r + 24), Math.min(255, g + 24), Math.min(255, b + 24)];
+  return {
+    fill: rgbaString([r, g, b], 0.96),
+    secondary: rgbaString(secondaryRgb, 0.86),
+    tail: rgbaString([r, g, b], 0.22 + morph * 0.11),
+    glow: rgbString([r, g, b]),
+    core: generation === 0 && morph < 0.35 ? null : "rgba(255,255,255,0.94)",
+    size: 3.4 + Math.min(1.8, mixNumber(generation, nextGeneration, morph) * 0.09),
+    generationBlend: mixNumber(generation, nextGeneration, morph),
+    morphToNext: morph,
   };
 }
 
@@ -5575,24 +5626,30 @@ function buildArmyRepresentatives(guardsByLevel) {
     const level = Number(rawLevel);
     const visibleCount = Math.max(0, Math.floor(rawCount || 0));
     const weight = getArmyRepresentativeWeight(level);
+    const state = getLevelGenerationState(level);
     for (let index = 0; index < visibleCount; index += 1) {
       result.push({ level, weight, representedCount: weight, fillRatio: 1,
-        generation: Math.floor(Math.max(0, level - 1) / 5), cycleStep: ((Math.max(1, level) - 1) % 5) + 1 });
+        generation: state.generation, cycleStep: state.cycleStep, morphToNext: state.morphToNext });
     }
   }
   return result.sort((a,b) => a.level - b.level);
 }
 
-function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time }) {
-  const baseRadius = player.r + 34 + layer * 16 + unit.generation * 2.5;
-  let direction = unit.generation % 2 === 0 ? 1 : -1;
-  if (unit.generation === 8 || unit.generation === 17) direction = layer % 2 === 0 ? 1 : -1;
-  const speed = Math.max(0.24, 1.22 - layer * 0.1 - unit.generation * 0.018) * direction;
+function getArmyGenerationDirection(generation, layer) {
+  let direction = generation % 2 === 0 ? 1 : -1;
+  if (generation === 8 || generation === 17) direction = layer % 2 === 0 ? 1 : -1;
+  return direction;
+}
+
+function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time }) {
+  const direction = getArmyGenerationDirection(generation, layer);
+  const baseRadius = player.r + 34 + layer * 16 + generation * 2.5;
+  const speed = Math.max(0.24, 1.22 - layer * 0.1 - generation * 0.018) * direction;
   let angle = time * speed + slotIndex / Math.max(1, itemsInLayer) * Math.PI * 2 + layer * 0.8 + unit.level * 0.07;
   const phase = slotIndex * 0.71 + layer * 1.13;
   let radius = baseRadius;
   let xScale = 1, yScale = 1, selfRotation = angle;
-  const g = unit.generation;
+  const g = generation;
   if (g === 1) radius += Math.sin(angle * 3 + time * 1.6) * 7;
   else if (g === 2) selfRotation = time * 2.4 + phase;
   else if (g === 3) { xScale = 1.18; yScale = 0.76; }
@@ -5614,7 +5671,31 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
   else if (g === 19) { radius += Math.sin(angle * 5 + time * 1.7) * 9; selfRotation = time * 4 * direction + phase; xScale = 1.08; yScale = 0.86; }
   const x = player.x + Math.cos(angle) * radius * xScale;
   const y = player.y + Math.sin(angle) * radius * yScale;
-  return { x, y, angle, tailAngle: angle - 0.08 * direction, selfRotation, radius, xScale, yScale };
+  const tailAngle = angle - 0.08 * direction;
+  const tailX = player.x + Math.cos(tailAngle) * radius * xScale;
+  const tailY = player.y + Math.sin(tailAngle) * radius * yScale;
+  return { x, y, tailX, tailY, angle, tailAngle, selfRotation, radius, xScale, yScale };
+}
+
+function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time }) {
+  const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
+  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
+  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(unit.morphToNext || 0);
+  const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time });
+  if (morph <= 0.0001) return current;
+  const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, time });
+  return {
+    x: mixNumber(current.x, next.x, morph),
+    y: mixNumber(current.y, next.y, morph),
+    tailX: mixNumber(current.tailX, next.tailX, morph),
+    tailY: mixNumber(current.tailY, next.tailY, morph),
+    angle: mixNumber(current.angle, next.angle, morph),
+    tailAngle: mixNumber(current.tailAngle, next.tailAngle, morph),
+    selfRotation: mixNumber(current.selfRotation, next.selfRotation, morph),
+    radius: mixNumber(current.radius, next.radius, morph),
+    xScale: mixNumber(current.xScale, next.xScale, morph),
+    yScale: mixNumber(current.yScale, next.yScale, morph),
+  };
 }
 
 function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
@@ -5637,11 +5718,11 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
   const units = buildArmyRepresentatives(guardsByLevel); if (!units.length) return;
   const now = Date.now()/1000, layerSize=42; ctx.save();
   for(let i=0;i<units.length;i++){
-    const unit=units[i], visual=getArmyGenerationPalette(unit.generation), layer=Math.floor(i/layerSize);
+    const unit=units[i], visual=getArmyGenerationPalette(unit), layer=Math.floor(i/layerSize);
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now});
-    const tailX=player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
-    ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,unit.generation*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
+    const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
+    ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
     drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,visual);
   }
   ctx.restore();
@@ -5786,6 +5867,25 @@ function drawPlayer(ctx, player) {
   ctx.lineWidth = 3;
   ctx.arc(player.x, player.y, player.r * 0.78, 0, Math.PI * 2);
   ctx.stroke();
+
+  const coreState = getLevelGenerationState(cityLevel);
+  const coreVisual = getArmyGenerationPalette(coreState);
+  const coreMorph = coreVisual.morphToNext || 0;
+  if (coreMorph > 0.02 || cityLevel >= 2) {
+    const pulse = 1 + Math.sin(Date.now() / 420) * 0.025;
+    ctx.beginPath();
+    ctx.strokeStyle = coreVisual.tail;
+    ctx.lineWidth = 2 + coreMorph * 3;
+    ctx.arc(player.x, player.y, (player.r + 8 + coreMorph * 10) * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (coreMorph > 0.42) {
+    ctx.beginPath();
+    ctx.strokeStyle = coreVisual.fill.replace("0.96", "0.36");
+    ctx.lineWidth = 2;
+    ctx.arc(player.x, player.y, player.r + 18 + coreMorph * 7, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   if (cityLevel >= 5) {
     ctx.beginPath();
