@@ -5557,10 +5557,15 @@ const ARMY_GENERATION_PALETTES = [
   [56,189,248],[253,230,138],[225,29,72],[203,213,225],[255,255,255],
 ];
 
-const ARMY_GENERATION_MORPH_BY_STEP = [0, 0.18, 0.4, 0.68, 0.9];
+const ARMY_COLOR_MORPH_BY_STEP = [0, 0.2, 0.4, 0.62, 0.82];
+const ARMY_MOTION_MORPH_BY_STEP = [0, 0.025, 0.07, 0.13, 0.22];
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
 
 function smoothArmyMorph(value) {
-  const t = Math.max(0, Math.min(1, Number(value) || 0));
+  const t = clamp01(value);
   return t * t * (3 - 2 * t);
 }
 
@@ -5593,17 +5598,45 @@ function getLevelGenerationState(level) {
     level: safeLevel,
     generation,
     cycleStep,
-    morphToNext: hasNextGeneration ? ARMY_GENERATION_MORPH_BY_STEP[cycleStep - 1] : 0,
+    colorMorphBase: hasNextGeneration ? ARMY_COLOR_MORPH_BY_STEP[cycleStep - 1] : 0,
+    motionMorphBase: hasNextGeneration ? ARMY_MOTION_MORPH_BY_STEP[cycleStep - 1] : 0,
+    morphToNext: hasNextGeneration ? ARMY_COLOR_MORPH_BY_STEP[cycleStep - 1] : 0,
   };
 }
 
-function getArmyGenerationPalette(source) {
+function getArmyMorphSeed(level, layer, slotIndex) {
+  const raw = Math.sin((level * 92821 + layer * 68917 + slotIndex * 19349) * 0.0001) * 43758.5453;
+  return raw - Math.floor(raw);
+}
+
+function getArmyLayerTransition({ unit, layer, layerCount, slotIndex }) {
+  const safeLayerCount = Math.max(1, Math.round(layerCount || 1));
+  const layerDepth = safeLayerCount <= 1 ? 0.5 : clamp01(layer / Math.max(1, safeLayerCount - 1));
+  const seed = getArmyMorphSeed(unit.level, layer, slotIndex);
+  const colorBase = unit.colorMorphBase ?? unit.morphToNext ?? 0;
+  const motionBase = unit.motionMorphBase ?? 0;
+  const colorLayerBias = (layerDepth - 0.5) * 0.26;
+  const colorCohortBias = (seed - 0.5) * 0.1;
+  const colorMorph = clamp01(colorBase + colorLayerBias + colorCohortBias);
+  const layerMotionFactor = 0.08 + 0.92 * layerDepth * layerDepth;
+  const rareCohortBoost = seed > 0.9 ? 0.18 * layerDepth : 0;
+  const motionMorph = clamp01(motionBase * (layerMotionFactor + rareCohortBoost));
+  return {
+    layerDepth,
+    seed,
+    colorMorph,
+    motionMorph: Math.min(0.32, motionMorph),
+  };
+}
+
+function getArmyGenerationPalette(source, transition = null) {
   const state = typeof source === "object" && source !== null
     ? source
     : getLevelGenerationState((Number(source) || 0) * 5 + 1);
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, Math.round(state.generation || 0)));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
-  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(state.morphToNext || 0);
+  const rawMorph = transition?.colorMorph ?? state.colorMorphBase ?? state.morphToNext ?? 0;
+  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(rawMorph);
   const base = ARMY_GENERATION_PALETTES[generation];
   const next = ARMY_GENERATION_PALETTES[nextGeneration];
   const [r, g, b] = mixRgb(base, next, morph);
@@ -5611,7 +5644,7 @@ function getArmyGenerationPalette(source) {
   return {
     fill: rgbaString([r, g, b], 0.96),
     secondary: rgbaString(secondaryRgb, 0.86),
-    tail: rgbaString([r, g, b], 0.22 + morph * 0.11),
+    tail: rgbaString([r, g, b], 0.2 + morph * 0.1),
     glow: rgbString([r, g, b]),
     core: generation === 0 && morph < 0.35 ? null : "rgba(255,255,255,0.94)",
     size: 3.4 + Math.min(1.8, mixNumber(generation, nextGeneration, morph) * 0.09),
@@ -5629,7 +5662,9 @@ function buildArmyRepresentatives(guardsByLevel) {
     const state = getLevelGenerationState(level);
     for (let index = 0; index < visibleCount; index += 1) {
       result.push({ level, weight, representedCount: weight, fillRatio: 1,
-        generation: state.generation, cycleStep: state.cycleStep, morphToNext: state.morphToNext });
+        generation: state.generation, cycleStep: state.cycleStep,
+        colorMorphBase: state.colorMorphBase, motionMorphBase: state.motionMorphBase,
+        morphToNext: state.morphToNext });
     }
   }
   return result.sort((a,b) => a.level - b.level);
@@ -5677,10 +5712,10 @@ function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInL
   return { x, y, tailX, tailY, angle, tailAngle, selfRotation, radius, xScale, yScale };
 }
 
-function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time }) {
+function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time, transition = null }) {
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
-  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(unit.morphToNext || 0);
+  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(transition?.motionMorph ?? unit.motionMorphBase ?? 0);
   const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time });
   if (morph <= 0.0001) return current;
   const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, time });
@@ -5716,11 +5751,13 @@ function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
 function drawOrbitGuards(ctx, player, guardsByLevel) {
   if (!player || !guardsByLevel) return;
   const units = buildArmyRepresentatives(guardsByLevel); if (!units.length) return;
-  const now = Date.now()/1000, layerSize=42; ctx.save();
+  const now = Date.now()/1000, layerSize=42, layerCount=Math.max(1, Math.ceil(units.length/layerSize)); ctx.save();
   for(let i=0;i<units.length;i++){
-    const unit=units[i], visual=getArmyGenerationPalette(unit), layer=Math.floor(i/layerSize);
+    const unit=units[i], layer=Math.floor(i/layerSize);
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
-    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now});
+    const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer});
+    const visual=getArmyGenerationPalette(unit,transition);
+    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
     ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
     drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,visual);
