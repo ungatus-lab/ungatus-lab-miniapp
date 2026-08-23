@@ -159,9 +159,6 @@ function createCityStats() {
     xp: 0,
     level: 1,
     nextLevelXp: 100,
-    visualPreviousLevel: 1,
-    visualCurrentLevel: 1,
-    visualLevelStartedAt: Date.now() / 1000,
 
     maxAttackSplit: 1,
   };
@@ -470,6 +467,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   // One invisible Barracks now lives inside the map Core. Its output still uses
   // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
   const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
+  const armyGenerationTurnRef = useRef({ level: 1, startedAt: 0 });
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
@@ -1165,6 +1163,7 @@ const trainingIntroTimerRef = useRef(null);
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
+    armyGenerationTurnRef.current = { level: 1, startedAt: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -2056,16 +2055,14 @@ const trainingIntroTimerRef = useRef(null);
     if (!devLabRef.current) return;
     const target = clamp(Math.round(nextLevel), 1, MAX_BUILDING_LEVEL);
     const stats = cityStatsRef.current;
-    if (target === stats.level) return;
     const previousLevel = stats.level;
+    if (target === previousLevel) return;
     stats.level = target;
-    stats.visualPreviousLevel = previousLevel;
-    stats.visualCurrentLevel = target;
-    stats.visualLevelStartedAt = Date.now() / 1000;
     stats.xp = 0;
     stats.nextLevelXp = getNextLevelXp(target);
     stats.guardCap = getCoreArmyCapacity(target);
     coreBarracksRef.current.trainTimer = 0;
+    if (target > previousLevel) startArmyGenerationTurn(target);
     if (playerRef.current) playerRef.current.level = target;
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
     setHud((current) => ({ ...current, level: target, status: `CORE LEVEL ${target}` }));
@@ -2460,15 +2457,12 @@ const trainingIntroTimerRef = useRef(null);
     setCityStats({ ...stats });
   }
 
-  function applyLevelUpEffects(previousLevel = null) {
+  function applyLevelUpEffects() {
     const stats = cityStatsRef.current;
-    const fromLevel = Math.max(1, Math.round(previousLevel || Math.max(1, (stats.level || 1) - 1)));
-    stats.visualPreviousLevel = fromLevel;
-    stats.visualCurrentLevel = Math.max(1, Math.round(stats.level || 1));
-    stats.visualLevelStartedAt = Date.now() / 1000;
     stats.nextLevelXp = getNextLevelXp(stats.level);
     stats.guardCap = getCoreArmyCapacity(stats.level);
     coreBarracksRef.current.trainTimer = 0;
+    startArmyGenerationTurn(stats.level);
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
   }
 
@@ -2488,10 +2482,9 @@ const trainingIntroTimerRef = useRef(null);
       totalAwarded += awardedNow;
       remainingEnemyUnits -= consumedUnits;
       if (stats.xp + 0.000001 >= required) {
-        const previousLevel = stats.level;
         stats.xp = Math.max(0, stats.xp - required);
         stats.level += 1;
-        applyLevelUpEffects(previousLevel);
+        applyLevelUpEffects();
       } else break;
     }
     if (stats.level >= 100) stats.xp = 0;
@@ -2876,7 +2869,7 @@ const trainingIntroTimerRef = useRef(null);
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
-    drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel, cityStatsRef.current);
+    drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel);
     drawPlayer(ctx, player);
 
     ctx.restore();
@@ -5571,6 +5564,8 @@ const ARMY_GENERATION_PALETTES = [
 
 const ARMY_COLOR_MORPH_BY_STEP = [0, 0.2, 0.4, 0.62, 0.82];
 const ARMY_MOTION_MORPH_BY_STEP = [0, 0.025, 0.07, 0.13, 0.22];
+const ARMY_GENERATION_TURN_TOTAL_SECONDS = 10;
+const ARMY_GENERATION_TURN_LAYER_DELAY_SECONDS = 1.2;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -5613,6 +5608,20 @@ function getLevelGenerationState(level) {
     colorMorphBase: hasNextGeneration ? ARMY_COLOR_MORPH_BY_STEP[cycleStep - 1] : 0,
     motionMorphBase: hasNextGeneration ? ARMY_MOTION_MORPH_BY_STEP[cycleStep - 1] : 0,
     morphToNext: hasNextGeneration ? ARMY_COLOR_MORPH_BY_STEP[cycleStep - 1] : 0,
+  };
+}
+
+function isArmyGenerationTurnLevel(level) {
+  const state = getLevelGenerationState(level);
+  return state.cycleStep === 5 && state.generation < ARMY_GENERATION_PALETTES.length - 1;
+}
+
+function startArmyGenerationTurn(level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  if (!isArmyGenerationTurnLevel(safeLevel)) return;
+  armyGenerationTurnRef.current = {
+    level: safeLevel,
+    startedAt: Date.now() / 1000,
   };
 }
 
@@ -5688,64 +5697,56 @@ function getArmyGenerationDirection(generation, layer) {
   return direction;
 }
 
-const ARMY_AXIS_TRANSITION_SECONDS = 100;
-
-function getArmyAxisIndex(layer, layerCount) {
-  const safeLayerCount = Math.max(1, Math.round(layerCount || 1));
-  const layerDepth = safeLayerCount <= 1 ? 0.5 : clamp01(layer / Math.max(1, safeLayerCount - 1));
-  return Math.max(0, Math.min(3, Math.floor(layerDepth * 4)));
-}
-
-function getArmyAxisRotationTargetForLevel(level, layer, layerCount) {
-  const state = getLevelGenerationState(level);
-  const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, state.generation || 0));
-  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
+function getArmyLayerTurnMotion({ unit, generation, layer, time }) {
   const currentDirection = getArmyGenerationDirection(generation, layer);
+  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
   const nextDirection = getArmyGenerationDirection(nextGeneration, layer);
-  const axis = getArmyAxisIndex(layer, layerCount);
-  const cycleStep = state.cycleStep || 3;
+  const turn = armyGenerationTurnRef.current || {};
+  const levelMatches = Math.round(turn.level || 0) === Math.round(unit.level || 0);
+  const canTurn = unit.cycleStep === 5 && nextGeneration !== generation && nextDirection !== currentDirection;
+  if (!canTurn || !levelMatches || !Number.isFinite(turn.startedAt) || turn.startedAt <= 0) {
+    return {
+      signedDirection: currentDirection,
+      tailDirection: currentDirection,
+      directionTime: time * currentDirection,
+      active: false,
+    };
+  }
 
-  if (cycleStep === 1) {
-    return currentDirection * [0.48, 0.68, 0.88, 1.0][axis];
+  const layerStart = turn.startedAt + Math.max(0, layer || 0) * ARMY_GENERATION_TURN_LAYER_DELAY_SECONDS;
+  if (time <= layerStart) {
+    return {
+      signedDirection: currentDirection,
+      tailDirection: currentDirection,
+      directionTime: time * currentDirection,
+      active: true,
+    };
   }
-  if (cycleStep === 2) {
-    return currentDirection * [0.78, 0.9, 1.0, 1.0][axis];
-  }
-  if (cycleStep === 3) return currentDirection;
-  if (cycleStep === 4) {
-    return currentDirection * [1.0, 0.96, 0.84, 0.68][axis];
-  }
-  if (cycleStep === 5) {
-    return [
-      currentDirection * 0.92,
-      currentDirection * 0.7,
-      currentDirection * 0.34,
-      nextDirection * 0.42,
-    ][axis];
-  }
-  return currentDirection;
+
+  const duration = ARMY_GENERATION_TURN_TOTAL_SECONDS;
+  const elapsed = Math.max(0, time - layerStart);
+  const clampedElapsed = Math.min(duration, elapsed);
+  const signedDirection = elapsed < duration
+    ? mixNumber(currentDirection, nextDirection, clampedElapsed / duration)
+    : nextDirection;
+  const turnIntegral =
+    currentDirection * clampedElapsed +
+    (nextDirection - currentDirection) * clampedElapsed * clampedElapsed / (2 * duration) +
+    (elapsed > duration ? nextDirection * (elapsed - duration) : 0);
+  return {
+    signedDirection,
+    tailDirection: Math.abs(signedDirection) > 0.08 ? Math.sign(signedDirection) : currentDirection,
+    directionTime: layerStart * currentDirection + turnIntegral,
+    active: true,
+  };
 }
 
-function getArmyAxisRotationBridgeFactor({ unit, layer, layerCount, visualState, time }) {
-  const currentTarget = getArmyAxisRotationTargetForLevel(unit.level, layer, layerCount);
-  const visualCurrentLevel = Math.max(1, Math.round(visualState?.visualCurrentLevel || unit.level || 1));
-  const visualPreviousLevel = Math.max(1, Math.round(visualState?.visualPreviousLevel || Math.max(1, visualCurrentLevel - 1)));
-  const startedAt = Number(visualState?.visualLevelStartedAt) || 0;
-  if (visualCurrentLevel !== unit.level || visualPreviousLevel === visualCurrentLevel || !startedAt) return currentTarget;
-  const elapsed = Math.max(0, (Number(time) || 0) - startedAt);
-  const progress = smoothArmyMorph(clamp01(elapsed / ARMY_AXIS_TRANSITION_SECONDS));
-  const previousTarget = getArmyAxisRotationTargetForLevel(visualPreviousLevel, layer, layerCount);
-  return mixNumber(previousTarget, currentTarget, progress);
-}
-
-function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, layerCount = 1, time, rotationBridge = true, visualState = null }) {
-  const direction = getArmyGenerationDirection(generation, layer);
-  const rotationFactor = rotationBridge
-    ? getArmyAxisRotationBridgeFactor({ unit, layer, layerCount, visualState, time })
-    : direction;
+function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition = null }) {
+  const turnMotion = getArmyLayerTurnMotion({ unit, generation, layer, time, transition });
+  const direction = turnMotion.signedDirection;
   const baseRadius = player.r + 34 + layer * 16 + generation * 2.5;
-  const speed = Math.max(0.24, 1.22 - layer * 0.1 - generation * 0.018) * rotationFactor;
-  let angle = time * speed + slotIndex / Math.max(1, itemsInLayer) * Math.PI * 2 + layer * 0.8 + unit.level * 0.07;
+  const speed = Math.max(0.24, 1.22 - layer * 0.1 - generation * 0.018);
+  let angle = turnMotion.directionTime * speed + slotIndex / Math.max(1, itemsInLayer) * Math.PI * 2 + layer * 0.8 + unit.level * 0.07;
   const phase = slotIndex * 0.71 + layer * 1.13;
   let radius = baseRadius;
   let xScale = 1, yScale = 1, selfRotation = angle;
@@ -5771,19 +5772,20 @@ function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInL
   else if (g === 19) { radius += Math.sin(angle * 5 + time * 1.7) * 9; selfRotation = time * 4 * direction + phase; xScale = 1.08; yScale = 0.86; }
   const x = player.x + Math.cos(angle) * radius * xScale;
   const y = player.y + Math.sin(angle) * radius * yScale;
-  const tailAngle = angle - 0.08 * direction;
+  const tailAngle = angle - 0.08 * turnMotion.tailDirection;
   const tailX = player.x + Math.cos(tailAngle) * radius * xScale;
   const tailY = player.y + Math.sin(tailAngle) * radius * yScale;
   return { x, y, tailX, tailY, angle, tailAngle, selfRotation, radius, xScale, yScale };
 }
 
-function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, layerCount = 1, time, transition = null, visualState = null }) {
+function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time, transition = null }) {
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
   const morph = nextGeneration === generation ? 0 : smoothArmyMorph(transition?.motionMorph ?? unit.motionMorphBase ?? 0);
-  const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, layerCount, time, rotationBridge: true, visualState });
+  const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition });
+  if (unit.cycleStep === 5 && nextGeneration !== generation) return current;
   if (morph <= 0.0001) return current;
-  const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, layerCount, time, rotationBridge: false, visualState });
+  const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, time, transition });
   return {
     x: mixNumber(current.x, next.x, morph),
     y: mixNumber(current.y, next.y, morph),
@@ -5813,7 +5815,7 @@ function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
   ctx.restore();
 }
 
-function drawOrbitGuards(ctx, player, guardsByLevel, visualState = null) {
+function drawOrbitGuards(ctx, player, guardsByLevel) {
   if (!player || !guardsByLevel) return;
   const units = buildArmyRepresentatives(guardsByLevel); if (!units.length) return;
   const now = Date.now()/1000, layerSize=42, layerCount=Math.max(1, Math.ceil(units.length/layerSize)); ctx.save();
@@ -5822,7 +5824,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel, visualState = null) {
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer});
     const visual=getArmyGenerationPalette(unit,transition);
-    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,layerCount,time:now,transition,visualState});
+    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
     ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
     drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,visual);
