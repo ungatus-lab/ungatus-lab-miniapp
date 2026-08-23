@@ -49,7 +49,6 @@ const UPGRADE_TIME_MULTIPLIER = 1.45;
 let armyGenerationTurnState = { level: 1, startedAt: 0 };
 let armyGenerationEntryState = { level: 1, startedAt: 0 };
 let armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
-let armyVisualReforgeEvents = [];
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -1169,7 +1168,6 @@ const trainingIntroTimerRef = useRef(null);
     armyGenerationTurnState = { level: 1, startedAt: 0 };
     armyGenerationEntryState = { level: 1, startedAt: 0 };
     armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
-    armyVisualReforgeEvents = [];
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -2400,22 +2398,16 @@ const trainingIntroTimerRef = useRef(null);
       if (coreBarracks.trainTimer >= upgradeInterval) {
         coreBarracks.trainTimer -= upgradeInterval;
         const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
-        const upgradeBatch = Math.min(
-          available,
-          Math.max(1, Math.floor(barracksEconomy.barracksBatch * 2))
-        );
+        // T3(17): avoid broken partial-axis visual chunks. When the reserve is upgraded,
+        // the whole nearest outdated level is moved to the current level in one pass.
+        // The visible smoothness is handled by the level-shape crossfade, not by
+        // cutting an orbit into small upgrade batches.
+        const upgradeBatch = available;
         if (upgradeBatch > 0) {
-          const targetStartIndex = Math.max(0, Math.floor(stats.guardsByLevel[coreBarracksLevel] || 0));
-          pushArmyVisualReforgeEvent({
-            type: "upgrade",
-            fromLevel: outdatedLevel,
-            toLevel: coreBarracksLevel,
-            startIndex: targetStartIndex,
-            count: upgradeBatch,
-          });
           stats.guardsByLevel[outdatedLevel] = available - upgradeBatch;
           if (stats.guardsByLevel[outdatedLevel] <= 0) delete stats.guardsByLevel[outdatedLevel];
-          stats.guardsByLevel[coreBarracksLevel] = targetStartIndex + upgradeBatch;
+          stats.guardsByLevel[coreBarracksLevel] =
+            (stats.guardsByLevel[coreBarracksLevel] || 0) + upgradeBatch;
         }
       }
     } else {
@@ -2436,15 +2428,8 @@ const trainingIntroTimerRef = useRef(null);
           );
           const produced = Math.min(requestedBatch, capacity);
           if (produced > 0) {
-            const targetStartIndex = Math.max(0, Math.floor(stats.guardsByLevel[coreBarracksLevel] || 0));
-            pushArmyVisualReforgeEvent({
-              type: "spawn",
-              level: coreBarracksLevel,
-              toLevel: coreBarracksLevel,
-              startIndex: targetStartIndex,
-              count: produced,
-            });
-            stats.guardsByLevel[coreBarracksLevel] = targetStartIndex + produced;
+            stats.guardsByLevel[coreBarracksLevel] =
+              (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
           }
         }
       }
@@ -5602,12 +5587,6 @@ const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 1.2;
 const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
 const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
-const ARMY_VISUAL_REFORGE_TOTAL_SECONDS = 4.8;
-const ARMY_VISUAL_SPAWN_TOTAL_SECONDS = 3.4;
-const ARMY_VISUAL_REFORGE_COLLAPSE_RATIO = 0.44;
-const ARMY_VISUAL_REFORGE_LAYER_DELAY_SECONDS = 0.12;
-const ARMY_VISUAL_REFORGE_COHORT_DELAY_SECONDS = 0.9;
-const ARMY_VISUAL_REFORGE_MAX_EVENTS = 32;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -5785,140 +5764,6 @@ function getArmyLevelColorTransition({ unit, layer, layerCount, slotIndex, time,
   };
 }
 
-function getArmyVisualUnitForLevel(unit, level) {
-  const state = getLevelGenerationState(level);
-  return {
-    ...unit,
-    level: state.level,
-    generation: state.generation,
-    cycleStep: state.cycleStep,
-    colorMorphBase: state.colorMorphBase,
-    motionMorphBase: state.motionMorphBase,
-    morphToNext: state.morphToNext,
-  };
-}
-
-function getArmyVisualReforgeEventDuration(event) {
-  return event?.type === "spawn" ? ARMY_VISUAL_SPAWN_TOTAL_SECONDS : ARMY_VISUAL_REFORGE_TOTAL_SECONDS;
-}
-
-function pruneArmyVisualReforgeEvents(now = Date.now() / 1000) {
-  const keepSeconds = 16;
-  armyVisualReforgeEvents = (armyVisualReforgeEvents || []).filter((event) =>
-    event && Number.isFinite(event.startedAt) && now - event.startedAt <= keepSeconds
-  );
-  if (armyVisualReforgeEvents.length > ARMY_VISUAL_REFORGE_MAX_EVENTS) {
-    armyVisualReforgeEvents = armyVisualReforgeEvents.slice(-ARMY_VISUAL_REFORGE_MAX_EVENTS);
-  }
-}
-
-function pushArmyVisualReforgeEvent(event) {
-  const count = Math.max(0, Math.floor(event?.count || 0));
-  if (count <= 0) return;
-  const now = Date.now() / 1000;
-  pruneArmyVisualReforgeEvents(now);
-  armyVisualReforgeEvents.push({
-    ...event,
-    count,
-    startIndex: Math.max(0, Math.floor(event?.startIndex || 0)),
-    startedAt: Number.isFinite(event?.startedAt) ? event.startedAt : now,
-  });
-  if (armyVisualReforgeEvents.length > ARMY_VISUAL_REFORGE_MAX_EVENTS) {
-    armyVisualReforgeEvents = armyVisualReforgeEvents.slice(-ARMY_VISUAL_REFORGE_MAX_EVENTS);
-  }
-}
-
-function getArmyVisualReforgeForUnit({ unit, layer, slotIndex, time }) {
-  if (!unit || !Number.isFinite(unit.indexInLevel)) return null;
-  pruneArmyVisualReforgeEvents(time);
-  const level = Math.round(unit.level || 1);
-  for (let i = armyVisualReforgeEvents.length - 1; i >= 0; i -= 1) {
-    const event = armyVisualReforgeEvents[i];
-    const targetLevel = Math.round(event.toLevel ?? event.level ?? level);
-    if (targetLevel !== level) continue;
-    const startIndex = Math.max(0, Math.floor(event.startIndex || 0));
-    const count = Math.max(0, Math.floor(event.count || 0));
-    if (unit.indexInLevel < startIndex || unit.indexInLevel >= startIndex + count) continue;
-    const localIndex = unit.indexInLevel - startIndex;
-    const localRatio = count <= 1 ? 0 : localIndex / Math.max(1, count - 1);
-    const seed = getArmyMorphSeed(level + (event.fromLevel || 0), layer || 0, unit.indexInLevel || slotIndex || 0);
-    const duration = getArmyVisualReforgeEventDuration(event);
-    const axisDelay =
-      Math.max(0, layer || 0) * ARMY_VISUAL_REFORGE_LAYER_DELAY_SECONDS +
-      localRatio * ARMY_VISUAL_REFORGE_COHORT_DELAY_SECONDS +
-      seed * 0.24;
-    const rawProgress = (time - (event.startedAt || 0) - axisDelay) / Math.max(0.1, duration);
-    if (rawProgress >= 1) continue;
-    return {
-      ...event,
-      active: true,
-      progress: clamp01(rawProgress),
-      rawProgress,
-      duration,
-      localIndex,
-      localRatio,
-      seed,
-    };
-  }
-  return null;
-}
-
-function mixArmyPositionToCore(player, pos, blendToOrbit) {
-  const blend = clamp01(blendToOrbit);
-  return {
-    ...pos,
-    x: mixNumber(player.x, pos.x, blend),
-    y: mixNumber(player.y, pos.y, blend),
-    tailX: mixNumber(player.x, pos.tailX, blend),
-    tailY: mixNumber(player.y, pos.tailY, blend),
-  };
-}
-
-function applyArmyVisualReforgePosition({ player, unit, pos, slotIndex, itemsInLayer, layer, time, transition, reforge }) {
-  if (!reforge?.active) return pos;
-  if (reforge.type === "spawn") {
-    const blend = smoothArmyMorph(reforge.progress);
-    return {
-      ...mixArmyPositionToCore(player, pos, blend),
-      reforgeActive: true,
-      reforgeType: "spawn",
-      reforgeAlpha: blend,
-      reforgeSizeScale: 0.55 + 0.45 * blend,
-    };
-  }
-
-  const collapseRatio = ARMY_VISUAL_REFORGE_COLLAPSE_RATIO;
-  const collapse = smoothArmyMorph(clamp01(reforge.progress / collapseRatio));
-  const emerge = smoothArmyMorph(clamp01((reforge.progress - collapseRatio) / Math.max(0.001, 1 - collapseRatio)));
-  const previousLevel = Math.max(1, Math.round(reforge.fromLevel || Math.max(1, (unit.level || 1) - 1)));
-  const previousUnit = getArmyVisualUnitForLevel(unit, previousLevel);
-  const previousGeneration = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, previousUnit.generation || 0));
-  const previousPos = sampleArmyOrbitPosition({
-    player,
-    unit: previousUnit,
-    generation: previousGeneration,
-    slotIndex,
-    itemsInLayer,
-    layer,
-    time,
-    transition,
-  });
-  const previousCollapsed = mixArmyPositionToCore(player, previousPos, 1 - collapse);
-  return {
-    ...mixArmyPositionToCore(player, pos, emerge),
-    reforgeActive: true,
-    reforgeType: "upgrade",
-    reforgeAlpha: emerge,
-    reforgeSizeScale: 0.62 + 0.38 * emerge,
-    reforgePreviousUnit: previousUnit,
-    reforgePreviousX: previousCollapsed.x,
-    reforgePreviousY: previousCollapsed.y,
-    reforgePreviousRotation: previousCollapsed.selfRotation,
-    reforgePreviousAlpha: Math.max(0, 1 - collapse),
-    reforgePreviousSizeScale: 1 - collapse * 0.38,
-  };
-}
-
 function getArmyLayerTransition({ unit, layer, layerCount, slotIndex, time }) {
   const safeLayerCount = Math.max(1, Math.round(layerCount || 1));
   const layerDepth = safeLayerCount <= 1 ? 0.5 : clamp01(layer / Math.max(1, safeLayerCount - 1));
@@ -5940,7 +5785,6 @@ function getArmyLayerTransition({ unit, layer, layerCount, slotIndex, time }) {
     motionMorph: Math.min(0.32, motionMorph),
   };
   transition.levelColorTransition = getArmyLevelColorTransition({ unit, layer, layerCount: safeLayerCount, slotIndex, time, transition });
-  transition.visualReforge = getArmyVisualReforgeForUnit({ unit, layer, slotIndex, time });
   return transition;
 }
 
@@ -5986,11 +5830,10 @@ function buildArmyRepresentatives(guardsByLevel) {
       result.push({ level, weight, representedCount: weight, fillRatio: 1,
         generation: state.generation, cycleStep: state.cycleStep,
         colorMorphBase: state.colorMorphBase, motionMorphBase: state.motionMorphBase,
-        morphToNext: state.morphToNext,
-        indexInLevel: index, levelCount: visibleCount });
+        morphToNext: state.morphToNext });
     }
   }
-  return result.sort((a,b) => a.level - b.level || a.indexInLevel - b.indexInLevel);
+  return result.sort((a,b) => a.level - b.level);
 }
 
 function getArmyGenerationDirection(generation, layer) {
@@ -6083,17 +5926,6 @@ function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInL
 function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time, transition = null }) {
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
-  const applyReforge = (pos) => applyArmyVisualReforgePosition({
-    player,
-    unit,
-    pos,
-    slotIndex,
-    itemsInLayer,
-    layer,
-    time,
-    transition,
-    reforge: transition?.visualReforge,
-  });
   const entryBlend = getArmyGenerationEntryBlend({ unit, layer, time });
   if (entryBlend.active && generation > 0) {
     const previousUnit = getPreviousGenerationEntryUnit(unit);
@@ -6110,7 +5942,7 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
     });
     const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition });
     const blend = entryBlend.blend;
-    return applyReforge({
+    return {
       x: mixNumber(previous.x, current.x, blend),
       y: mixNumber(previous.y, current.y, blend),
       tailX: mixNumber(previous.tailX, current.tailX, blend),
@@ -6124,14 +5956,14 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
       entryActive: true,
       entryBlend: blend,
       previousUnit,
-    });
+    };
   }
   const morph = nextGeneration === generation ? 0 : smoothArmyMorph(transition?.motionMorph ?? unit.motionMorphBase ?? 0);
   const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition });
-  if (unit.cycleStep === 5 && nextGeneration !== generation) return applyReforge(current);
-  if (morph <= 0.0001) return applyReforge(current);
+  if (unit.cycleStep === 5 && nextGeneration !== generation) return current;
+  if (morph <= 0.0001) return current;
   const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, time, transition });
-  return applyReforge({
+  return {
     x: mixNumber(current.x, next.x, morph),
     y: mixNumber(current.y, next.y, morph),
     tailX: mixNumber(current.tailX, next.tailX, morph),
@@ -6142,12 +5974,11 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
     radius: mixNumber(current.radius, next.radius, morph),
     xScale: mixNumber(current.xScale, next.xScale, morph),
     yScale: mixNumber(current.yScale, next.yScale, morph),
-  });
+  };
 }
 
 function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
-  const sizeScale = Number.isFinite(visual.sizeScale) ? Math.max(0, visual.sizeScale) : 1;
-  const size = (visual.size + Math.min(2.2, unit.generation * 0.12 + unit.cycleStep * 0.09)) * sizeScale;
+  const size = visual.size + Math.min(2.2, unit.generation * 0.12 + unit.cycleStep * 0.09);
   const alpha = Number.isFinite(visual.alpha) ? clamp01(visual.alpha) : 1;
   ctx.save(); ctx.translate(x,y); ctx.rotate(rotation); ctx.globalAlpha = (0.45 + unit.fillRatio * 0.55) * alpha;
   ctx.fillStyle = visual.fill; ctx.shadowColor = visual.glow; ctx.shadowBlur = 10 + Math.min(12, unit.generation);
@@ -6162,33 +5993,47 @@ function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
   ctx.restore();
 }
 
+function getArmyVisualUnitForLevel(unit, level) {
+  const state = getLevelGenerationState(level);
+  return {
+    ...unit,
+    level: state.level,
+    generation: state.generation,
+    cycleStep: state.cycleStep,
+    colorMorphBase: state.colorMorphBase,
+    motionMorphBase: state.motionMorphBase,
+    morphToNext: state.morphToNext,
+  };
+}
+
+function getArmyLevelShapeBlend(transition) {
+  const levelColor = transition?.levelColorTransition;
+  if (!levelColor?.active) return null;
+  const fromLevel = Math.max(1, Math.round(levelColor.fromLevel || 1));
+  const toLevel = Math.max(1, Math.round(levelColor.toLevel || fromLevel));
+  if (fromLevel === toLevel) return null;
+  return {
+    fromLevel,
+    toLevel,
+    blend: clamp01(levelColor.blend ?? 1),
+  };
+}
+
 function drawOrbitGuards(ctx, player, guardsByLevel) {
   if (!player || !guardsByLevel) return;
   const units = buildArmyRepresentatives(guardsByLevel); if (!units.length) return;
   const now = Date.now()/1000, layerSize=42, layerCount=Math.max(1, Math.ceil(units.length/layerSize)); ctx.save();
   for(let i=0;i<units.length;i++){
     const unit=units[i], layer=Math.floor(i/layerSize);
-    const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
+    const indexInLayer=i%layerSize;
+    // T3(17): keep orbit slots stable. A partially filled outer layer no longer
+    // re-spaces every existing element whenever one new representative appears.
+    const itemsInLayer=layerSize;
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer,time:now});
     const visual=getArmyGenerationPalette(unit,transition);
     const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
-    const currentAlpha = Number.isFinite(pos.reforgeAlpha) ? clamp01(pos.reforgeAlpha) : 1;
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
-    ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=(.45+unit.fillRatio*.45)*currentAlpha;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
-
-    if (pos.reforgePreviousUnit && pos.reforgePreviousAlpha > 0.001) {
-      const previousVisual = {
-        ...getArmyGenerationPalette(pos.reforgePreviousUnit, {
-          layerDepth: transition.layerDepth,
-          seed: transition.seed,
-          colorMorph: pos.reforgePreviousUnit.colorMorphBase ?? pos.reforgePreviousUnit.morphToNext ?? 0,
-          motionMorph: 0,
-        }),
-        alpha: pos.reforgePreviousAlpha,
-        sizeScale: pos.reforgePreviousSizeScale,
-      };
-      drawMergedGuard(ctx,pos.reforgePreviousUnit,pos.reforgePreviousX,pos.reforgePreviousY,pos.reforgePreviousRotation,previousVisual);
-    }
+    ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
 
     if (pos.entryActive && pos.previousUnit && pos.entryBlend < 0.999) {
       const previousVisual = {
@@ -6198,17 +6043,33 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
           colorMorph: pos.previousUnit.colorMorphBase ?? pos.previousUnit.morphToNext ?? 0,
           motionMorph: 0,
         }),
-        alpha: Math.max(0, 1 - pos.entryBlend) * currentAlpha,
+        alpha: Math.max(0, 1 - pos.entryBlend),
       };
       drawMergedGuard(ctx,pos.previousUnit,pos.x,pos.y,pos.selfRotation,previousVisual);
     }
-    const baseAlpha = pos.entryActive ? Math.max(0, pos.entryBlend) : 1;
-    const currentVisual = {
-      ...visual,
-      alpha: baseAlpha * currentAlpha,
-      sizeScale: Number.isFinite(pos.reforgeSizeScale) ? pos.reforgeSizeScale : 1,
-    };
-    if (currentVisual.alpha > 0.001) drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,currentVisual);
+
+    const shapeBlend = !pos.entryActive ? getArmyLevelShapeBlend(transition) : null;
+    if (shapeBlend && shapeBlend.blend < 0.999) {
+      const previousUnit = getArmyVisualUnitForLevel(unit, shapeBlend.fromLevel);
+      const previousVisual = {
+        ...getArmyGenerationPalette(previousUnit, {
+          layerDepth: transition.layerDepth,
+          seed: transition.seed,
+          colorMorph: previousUnit.colorMorphBase ?? previousUnit.morphToNext ?? 0,
+          motionMorph: 0,
+        }),
+        alpha: Math.max(0, 1 - shapeBlend.blend),
+      };
+      drawMergedGuard(ctx,previousUnit,pos.x,pos.y,pos.selfRotation,previousVisual);
+    }
+
+    const currentAlpha = pos.entryActive
+      ? Math.max(0.08, pos.entryBlend)
+      : shapeBlend
+        ? Math.max(0.08, shapeBlend.blend)
+        : 1;
+    const currentVisual = currentAlpha < 0.999 ? { ...visual, alpha: currentAlpha } : visual;
+    drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,currentVisual);
   }
   ctx.restore();
 }
