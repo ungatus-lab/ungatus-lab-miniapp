@@ -1320,7 +1320,9 @@ const trainingIntroTimerRef = useRef(null);
     const stats = cityStatsRef.current;
     stats.crystals = 5000;
     stats.workers = 0; stats.workerCap = 0;
-    stats.guardsByLevel = { 1: 85 };
+    // T3(18): DEV LAB starts with the full level-1 visual cap around Core.
+    // L1 visual cap is 100, so the initial orbit should be complete immediately.
+    stats.guardsByLevel = { 1: 100 };
     stats.guardCap = getCoreArmyCapacity(stats.level);
     stats.nextLevelXp = getNextLevelXp(stats.level);
     setCityStats({ ...stats });
