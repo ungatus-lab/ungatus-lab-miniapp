@@ -470,6 +470,8 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   // One invisible Barracks now lives inside the map Core. Its output still uses
   // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
   const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
+  const productionSpawnsRef = useRef([]);
+  const productionSpawnIdRef = useRef(1);
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
@@ -1165,6 +1167,8 @@ const trainingIntroTimerRef = useRef(null);
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
+    productionSpawnsRef.current = [];
+    productionSpawnIdRef.current = 1;
     armyGenerationTurnState = { level: 1, startedAt: 0 };
     armyGenerationEntryState = { level: 1, startedAt: 0 };
     armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
@@ -2382,6 +2386,10 @@ const trainingIntroTimerRef = useRef(null);
 
   function updateCoreProduction(dt) {
     const stats = cityStatsRef.current;
+    const productionNow = Date.now() / 1000;
+    productionSpawnsRef.current = (productionSpawnsRef.current || []).filter(
+      (spawn) => productionNow - (spawn.createdAt || 0) <= (spawn.duration || ARMY_PRODUCTION_SPAWN_SECONDS) + 0.25
+    );
     if (!Number.isFinite(stats.crystals)) stats.crystals = 0;
     stats.crystalRate = 0;
 
@@ -2431,6 +2439,15 @@ const trainingIntroTimerRef = useRef(null);
           if (produced > 0) {
             stats.guardsByLevel[coreBarracksLevel] =
               (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
+            const createdAt = Date.now() / 1000;
+            for (let spawnIndex = 0; spawnIndex < produced; spawnIndex += 1) {
+              productionSpawnsRef.current.push({
+                id: productionSpawnIdRef.current++,
+                level: coreBarracksLevel,
+                createdAt: createdAt + spawnIndex * 0.045,
+                duration: ARMY_PRODUCTION_SPAWN_SECONDS,
+              });
+            }
           }
         }
       }
@@ -2883,7 +2900,7 @@ const trainingIntroTimerRef = useRef(null);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
     try {
-      drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel);
+      drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel, productionSpawnsRef.current);
     } catch (error) {
       console.error("Orbit guards draw failed", error);
     }
@@ -5588,6 +5605,7 @@ const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 1.2;
 const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
 const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
+const ARMY_PRODUCTION_SPAWN_SECONDS = 1.6;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -5994,16 +6012,76 @@ function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
   ctx.restore();
 }
 
-function drawOrbitGuards(ctx, player, guardsByLevel) {
+function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
   if (!player || !guardsByLevel) return;
   const units = buildArmyRepresentatives(guardsByLevel); if (!units.length) return;
-  const now = Date.now()/1000, layerSize=42, layerCount=Math.max(1, Math.ceil(units.length/layerSize)); ctx.save();
+  const now = Date.now()/1000, layerSize=42, layerCount=Math.max(1, Math.ceil(units.length/layerSize));
+  const levelTotals = {};
+  for (const unit of units) levelTotals[unit.level] = (levelTotals[unit.level] || 0) + 1;
+  const activeByLevel = {};
+  for (const spawn of productionSpawns || []) {
+    const level = Math.round(spawn?.level || 0);
+    const totalForLevel = levelTotals[level] || 0;
+    if (!totalForLevel) continue;
+    const progressRaw = clamp01((now - (spawn.createdAt || 0)) / Math.max(0.001, spawn.duration || ARMY_PRODUCTION_SPAWN_SECONDS));
+    if (progressRaw >= 1) continue;
+    const list = activeByLevel[level] || (activeByLevel[level] = []);
+    if (list.length < totalForLevel) list.push({ ...spawn, progress: smoothArmyMorph(progressRaw) });
+  }
+  const activeSpawns = Object.values(activeByLevel).flat();
+  const oldestActiveSpawn = activeSpawns.reduce((oldest, spawn) => Math.min(oldest, spawn.createdAt || now), now);
+  const productionBlend = activeSpawns.length
+    ? smoothArmyMorph(clamp01((now - oldestActiveSpawn) / Math.max(0.001, ARMY_PRODUCTION_SPAWN_SECONDS)))
+    : 1;
+  const oldUnitCount = Math.max(0, units.length - activeSpawns.length);
+  const oldLayerCount = Math.max(1, Math.ceil(Math.max(1, oldUnitCount) / layerSize));
+  const levelSeen = {};
+  let spawnedBefore = 0;
+  ctx.save();
   for(let i=0;i<units.length;i++){
     const unit=units[i], layer=Math.floor(i/layerSize);
+    levelSeen[unit.level] = (levelSeen[unit.level] || 0) + 1;
+    const activeForLevel = activeByLevel[unit.level] || [];
+    const totalForLevel = levelTotals[unit.level] || 0;
+    const spawnOrdinal = levelSeen[unit.level] - (totalForLevel - activeForLevel.length) - 1;
+    const spawnInfo = spawnOrdinal >= 0 ? activeForLevel[spawnOrdinal] : null;
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer,time:now});
     const visual=getArmyGenerationPalette(unit,transition);
-    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
+    const targetPos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
+    let pos = targetPos;
+    if (spawnInfo) {
+      const flight = clamp01((now - (spawnInfo.createdAt || now)) / Math.max(0.001, spawnInfo.duration || ARMY_PRODUCTION_SPAWN_SECONDS));
+      const easedFlight = smoothArmyMorph(flight);
+      pos = {
+        ...targetPos,
+        x: mixNumber(player.x, targetPos.x, easedFlight),
+        y: mixNumber(player.y, targetPos.y, easedFlight),
+        tailX: mixNumber(player.x, Number.isFinite(targetPos.tailX) ? targetPos.tailX : targetPos.x, easedFlight),
+        tailY: mixNumber(player.y, Number.isFinite(targetPos.tailY) ? targetPos.tailY : targetPos.y, easedFlight),
+      };
+      spawnedBefore += 1;
+    } else if (activeSpawns.length && oldUnitCount > 0) {
+      const oldFlatIndex = Math.max(0, i - spawnedBefore);
+      const oldLayer = Math.floor(oldFlatIndex / layerSize);
+      const oldIndexInLayer = oldFlatIndex % layerSize;
+      const oldItemsInLayer = Math.min(layerSize, Math.max(1, oldUnitCount - oldLayer * layerSize));
+      const oldTransition = getArmyLayerTransition({unit,layer:oldLayer,layerCount:oldLayerCount,slotIndex:oldIndexInLayer,time:now});
+      const oldPos = getArmyOrbitPosition({player,unit,slotIndex:oldIndexInLayer,itemsInLayer:oldItemsInLayer,layer:oldLayer,time:now,transition:oldTransition});
+      pos = {
+        ...targetPos,
+        x: mixNumber(oldPos.x, targetPos.x, productionBlend),
+        y: mixNumber(oldPos.y, targetPos.y, productionBlend),
+        tailX: mixNumber(Number.isFinite(oldPos.tailX) ? oldPos.tailX : oldPos.x, Number.isFinite(targetPos.tailX) ? targetPos.tailX : targetPos.x, productionBlend),
+        tailY: mixNumber(Number.isFinite(oldPos.tailY) ? oldPos.tailY : oldPos.y, Number.isFinite(targetPos.tailY) ? targetPos.tailY : targetPos.y, productionBlend),
+        angle: mixNumber(oldPos.angle, targetPos.angle, productionBlend),
+        tailAngle: mixNumber(oldPos.tailAngle, targetPos.tailAngle, productionBlend),
+        selfRotation: mixNumber(oldPos.selfRotation, targetPos.selfRotation, productionBlend),
+        radius: mixNumber(oldPos.radius, targetPos.radius, productionBlend),
+        xScale: mixNumber(oldPos.xScale, targetPos.xScale, productionBlend),
+        yScale: mixNumber(oldPos.yScale, targetPos.yScale, productionBlend),
+      };
+    }
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
     ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
     if (pos.entryActive && pos.previousUnit && pos.entryBlend < 0.999) {
