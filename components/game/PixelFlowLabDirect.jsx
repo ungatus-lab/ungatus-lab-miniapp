@@ -5676,10 +5676,44 @@ function getArmyGenerationDirection(generation, layer) {
   return direction;
 }
 
-function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time }) {
+function getArmyRotationBridgeFactor({ unit, generation, layer, layerCount, slotIndex }) {
+  const currentDirection = getArmyGenerationDirection(generation, layer);
+  const nextDirection = getArmyGenerationDirection(Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1), layer);
+  const safeLayerCount = Math.max(1, Math.round(layerCount || 1));
+  const layerDepth = safeLayerCount <= 1 ? 0.5 : clamp01(layer / Math.max(1, safeLayerCount - 1));
+  const seed = getArmyMorphSeed(unit.level, layer, slotIndex);
+  const earlyCohort = clamp01(layerDepth * 0.78 + (seed > 0.58 ? 0.22 : 0) + (seed > 0.86 ? 0.12 : 0));
+  const cycleStep = unit.cycleStep || 3;
+
+  if (cycleStep === 1) {
+    const arrivalSpeed = mixNumber(0.54, 0.96, earlyCohort);
+    return currentDirection * arrivalSpeed;
+  }
+  if (cycleStep === 2) {
+    const settleSpeed = mixNumber(0.82, 1.0, earlyCohort);
+    return currentDirection * settleSpeed;
+  }
+  if (cycleStep === 3) return currentDirection;
+  if (cycleStep === 4) {
+    const slowDown = 0.36 * earlyCohort;
+    return currentDirection * (1 - slowDown);
+  }
+  if (cycleStep === 5) {
+    const turnBlend = clamp01(earlyCohort * 1.28 - 0.18);
+    const oldSide = currentDirection * mixNumber(0.5, 0.18, earlyCohort);
+    const newSide = nextDirection * mixNumber(0.22, 0.62, earlyCohort);
+    return mixNumber(oldSide, newSide, turnBlend);
+  }
+  return currentDirection;
+}
+
+function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, layerCount = 1, time, rotationBridge = true }) {
   const direction = getArmyGenerationDirection(generation, layer);
+  const rotationFactor = rotationBridge
+    ? getArmyRotationBridgeFactor({ unit, generation, layer, layerCount, slotIndex })
+    : direction;
   const baseRadius = player.r + 34 + layer * 16 + generation * 2.5;
-  const speed = Math.max(0.24, 1.22 - layer * 0.1 - generation * 0.018) * direction;
+  const speed = Math.max(0.24, 1.22 - layer * 0.1 - generation * 0.018) * rotationFactor;
   let angle = time * speed + slotIndex / Math.max(1, itemsInLayer) * Math.PI * 2 + layer * 0.8 + unit.level * 0.07;
   const phase = slotIndex * 0.71 + layer * 1.13;
   let radius = baseRadius;
@@ -5712,13 +5746,13 @@ function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInL
   return { x, y, tailX, tailY, angle, tailAngle, selfRotation, radius, xScale, yScale };
 }
 
-function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time, transition = null }) {
+function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, layerCount = 1, time, transition = null }) {
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
   const morph = nextGeneration === generation ? 0 : smoothArmyMorph(transition?.motionMorph ?? unit.motionMorphBase ?? 0);
-  const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time });
+  const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, layerCount, time, rotationBridge: true });
   if (morph <= 0.0001) return current;
-  const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, time });
+  const next = sampleArmyOrbitPosition({ player, unit, generation: nextGeneration, slotIndex, itemsInLayer, layer, layerCount, time, rotationBridge: false });
   return {
     x: mixNumber(current.x, next.x, morph),
     y: mixNumber(current.y, next.y, morph),
@@ -5757,7 +5791,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer});
     const visual=getArmyGenerationPalette(unit,transition);
-    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
+    const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,layerCount,time:now,transition});
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
     ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
     drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,visual);
