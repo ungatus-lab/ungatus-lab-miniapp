@@ -2398,11 +2398,10 @@ const trainingIntroTimerRef = useRef(null);
       if (coreBarracks.trainTimer >= upgradeInterval) {
         coreBarracks.trainTimer -= upgradeInterval;
         const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
-        // T3(17): avoid broken partial-axis visual chunks. When the reserve is upgraded,
-        // the whole nearest outdated level is moved to the current level in one pass.
-        // The visible smoothness is handled by the level-shape crossfade, not by
-        // cutting an orbit into small upgrade batches.
-        const upgradeBatch = available;
+        const upgradeBatch = Math.min(
+          available,
+          Math.max(1, Math.floor(barracksEconomy.barracksBatch * 2))
+        );
         if (upgradeBatch > 0) {
           stats.guardsByLevel[outdatedLevel] = available - upgradeBatch;
           if (stats.guardsByLevel[outdatedLevel] <= 0) delete stats.guardsByLevel[outdatedLevel];
@@ -5993,48 +5992,18 @@ function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
   ctx.restore();
 }
 
-function getArmyVisualUnitForLevel(unit, level) {
-  const state = getLevelGenerationState(level);
-  return {
-    ...unit,
-    level: state.level,
-    generation: state.generation,
-    cycleStep: state.cycleStep,
-    colorMorphBase: state.colorMorphBase,
-    motionMorphBase: state.motionMorphBase,
-    morphToNext: state.morphToNext,
-  };
-}
-
-function getArmyLevelShapeBlend(transition) {
-  const levelColor = transition?.levelColorTransition;
-  if (!levelColor?.active) return null;
-  const fromLevel = Math.max(1, Math.round(levelColor.fromLevel || 1));
-  const toLevel = Math.max(1, Math.round(levelColor.toLevel || fromLevel));
-  if (fromLevel === toLevel) return null;
-  return {
-    fromLevel,
-    toLevel,
-    blend: clamp01(levelColor.blend ?? 1),
-  };
-}
-
 function drawOrbitGuards(ctx, player, guardsByLevel) {
   if (!player || !guardsByLevel) return;
   const units = buildArmyRepresentatives(guardsByLevel); if (!units.length) return;
   const now = Date.now()/1000, layerSize=42, layerCount=Math.max(1, Math.ceil(units.length/layerSize)); ctx.save();
   for(let i=0;i<units.length;i++){
     const unit=units[i], layer=Math.floor(i/layerSize);
-    const indexInLayer=i%layerSize;
-    // T3(17): keep orbit slots stable. A partially filled outer layer no longer
-    // re-spaces every existing element whenever one new representative appears.
-    const itemsInLayer=layerSize;
+    const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer,time:now});
     const visual=getArmyGenerationPalette(unit,transition);
     const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
     ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
-
     if (pos.entryActive && pos.previousUnit && pos.entryBlend < 0.999) {
       const previousVisual = {
         ...getArmyGenerationPalette(pos.previousUnit, {
@@ -6047,28 +6016,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
       };
       drawMergedGuard(ctx,pos.previousUnit,pos.x,pos.y,pos.selfRotation,previousVisual);
     }
-
-    const shapeBlend = !pos.entryActive ? getArmyLevelShapeBlend(transition) : null;
-    if (shapeBlend && shapeBlend.blend < 0.999) {
-      const previousUnit = getArmyVisualUnitForLevel(unit, shapeBlend.fromLevel);
-      const previousVisual = {
-        ...getArmyGenerationPalette(previousUnit, {
-          layerDepth: transition.layerDepth,
-          seed: transition.seed,
-          colorMorph: previousUnit.colorMorphBase ?? previousUnit.morphToNext ?? 0,
-          motionMorph: 0,
-        }),
-        alpha: Math.max(0, 1 - shapeBlend.blend),
-      };
-      drawMergedGuard(ctx,previousUnit,pos.x,pos.y,pos.selfRotation,previousVisual);
-    }
-
-    const currentAlpha = pos.entryActive
-      ? Math.max(0.08, pos.entryBlend)
-      : shapeBlend
-        ? Math.max(0.08, shapeBlend.blend)
-        : 1;
-    const currentVisual = currentAlpha < 0.999 ? { ...visual, alpha: currentAlpha } : visual;
+    const currentVisual = pos.entryActive ? { ...visual, alpha: Math.max(0.08, pos.entryBlend) } : visual;
     drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,currentVisual);
   }
   ctx.restore();
