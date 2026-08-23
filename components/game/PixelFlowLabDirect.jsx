@@ -49,6 +49,7 @@ const UPGRADE_TIME_MULTIPLIER = 1.45;
 let armyGenerationTurnState = { level: 1, startedAt: 0 };
 let armyGenerationEntryState = { level: 1, startedAt: 0 };
 let armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
+let armyLevelAxisDiveState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -1172,6 +1173,7 @@ const trainingIntroTimerRef = useRef(null);
     armyGenerationTurnState = { level: 1, startedAt: 0 };
     armyGenerationEntryState = { level: 1, startedAt: 0 };
     armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
+    armyLevelAxisDiveState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -2403,21 +2405,13 @@ const trainingIntroTimerRef = useRef(null);
     // representatives keep their element count, but move to the current army level.
     // The HUD/cap then counts every upgraded representative by its level weight.
     if (outdatedLevel !== null) {
-      coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
-      const upgradeInterval = 0.5;
-      if (coreBarracks.trainTimer >= upgradeInterval) {
-        coreBarracks.trainTimer -= upgradeInterval;
-        const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
-        const upgradeBatch = Math.min(
-          available,
-          Math.max(1, Math.floor(barracksEconomy.barracksBatch * 2))
-        );
-        if (upgradeBatch > 0) {
-          stats.guardsByLevel[outdatedLevel] = available - upgradeBatch;
-          if (stats.guardsByLevel[outdatedLevel] <= 0) delete stats.guardsByLevel[outdatedLevel];
-          stats.guardsByLevel[coreBarracksLevel] =
-            (stats.guardsByLevel[coreBarracksLevel] || 0) + upgradeBatch;
-        }
+      const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
+      if (available > 0) {
+        startArmyLevelAxisDiveTransition(outdatedLevel, coreBarracksLevel);
+        delete stats.guardsByLevel[outdatedLevel];
+        stats.guardsByLevel[coreBarracksLevel] =
+          (stats.guardsByLevel[coreBarracksLevel] || 0) + available;
+        coreBarracks.trainTimer = 0;
       }
     } else {
       const ownedVisualElements = getTotalOwnedGuardElements(stats, marchesRef.current);
@@ -5606,6 +5600,8 @@ const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
 const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
 const ARMY_PRODUCTION_SPAWN_SECONDS = 1.6;
+const ARMY_LEVEL_AXIS_DIVE_SECONDS = 1.35;
+const ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS = 0.18;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -5725,6 +5721,37 @@ function startArmyLevelColorTransition(fromLevel, toLevel) {
     fromLevel: from,
     toLevel: to,
     startedAt: Date.now() / 1000,
+  };
+}
+
+
+function startArmyLevelAxisDiveTransition(fromLevel, toLevel) {
+  const from = Math.max(1, Math.round(fromLevel || 1));
+  const to = Math.max(1, Math.round(toLevel || 1));
+  if (from === to) return;
+  armyLevelAxisDiveState = {
+    fromLevel: from,
+    toLevel: to,
+    startedAt: Date.now() / 1000,
+  };
+}
+
+function getArmyLevelAxisDive({ unit, layer, time }) {
+  const state = armyLevelAxisDiveState || {};
+  if (Math.round(state.toLevel || 0) !== Math.round(unit?.level || 0) || !Number.isFinite(state.startedAt) || state.startedAt <= 0) {
+    return { active: false, progress: 1, fromLevel: unit?.level || 1, toLevel: unit?.level || 1 };
+  }
+  const start = state.startedAt + Math.max(0, layer || 0) * ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS;
+  if (time <= start) {
+    return { active: true, progress: 0, fromLevel: state.fromLevel, toLevel: state.toLevel };
+  }
+  const raw = clamp01((time - start) / ARMY_LEVEL_AXIS_DIVE_SECONDS);
+  return {
+    active: raw < 1,
+    progress: smoothArmyMorph(raw),
+    rawProgress: raw,
+    fromLevel: state.fromLevel,
+    toLevel: state.toLevel,
   };
 }
 
@@ -5853,6 +5880,25 @@ function buildArmyRepresentatives(guardsByLevel) {
     }
   }
   return result.sort((a,b) => a.level - b.level);
+}
+
+
+function createArmyUnitForLevel(level, baseUnit = {}) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  const state = getLevelGenerationState(safeLevel);
+  const weight = getArmyRepresentativeWeight(safeLevel);
+  return {
+    ...baseUnit,
+    level: safeLevel,
+    weight,
+    representedCount: weight,
+    fillRatio: baseUnit.fillRatio ?? 1,
+    generation: state.generation,
+    cycleStep: state.cycleStep,
+    colorMorphBase: state.colorMorphBase,
+    motionMorphBase: state.motionMorphBase,
+    morphToNext: state.morphToNext,
+  };
 }
 
 function getArmyGenerationDirection(generation, layer) {
@@ -6039,7 +6085,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
   let spawnedBefore = 0;
   ctx.save();
   for(let i=0;i<units.length;i++){
-    const unit=units[i], layer=Math.floor(i/layerSize);
+    let unit=units[i]; const layer=Math.floor(i/layerSize);
     levelSeen[unit.level] = (levelSeen[unit.level] || 0) + 1;
     const activeForLevel = activeByLevel[unit.level] || [];
     const totalForLevel = levelTotals[unit.level] || 0;
@@ -6047,9 +6093,37 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
     const spawnInfo = spawnOrdinal >= 0 ? activeForLevel[spawnOrdinal] : null;
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer,time:now});
-    const visual=getArmyGenerationPalette(unit,transition);
+    let visual=getArmyGenerationPalette(unit,transition);
     const targetPos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
     let pos = targetPos;
+    const axisDive = getArmyLevelAxisDive({ unit, layer, time: now });
+    if (axisDive.active && !spawnInfo) {
+      const previousUnit = createArmyUnitForLevel(axisDive.fromLevel, unit);
+      const previousTransition = getArmyLayerTransition({unit:previousUnit,layer,layerCount,slotIndex:indexInLayer,time:now});
+      const previousPos = getArmyOrbitPosition({player,unit:previousUnit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition:previousTransition});
+      const diveProgress = clamp01(axisDive.progress || 0);
+      if (diveProgress < 0.5) {
+        const inward = smoothArmyMorph(diveProgress * 2);
+        visual = getArmyGenerationPalette(previousUnit, previousTransition);
+        pos = {
+          ...previousPos,
+          x: mixNumber(previousPos.x, player.x, inward),
+          y: mixNumber(previousPos.y, player.y, inward),
+          tailX: mixNumber(Number.isFinite(previousPos.tailX) ? previousPos.tailX : previousPos.x, player.x, inward),
+          tailY: mixNumber(Number.isFinite(previousPos.tailY) ? previousPos.tailY : previousPos.y, player.y, inward),
+        };
+        unit = previousUnit;
+      } else {
+        const outward = smoothArmyMorph((diveProgress - 0.5) * 2);
+        pos = {
+          ...targetPos,
+          x: mixNumber(player.x, targetPos.x, outward),
+          y: mixNumber(player.y, targetPos.y, outward),
+          tailX: mixNumber(player.x, Number.isFinite(targetPos.tailX) ? targetPos.tailX : targetPos.x, outward),
+          tailY: mixNumber(player.y, Number.isFinite(targetPos.tailY) ? targetPos.tailY : targetPos.y, outward),
+        };
+      }
+    }
     if (spawnInfo) {
       const flight = clamp01((now - (spawnInfo.createdAt || now)) / Math.max(0.001, spawnInfo.duration || ARMY_PRODUCTION_SPAWN_SECONDS));
       const easedFlight = smoothArmyMorph(flight);
