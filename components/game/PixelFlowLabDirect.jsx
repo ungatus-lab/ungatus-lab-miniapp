@@ -46,6 +46,7 @@ const BUILD_TIME_SECONDS = {
   Citadel: 8,
 };
 const UPGRADE_TIME_MULTIPLIER = 1.45;
+let armyGenerationTurnState = { level: 1, startedAt: 0 };
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -467,7 +468,6 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   // One invisible Barracks now lives inside the map Core. Its output still uses
   // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
   const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
-  const armyGenerationTurnRef = useRef({ level: 1, startedAt: 0 });
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
@@ -1163,7 +1163,7 @@ const trainingIntroTimerRef = useRef(null);
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
-    armyGenerationTurnRef.current = { level: 1, startedAt: 0 };
+    armyGenerationTurnState = { level: 1, startedAt: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -2869,7 +2869,11 @@ const trainingIntroTimerRef = useRef(null);
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
-    drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel);
+    try {
+      drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel);
+    } catch (error) {
+      console.error("Orbit guards draw failed", error);
+    }
     drawPlayer(ctx, player);
 
     ctx.restore();
@@ -5619,7 +5623,7 @@ function isArmyGenerationTurnLevel(level) {
 function startArmyGenerationTurn(level) {
   const safeLevel = Math.max(1, Math.round(level || 1));
   if (!isArmyGenerationTurnLevel(safeLevel)) return;
-  armyGenerationTurnRef.current = {
+  armyGenerationTurnState = {
     level: safeLevel,
     startedAt: Date.now() / 1000,
   };
@@ -5701,7 +5705,7 @@ function getArmyLayerTurnMotion({ unit, generation, layer, time }) {
   const currentDirection = getArmyGenerationDirection(generation, layer);
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
   const nextDirection = getArmyGenerationDirection(nextGeneration, layer);
-  const turn = armyGenerationTurnRef.current || {};
+  const turn = armyGenerationTurnState || {};
   const levelMatches = Math.round(turn.level || 0) === Math.round(unit.level || 0);
   const canTurn = unit.cycleStep === 5 && nextGeneration !== generation && nextDirection !== currentDirection;
   if (!canTurn || !levelMatches || !Number.isFinite(turn.startedAt) || turn.startedAt <= 0) {
