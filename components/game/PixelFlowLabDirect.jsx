@@ -47,6 +47,7 @@ const BUILD_TIME_SECONDS = {
 };
 const UPGRADE_TIME_MULTIPLIER = 1.45;
 let armyGenerationTurnState = { level: 1, startedAt: 0 };
+let armyGenerationEntryState = { level: 1, startedAt: 0 };
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -1164,6 +1165,7 @@ const trainingIntroTimerRef = useRef(null);
     cityStatsRef.current = createCityStats();
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
     armyGenerationTurnState = { level: 1, startedAt: 0 };
+    armyGenerationEntryState = { level: 1, startedAt: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -2062,7 +2064,10 @@ const trainingIntroTimerRef = useRef(null);
     stats.nextLevelXp = getNextLevelXp(target);
     stats.guardCap = getCoreArmyCapacity(target);
     coreBarracksRef.current.trainTimer = 0;
-    if (target > previousLevel) startArmyGenerationTurn(target);
+    if (target > previousLevel) {
+      startArmyGenerationTurn(target);
+      startArmyGenerationEntryTransition(target);
+    }
     if (playerRef.current) playerRef.current.level = target;
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
     setHud((current) => ({ ...current, level: target, status: `CORE LEVEL ${target}` }));
@@ -2463,6 +2468,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.guardCap = getCoreArmyCapacity(stats.level);
     coreBarracksRef.current.trainTimer = 0;
     startArmyGenerationTurn(stats.level);
+    startArmyGenerationEntryTransition(stats.level);
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
   }
 
@@ -5570,6 +5576,8 @@ const ARMY_COLOR_MORPH_BY_STEP = [0, 0.2, 0.4, 0.62, 0.82];
 const ARMY_MOTION_MORPH_BY_STEP = [0, 0.025, 0.07, 0.13, 0.22];
 const ARMY_GENERATION_TURN_TOTAL_SECONDS = 10;
 const ARMY_GENERATION_TURN_LAYER_DELAY_SECONDS = 1.2;
+const ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS = 12;
+const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 1.2;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -5626,6 +5634,53 @@ function startArmyGenerationTurn(level) {
   armyGenerationTurnState = {
     level: safeLevel,
     startedAt: Date.now() / 1000,
+  };
+}
+
+function isArmyGenerationEntryLevel(level) {
+  const state = getLevelGenerationState(level);
+  return state.cycleStep === 1 && state.generation > 0;
+}
+
+function startArmyGenerationEntryTransition(level) {
+  const safeLevel = Math.max(1, Math.round(level || 1));
+  if (!isArmyGenerationEntryLevel(safeLevel)) return;
+  armyGenerationEntryState = {
+    level: safeLevel,
+    startedAt: Date.now() / 1000,
+  };
+}
+
+function getPreviousGenerationEntryUnit(unit) {
+  const previousLevel = Math.max(1, Math.round((unit?.level || 1) - 1));
+  const previousState = getLevelGenerationState(previousLevel);
+  return {
+    ...unit,
+    level: previousLevel,
+    generation: previousState.generation,
+    cycleStep: previousState.cycleStep,
+    colorMorphBase: previousState.colorMorphBase,
+    motionMorphBase: previousState.motionMorphBase,
+    morphToNext: previousState.morphToNext,
+  };
+}
+
+function getArmyGenerationEntryBlend({ unit, layer, time }) {
+  const generation = Math.max(0, Math.round(unit?.generation || 0));
+  const entry = armyGenerationEntryState || {};
+  const levelMatches = Math.round(entry.level || 0) === Math.round(unit?.level || 0);
+  const canBlend = unit?.cycleStep === 1 && generation > 0;
+  if (!canBlend || !levelMatches || !Number.isFinite(entry.startedAt) || entry.startedAt <= 0) {
+    return { active: false, blend: 1, rawBlend: 1 };
+  }
+  const layerStart = entry.startedAt + Math.max(0, layer || 0) * ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS;
+  if (time <= layerStart) return { active: true, blend: 0, rawBlend: 0 };
+  const elapsed = Math.max(0, time - layerStart);
+  const rawBlend = clamp01(elapsed / ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS);
+  return {
+    active: rawBlend < 1,
+    blend: smoothArmyMorph(rawBlend),
+    rawBlend,
   };
 }
 
@@ -5785,6 +5840,38 @@ function sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInL
 function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, time, transition = null }) {
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
+  const entryBlend = getArmyGenerationEntryBlend({ unit, layer, time });
+  if (entryBlend.active && generation > 0) {
+    const previousUnit = getPreviousGenerationEntryUnit(unit);
+    const previousGeneration = Math.max(0, generation - 1);
+    const previous = sampleArmyOrbitPosition({
+      player,
+      unit: previousUnit,
+      generation: previousGeneration,
+      slotIndex,
+      itemsInLayer,
+      layer,
+      time,
+      transition: { layerDepth: transition?.layerDepth ?? 0.5, seed: transition?.seed ?? 0.5, colorMorph: previousUnit.colorMorphBase || 0, motionMorph: 0 },
+    });
+    const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition });
+    const blend = entryBlend.blend;
+    return {
+      x: mixNumber(previous.x, current.x, blend),
+      y: mixNumber(previous.y, current.y, blend),
+      tailX: mixNumber(previous.tailX, current.tailX, blend),
+      tailY: mixNumber(previous.tailY, current.tailY, blend),
+      angle: mixNumber(previous.angle, current.angle, blend),
+      tailAngle: mixNumber(previous.tailAngle, current.tailAngle, blend),
+      selfRotation: mixNumber(previous.selfRotation, current.selfRotation, blend),
+      radius: mixNumber(previous.radius, current.radius, blend),
+      xScale: mixNumber(previous.xScale, current.xScale, blend),
+      yScale: mixNumber(previous.yScale, current.yScale, blend),
+      entryActive: true,
+      entryBlend: blend,
+      previousUnit,
+    };
+  }
   const morph = nextGeneration === generation ? 0 : smoothArmyMorph(transition?.motionMorph ?? unit.motionMorphBase ?? 0);
   const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition });
   if (unit.cycleStep === 5 && nextGeneration !== generation) return current;
@@ -5806,7 +5893,8 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
 
 function drawMergedGuard(ctx, unit, x, y, rotation, visual) {
   const size = visual.size + Math.min(2.2, unit.generation * 0.12 + unit.cycleStep * 0.09);
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotation); ctx.globalAlpha = 0.45 + unit.fillRatio * 0.55;
+  const alpha = Number.isFinite(visual.alpha) ? clamp01(visual.alpha) : 1;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rotation); ctx.globalAlpha = (0.45 + unit.fillRatio * 0.55) * alpha;
   ctx.fillStyle = visual.fill; ctx.shadowColor = visual.glow; ctx.shadowBlur = 10 + Math.min(12, unit.generation);
   const dot=(dx,dy,r,secondary=false)=>{ctx.beginPath();ctx.fillStyle=secondary?visual.secondary:visual.fill;ctx.arc(dx,dy,r,0,Math.PI*2);ctx.fill();};
   const spread=size*0.82;
@@ -5831,7 +5919,20 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
     const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
     ctx.beginPath();ctx.strokeStyle=visual.tail;ctx.globalAlpha=.45+unit.fillRatio*.45;ctx.lineWidth=1.35+Math.min(1.6,visual.generationBlend*.08);ctx.moveTo(tailX,tailY);ctx.lineTo(pos.x,pos.y);ctx.stroke();ctx.globalAlpha=1;
-    drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,visual);
+    if (pos.entryActive && pos.previousUnit && pos.entryBlend < 0.999) {
+      const previousVisual = {
+        ...getArmyGenerationPalette(pos.previousUnit, {
+          layerDepth: transition.layerDepth,
+          seed: transition.seed,
+          colorMorph: pos.previousUnit.colorMorphBase ?? pos.previousUnit.morphToNext ?? 0,
+          motionMorph: 0,
+        }),
+        alpha: Math.max(0, 1 - pos.entryBlend),
+      };
+      drawMergedGuard(ctx,pos.previousUnit,pos.x,pos.y,pos.selfRotation,previousVisual);
+    }
+    const currentVisual = pos.entryActive ? { ...visual, alpha: Math.max(0.08, pos.entryBlend) } : visual;
+    drawMergedGuard(ctx,unit,pos.x,pos.y,pos.selfRotation,currentVisual);
   }
   ctx.restore();
 }
