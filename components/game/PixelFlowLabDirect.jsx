@@ -470,7 +470,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const cityStatsRef = useRef(createCityStats());
   // One invisible Barracks now lives inside the map Core. Its output still uses
   // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
-  const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0 });
+  const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0, productionQueue: 0 });
   const productionSpawnsRef = useRef([]);
   const productionSpawnIdRef = useRef(1);
   const cityStatsUiTimerRef = useRef(0);
@@ -1167,7 +1167,7 @@ const trainingIntroTimerRef = useRef(null);
     CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
     cityRef.current = createCityState();
     cityStatsRef.current = createCityStats();
-    coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
+    coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0, productionQueue: 0 };
     productionSpawnsRef.current = [];
     productionSpawnIdRef.current = 1;
     armyGenerationTurnState = { level: 1, startedAt: 0 };
@@ -2075,7 +2075,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.guardCap = getCoreArmyCapacity(target);
     coreBarracksRef.current.trainTimer = 0;
     if (target > previousLevel) {
-      startArmyLevelColorTransition(previousLevel, target);
+      if (isArmyGenerationEntryLevel(target)) startArmyLevelColorTransition(previousLevel, target);
       startArmyGenerationTurn(target);
       startArmyGenerationEntryTransition(target);
     }
@@ -2392,56 +2392,69 @@ const trainingIntroTimerRef = useRef(null);
     productionSpawnsRef.current = (productionSpawnsRef.current || []).filter(
       (spawn) => productionNow - (spawn.createdAt || 0) <= (spawn.duration || ARMY_PRODUCTION_SPAWN_SECONDS) + 0.25
     );
+    const hasActiveProductionSpawn = (productionSpawnsRef.current || []).some((spawn) => {
+      const startedAt = spawn.createdAt || 0;
+      return productionNow >= startedAt && productionNow - startedAt < (spawn.duration || ARMY_PRODUCTION_SPAWN_SECONDS);
+    });
     if (!Number.isFinite(stats.crystals)) stats.crystals = 0;
     stats.crystalRate = 0;
 
     const coreBarracks = coreBarracksRef.current;
+    if (!Number.isFinite(coreBarracks.productionQueue)) coreBarracks.productionQueue = 0;
     const coreBarracksLevel = Math.max(1, Math.round(stats.level || 1));
     coreBarracks.level = coreBarracksLevel;
     const barracksEconomy = getBuildingEconomy("Barracks", coreBarracksLevel);
     const outdatedLevel = getHighestOutdatedGuardLevel(stats.guardsByLevel, coreBarracksLevel);
 
-    // Upgrade Queue has strict priority over new production. Existing visible
-    // representatives keep their element count, but move to the current army level.
-    // The HUD/cap then counts every upgraded representative by its level weight.
     if (outdatedLevel !== null) {
       const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
       if (available > 0) {
-        startArmyLevelAxisDiveTransition(outdatedLevel, coreBarracksLevel);
+        if (!isArmyGenerationEntryLevel(coreBarracksLevel)) {
+          startArmyLevelAxisDiveTransition(outdatedLevel, coreBarracksLevel);
+        }
         delete stats.guardsByLevel[outdatedLevel];
         stats.guardsByLevel[coreBarracksLevel] =
           (stats.guardsByLevel[coreBarracksLevel] || 0) + available;
         coreBarracks.trainTimer = 0;
+        coreBarracks.productionQueue = 0;
       }
     } else {
-      const ownedVisualElements = getTotalOwnedGuardElements(stats, marchesRef.current);
       const visualCapacity = getCoreArmyVisualCapacity(coreBarracksLevel);
-      if (ownedVisualElements >= visualCapacity) {
-        coreBarracks.trainTimer = 0;
-      } else {
-        coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
-        if (coreBarracks.trainTimer >= 1) {
-          coreBarracks.trainTimer -= 1;
-          const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
-          const requestedBatch = Math.max(1, Math.floor(exactBatch));
-          coreBarracks.trainCarry = exactBatch - requestedBatch;
-          const capacity = Math.max(
-            0,
-            visualCapacity - getTotalOwnedGuardElements(stats, marchesRef.current)
-          );
-          const produced = Math.min(requestedBatch, capacity);
-          if (produced > 0) {
-            stats.guardsByLevel[coreBarracksLevel] =
-              (stats.guardsByLevel[coreBarracksLevel] || 0) + produced;
-            const createdAt = Date.now() / 1000;
-            for (let spawnIndex = 0; spawnIndex < produced; spawnIndex += 1) {
-              productionSpawnsRef.current.push({
-                id: productionSpawnIdRef.current++,
-                level: coreBarracksLevel,
-                createdAt: createdAt + spawnIndex * 0.225,
-                duration: ARMY_PRODUCTION_SPAWN_SECONDS,
-              });
-            }
+      const freeCapacity = Math.max(0, visualCapacity - getTotalOwnedGuardElements(stats, marchesRef.current));
+      coreBarracks.productionQueue = Math.min(Math.max(0, Math.floor(coreBarracks.productionQueue || 0)), freeCapacity);
+
+      const startOneProducedGuard = () => {
+        if (hasActiveProductionSpawn) return false;
+        if ((coreBarracks.productionQueue || 0) <= 0) return false;
+        if (getTotalOwnedGuardElements(stats, marchesRef.current) >= visualCapacity) return false;
+        coreBarracks.productionQueue -= 1;
+        stats.guardsByLevel[coreBarracksLevel] =
+          (stats.guardsByLevel[coreBarracksLevel] || 0) + 1;
+        productionSpawnsRef.current.push({
+          id: productionSpawnIdRef.current++,
+          level: coreBarracksLevel,
+          createdAt: Date.now() / 1000,
+          duration: ARMY_PRODUCTION_SPAWN_SECONDS,
+        });
+        return true;
+      };
+
+      if (!startOneProducedGuard()) {
+        if (getTotalOwnedGuardElements(stats, marchesRef.current) >= visualCapacity) {
+          coreBarracks.trainTimer = 0;
+        } else if (!hasActiveProductionSpawn && (coreBarracks.productionQueue || 0) <= 0) {
+          coreBarracks.trainTimer = (coreBarracks.trainTimer || 0) + dt;
+          if (coreBarracks.trainTimer >= 1) {
+            coreBarracks.trainTimer -= 1;
+            const exactBatch = barracksEconomy.barracksBatch + (coreBarracks.trainCarry || 0);
+            const requestedBatch = Math.max(1, Math.floor(exactBatch));
+            coreBarracks.trainCarry = exactBatch - requestedBatch;
+            const capacity = Math.max(
+              0,
+              visualCapacity - getTotalOwnedGuardElements(stats, marchesRef.current)
+            );
+            coreBarracks.productionQueue = Math.min(requestedBatch, capacity);
+            startOneProducedGuard();
           }
         }
       }
@@ -2483,7 +2496,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.nextLevelXp = getNextLevelXp(stats.level);
     stats.guardCap = getCoreArmyCapacity(stats.level);
     coreBarracksRef.current.trainTimer = 0;
-    startArmyLevelColorTransition(previousLevel, stats.level);
+    if (isArmyGenerationEntryLevel(stats.level)) startArmyLevelColorTransition(previousLevel, stats.level);
     startArmyGenerationTurn(stats.level);
     startArmyGenerationEntryTransition(stats.level);
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
@@ -3962,6 +3975,8 @@ const trainingIntroTimerRef = useRef(null);
 
     // A launched legion restarts the production cycle of the internal Core Barracks.
     coreBarracksRef.current.trainTimer = 0;
+    coreBarracksRef.current.productionQueue = 0;
+    productionSpawnsRef.current = [];
 
     const marchId = `attack-${Date.now()}-${Math.random()}`;
     const durationSeconds = getMarchDuration(player.x, player.y, monster.x, monster.y, "attack");
@@ -5601,8 +5616,8 @@ const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
 // Keep production flight and level-up axis dive deliberately slow, close to generation-entry pacing.
 const ARMY_PRODUCTION_SPAWN_SECONDS = 8.0;
-const ARMY_LEVEL_AXIS_DIVE_SECONDS = 6.75;
-const ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS = 0.9;
+const ARMY_LEVEL_AXIS_DIVE_SECONDS = ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS;
+const ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS = ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -6079,8 +6094,11 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
   }
   const activeSpawns = Object.values(activeByLevel).flat();
   const oldestActiveSpawn = activeSpawns.reduce((oldest, spawn) => Math.min(oldest, spawn.createdAt || now), now);
+  const activeProductionRaw = activeSpawns.length
+    ? clamp01((now - oldestActiveSpawn) / Math.max(0.001, ARMY_PRODUCTION_SPAWN_SECONDS))
+    : 1;
   const productionBlend = activeSpawns.length
-    ? smoothArmyMorph(clamp01((now - oldestActiveSpawn) / Math.max(0.001, ARMY_PRODUCTION_SPAWN_SECONDS)))
+    ? smoothArmyMorph(clamp01((activeProductionRaw - 0.72) / 0.28))
     : 1;
   const oldUnitCount = Math.max(0, units.length - activeSpawns.length);
   const oldLayerCount = Math.max(1, Math.ceil(Math.max(1, oldUnitCount) / layerSize));
@@ -6096,13 +6114,15 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
     const spawnInfo = spawnOrdinal >= 0 ? activeForLevel[spawnOrdinal] : null;
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
     const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer,time:now});
+    const cleanTransition={...transition,levelColorTransition:{active:false,blend:1,fromLevel:unit.level,toLevel:unit.level}};
     let visual=getArmyGenerationPalette(unit,transition);
-    const targetPos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
+    const targetPos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition:cleanTransition});
     let pos = targetPos;
     const axisDive = getArmyLevelAxisDive({ unit, layer, time: now });
     if (axisDive.active && !spawnInfo) {
       const previousUnit = createArmyUnitForLevel(axisDive.fromLevel, unit);
-      const previousTransition = getArmyLayerTransition({unit:previousUnit,layer,layerCount,slotIndex:indexInLayer,time:now});
+      const previousTransitionRaw = getArmyLayerTransition({unit:previousUnit,layer,layerCount,slotIndex:indexInLayer,time:now});
+      const previousTransition={...previousTransitionRaw,levelColorTransition:{active:false,blend:1,fromLevel:previousUnit.level,toLevel:previousUnit.level}};
       const previousPos = getArmyOrbitPosition({player,unit:previousUnit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition:previousTransition});
       const diveProgress = clamp01(axisDive.progress || 0);
       if (diveProgress < 0.5) {
@@ -6118,6 +6138,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
         unit = previousUnit;
       } else {
         const outward = smoothArmyMorph((diveProgress - 0.5) * 2);
+        visual = getArmyGenerationPalette(unit, cleanTransition);
         pos = {
           ...targetPos,
           x: mixNumber(player.x, targetPos.x, outward),
