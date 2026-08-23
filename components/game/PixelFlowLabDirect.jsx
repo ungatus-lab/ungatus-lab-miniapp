@@ -2438,7 +2438,7 @@ const trainingIntroTimerRef = useRef(null);
               productionSpawnsRef.current.push({
                 id: productionSpawnIdRef.current++,
                 level: coreBarracksLevel,
-                createdAt: createdAt + spawnIndex * 0.045,
+                createdAt: createdAt + spawnIndex * 0.225,
                 duration: ARMY_PRODUCTION_SPAWN_SECONDS,
               });
             }
@@ -5599,9 +5599,10 @@ const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 1.2;
 const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
 const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
-const ARMY_PRODUCTION_SPAWN_SECONDS = 1.6;
-const ARMY_LEVEL_AXIS_DIVE_SECONDS = 1.35;
-const ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS = 0.18;
+// Keep production flight and level-up axis dive deliberately slow, close to generation-entry pacing.
+const ARMY_PRODUCTION_SPAWN_SECONDS = 8.0;
+const ARMY_LEVEL_AXIS_DIVE_SECONDS = 6.75;
+const ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS = 0.9;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -6069,7 +6070,9 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
     const level = Math.round(spawn?.level || 0);
     const totalForLevel = levelTotals[level] || 0;
     if (!totalForLevel) continue;
-    const progressRaw = clamp01((now - (spawn.createdAt || 0)) / Math.max(0.001, spawn.duration || ARMY_PRODUCTION_SPAWN_SECONDS));
+    const spawnStart = spawn.createdAt || 0;
+    if (now < spawnStart) continue;
+    const progressRaw = clamp01((now - spawnStart) / Math.max(0.001, spawn.duration || ARMY_PRODUCTION_SPAWN_SECONDS));
     if (progressRaw >= 1) continue;
     const list = activeByLevel[level] || (activeByLevel[level] = []);
     if (list.length < totalForLevel) list.push({ ...spawn, progress: smoothArmyMorph(progressRaw) });
