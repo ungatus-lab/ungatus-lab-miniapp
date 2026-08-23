@@ -47,7 +47,7 @@ const BUILD_TIME_SECONDS = {
 };
 const UPGRADE_TIME_MULTIPLIER = 1.45;
 let armyGenerationTurnState = { level: 1, startedAt: 0 };
-let armyGenerationEntryState = { level: 1, startedAt: 0 };
+let armyGenerationEntryState = { fromLevel: 1, level: 1, startedAt: 0 };
 let armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
 let armyLevelAxisDiveState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
 
@@ -1171,7 +1171,7 @@ const trainingIntroTimerRef = useRef(null);
     productionSpawnsRef.current = [];
     productionSpawnIdRef.current = 1;
     armyGenerationTurnState = { level: 1, startedAt: 0 };
-    armyGenerationEntryState = { level: 1, startedAt: 0 };
+    armyGenerationEntryState = { fromLevel: 1, level: 1, startedAt: 0 };
     armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
     armyLevelAxisDiveState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
     cityStatsUiTimerRef.current = 0;
@@ -2077,7 +2077,7 @@ const trainingIntroTimerRef = useRef(null);
     if (target > previousLevel) {
       if (isArmyGenerationEntryLevel(target)) startArmyLevelColorTransition(previousLevel, target);
       startArmyGenerationTurn(target);
-      startArmyGenerationEntryTransition(target);
+      startArmyGenerationEntryTransition(target, previousLevel);
     }
     if (playerRef.current) playerRef.current.level = target;
     cameraRef.current.zoom = clamp(cameraRef.current.zoom, MIN_ZOOM, MAX_ZOOM);
@@ -2409,9 +2409,7 @@ const trainingIntroTimerRef = useRef(null);
     if (outdatedLevel !== null) {
       const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
       if (available > 0) {
-        if (!isArmyGenerationEntryLevel(coreBarracksLevel)) {
-          startArmyLevelAxisDiveTransition(outdatedLevel, coreBarracksLevel);
-        }
+        startArmyGenerationEntryTransition(coreBarracksLevel, outdatedLevel);
         delete stats.guardsByLevel[outdatedLevel];
         stats.guardsByLevel[coreBarracksLevel] =
           (stats.guardsByLevel[coreBarracksLevel] || 0) + available;
@@ -2498,7 +2496,7 @@ const trainingIntroTimerRef = useRef(null);
     coreBarracksRef.current.trainTimer = 0;
     if (isArmyGenerationEntryLevel(stats.level)) startArmyLevelColorTransition(previousLevel, stats.level);
     startArmyGenerationTurn(stats.level);
-    startArmyGenerationEntryTransition(stats.level);
+    startArmyGenerationEntryTransition(stats.level, previousLevel);
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
   }
 
@@ -5615,7 +5613,7 @@ const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
 const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
 // Keep production flight and level-up axis dive deliberately slow, close to generation-entry pacing.
-const ARMY_PRODUCTION_SPAWN_SECONDS = 8.0;
+const ARMY_PRODUCTION_SPAWN_SECONDS = 4.0;
 const ARMY_LEVEL_AXIS_DIVE_SECONDS = ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS;
 const ARMY_LEVEL_AXIS_DIVE_LAYER_DELAY_SECONDS = ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS;
 
@@ -5682,17 +5680,20 @@ function isArmyGenerationEntryLevel(level) {
   return state.cycleStep === 1 && state.generation > 0;
 }
 
-function startArmyGenerationEntryTransition(level) {
+function startArmyGenerationEntryTransition(level, fromLevel = Math.max(1, Math.round((level || 1) - 1))) {
   const safeLevel = Math.max(1, Math.round(level || 1));
-  if (!isArmyGenerationEntryLevel(safeLevel)) return;
+  const safeFromLevel = Math.max(1, Math.round(fromLevel || safeLevel - 1));
+  if (safeLevel <= safeFromLevel) return;
   armyGenerationEntryState = {
+    fromLevel: safeFromLevel,
     level: safeLevel,
     startedAt: Date.now() / 1000,
   };
 }
 
 function getPreviousGenerationEntryUnit(unit) {
-  const previousLevel = Math.max(1, Math.round((unit?.level || 1) - 1));
+  const entry = armyGenerationEntryState || {};
+  const previousLevel = Math.max(1, Math.round(entry.fromLevel || (unit?.level || 1) - 1));
   const previousState = getLevelGenerationState(previousLevel);
   return {
     ...unit,
@@ -5706,11 +5707,11 @@ function getPreviousGenerationEntryUnit(unit) {
 }
 
 function getArmyGenerationEntryBlend({ unit, layer, time }) {
-  const generation = Math.max(0, Math.round(unit?.generation || 0));
   const entry = armyGenerationEntryState || {};
   const levelMatches = Math.round(entry.level || 0) === Math.round(unit?.level || 0);
-  const canBlend = unit?.cycleStep === 1 && generation > 0;
-  if (!canBlend || !levelMatches || !Number.isFinite(entry.startedAt) || entry.startedAt <= 0) {
+  const fromLevel = Math.max(1, Math.round(entry.fromLevel || (unit?.level || 1) - 1));
+  const canBlend = levelMatches && fromLevel < Math.round(unit?.level || 0);
+  if (!canBlend || !Number.isFinite(entry.startedAt) || entry.startedAt <= 0) {
     return { active: false, blend: 1, rawBlend: 1 };
   }
   const layerStart = entry.startedAt + Math.max(0, layer || 0) * ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS;
@@ -6008,9 +6009,9 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
   const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, unit.generation || 0));
   const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
   const entryBlend = getArmyGenerationEntryBlend({ unit, layer, time });
-  if (entryBlend.active && generation > 0) {
+  if (entryBlend.active) {
     const previousUnit = getPreviousGenerationEntryUnit(unit);
-    const previousGeneration = Math.max(0, generation - 1);
+    const previousGeneration = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, previousUnit.generation || 0));
     const previous = sampleArmyOrbitPosition({
       player,
       unit: previousUnit,
@@ -6118,7 +6119,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel, productionSpawns = []) {
     let visual=getArmyGenerationPalette(unit,transition);
     const targetPos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition:cleanTransition});
     let pos = targetPos;
-    const axisDive = getArmyLevelAxisDive({ unit, layer, time: now });
+    const axisDive = { active: false };
     if (axisDive.active && !spawnInfo) {
       const previousUnit = createArmyUnitForLevel(axisDive.fromLevel, unit);
       const previousTransitionRaw = getArmyLayerTransition({unit:previousUnit,layer,layerCount,slotIndex:indexInLayer,time:now});
