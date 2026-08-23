@@ -48,6 +48,7 @@ const BUILD_TIME_SECONDS = {
 const UPGRADE_TIME_MULTIPLIER = 1.45;
 let armyGenerationTurnState = { level: 1, startedAt: 0 };
 let armyGenerationEntryState = { level: 1, startedAt: 0 };
+let armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
 
 const BUILDINGS = {
   CrystalPoint: {
@@ -1166,6 +1167,7 @@ const trainingIntroTimerRef = useRef(null);
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0 };
     armyGenerationTurnState = { level: 1, startedAt: 0 };
     armyGenerationEntryState = { level: 1, startedAt: 0 };
+    armyLevelColorTransitionState = { fromLevel: 1, toLevel: 1, startedAt: 0 };
     cityStatsUiTimerRef.current = 0;
     marchesRef.current = [];
     expeditionRef.current = null;
@@ -2065,6 +2067,7 @@ const trainingIntroTimerRef = useRef(null);
     stats.guardCap = getCoreArmyCapacity(target);
     coreBarracksRef.current.trainTimer = 0;
     if (target > previousLevel) {
+      startArmyLevelColorTransition(previousLevel, target);
       startArmyGenerationTurn(target);
       startArmyGenerationEntryTransition(target);
     }
@@ -2462,11 +2465,12 @@ const trainingIntroTimerRef = useRef(null);
     setCityStats({ ...stats });
   }
 
-  function applyLevelUpEffects() {
+  function applyLevelUpEffects(previousLevel = Math.max(1, (cityStatsRef.current.level || 1) - 1)) {
     const stats = cityStatsRef.current;
     stats.nextLevelXp = getNextLevelXp(stats.level);
     stats.guardCap = getCoreArmyCapacity(stats.level);
     coreBarracksRef.current.trainTimer = 0;
+    startArmyLevelColorTransition(previousLevel, stats.level);
     startArmyGenerationTurn(stats.level);
     startArmyGenerationEntryTransition(stats.level);
     if (stats.level >= 10) stats.maxAttackSplit = Math.min(10, Math.floor(stats.level / 10) + 1);
@@ -2489,8 +2493,9 @@ const trainingIntroTimerRef = useRef(null);
       remainingEnemyUnits -= consumedUnits;
       if (stats.xp + 0.000001 >= required) {
         stats.xp = Math.max(0, stats.xp - required);
+        const previousLevel = stats.level;
         stats.level += 1;
-        applyLevelUpEffects();
+        applyLevelUpEffects(previousLevel);
       } else break;
     }
     if (stats.level >= 100) stats.xp = 0;
@@ -5578,6 +5583,9 @@ const ARMY_GENERATION_TURN_TOTAL_SECONDS = 10;
 const ARMY_GENERATION_TURN_LAYER_DELAY_SECONDS = 1.2;
 const ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS = 12;
 const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 1.2;
+const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
+const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
+const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -5689,7 +5697,73 @@ function getArmyMorphSeed(level, layer, slotIndex) {
   return raw - Math.floor(raw);
 }
 
-function getArmyLayerTransition({ unit, layer, layerCount, slotIndex }) {
+function startArmyLevelColorTransition(fromLevel, toLevel) {
+  const from = Math.max(1, Math.round(fromLevel || 1));
+  const to = Math.max(1, Math.round(toLevel || 1));
+  if (from === to) return;
+  armyLevelColorTransitionState = {
+    fromLevel: from,
+    toLevel: to,
+    startedAt: Date.now() / 1000,
+  };
+}
+
+function getArmyColorMorphForState(state, transition = null) {
+  const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, Math.round(state.generation || 0)));
+  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
+  if (nextGeneration === generation) return 0;
+  const base = state.colorMorphBase ?? state.morphToNext ?? 0;
+  const layerBias = Number.isFinite(transition?.colorLayerBias)
+    ? transition.colorLayerBias
+    : ((transition?.layerDepth ?? 0.5) - 0.5) * 0.26;
+  const cohortBias = Number.isFinite(transition?.colorCohortBias)
+    ? transition.colorCohortBias
+    : ((transition?.seed ?? 0.5) - 0.5) * 0.1;
+  return clamp01(base + layerBias + cohortBias);
+}
+
+function sampleArmyPaletteState(state, transition = null) {
+  const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, Math.round(state.generation || 0)));
+  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
+  const rawMorph = getArmyColorMorphForState(state, transition);
+  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(rawMorph);
+  const rgb = mixRgb(ARMY_GENERATION_PALETTES[generation], ARMY_GENERATION_PALETTES[nextGeneration], morph);
+  return {
+    rgb,
+    morph,
+    generationBlend: mixNumber(generation, nextGeneration, morph),
+  };
+}
+
+function getArmyLevelColorTransition({ unit, layer, layerCount, slotIndex, time, transition = null }) {
+  const state = armyLevelColorTransitionState || {};
+  const levelMatches = Math.round(state.toLevel || 0) === Math.round(unit?.level || 0);
+  if (!levelMatches || !Number.isFinite(state.startedAt) || state.startedAt <= 0) {
+    return { active: false, blend: 1, fromLevel: unit?.level || 1, toLevel: unit?.level || 1 };
+  }
+  const layerDepth = transition?.layerDepth ?? 0.5;
+  const seed = transition?.seed ?? getArmyMorphSeed(unit?.level || 1, layer || 0, slotIndex || 0);
+  const safeLayerCount = Math.max(1, Math.round(layerCount || 1));
+  const waveDelay = Math.max(0, layer || 0) * ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS;
+  const cohortDelay = seed * ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS;
+  const edgeDelay = layerDepth * 0.35;
+  const start = state.startedAt + waveDelay + cohortDelay + edgeDelay;
+  if (time <= start) {
+    return { active: true, blend: 0, fromLevel: state.fromLevel, toLevel: state.toLevel };
+  }
+  const elapsed = Math.max(0, time - start);
+  const rawBlend = clamp01(elapsed / ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS);
+  return {
+    active: rawBlend < 1,
+    blend: smoothArmyMorph(rawBlend),
+    rawBlend,
+    fromLevel: state.fromLevel,
+    toLevel: state.toLevel,
+    layerCount: safeLayerCount,
+  };
+}
+
+function getArmyLayerTransition({ unit, layer, layerCount, slotIndex, time }) {
   const safeLayerCount = Math.max(1, Math.round(layerCount || 1));
   const layerDepth = safeLayerCount <= 1 ? 0.5 : clamp01(layer / Math.max(1, safeLayerCount - 1));
   const seed = getArmyMorphSeed(unit.level, layer, slotIndex);
@@ -5701,34 +5775,45 @@ function getArmyLayerTransition({ unit, layer, layerCount, slotIndex }) {
   const layerMotionFactor = 0.08 + 0.92 * layerDepth * layerDepth;
   const rareCohortBoost = seed > 0.9 ? 0.18 * layerDepth : 0;
   const motionMorph = clamp01(motionBase * (layerMotionFactor + rareCohortBoost));
-  return {
+  const transition = {
     layerDepth,
     seed,
+    colorLayerBias,
+    colorCohortBias,
     colorMorph,
     motionMorph: Math.min(0.32, motionMorph),
   };
+  transition.levelColorTransition = getArmyLevelColorTransition({ unit, layer, layerCount: safeLayerCount, slotIndex, time, transition });
+  return transition;
 }
 
 function getArmyGenerationPalette(source, transition = null) {
   const state = typeof source === "object" && source !== null
     ? source
     : getLevelGenerationState((Number(source) || 0) * 5 + 1);
-  const generation = Math.max(0, Math.min(ARMY_GENERATION_PALETTES.length - 1, Math.round(state.generation || 0)));
-  const nextGeneration = Math.min(ARMY_GENERATION_PALETTES.length - 1, generation + 1);
-  const rawMorph = transition?.colorMorph ?? state.colorMorphBase ?? state.morphToNext ?? 0;
-  const morph = nextGeneration === generation ? 0 : smoothArmyMorph(rawMorph);
-  const base = ARMY_GENERATION_PALETTES[generation];
-  const next = ARMY_GENERATION_PALETTES[nextGeneration];
-  const [r, g, b] = mixRgb(base, next, morph);
+  const target = sampleArmyPaletteState(state, transition);
+  let rgb = target.rgb;
+  let morph = target.morph;
+  let generationBlend = target.generationBlend;
+  const levelColor = transition?.levelColorTransition;
+  if (levelColor?.active) {
+    const previousState = getLevelGenerationState(levelColor.fromLevel);
+    const previous = sampleArmyPaletteState(previousState, transition);
+    const blend = clamp01(levelColor.blend);
+    rgb = mixRgb(previous.rgb, target.rgb, blend);
+    morph = mixNumber(previous.morph, target.morph, blend);
+    generationBlend = mixNumber(previous.generationBlend, target.generationBlend, blend);
+  }
+  const [r, g, b] = rgb;
   const secondaryRgb = [Math.min(255, r + 24), Math.min(255, g + 24), Math.min(255, b + 24)];
   return {
     fill: rgbaString([r, g, b], 0.96),
     secondary: rgbaString(secondaryRgb, 0.86),
     tail: rgbaString([r, g, b], 0.2 + morph * 0.1),
     glow: rgbString([r, g, b]),
-    core: generation === 0 && morph < 0.35 ? null : "rgba(255,255,255,0.94)",
-    size: 3.4 + Math.min(1.8, mixNumber(generation, nextGeneration, morph) * 0.09),
-    generationBlend: mixNumber(generation, nextGeneration, morph),
+    core: generationBlend < 0.35 ? null : "rgba(255,255,255,0.94)",
+    size: 3.4 + Math.min(1.8, generationBlend * 0.09),
+    generationBlend,
     morphToNext: morph,
   };
 }
@@ -5914,7 +5999,7 @@ function drawOrbitGuards(ctx, player, guardsByLevel) {
   for(let i=0;i<units.length;i++){
     const unit=units[i], layer=Math.floor(i/layerSize);
     const indexInLayer=i%layerSize, itemsInLayer=Math.min(layerSize,units.length-layer*layerSize);
-    const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer});
+    const transition=getArmyLayerTransition({unit,layer,layerCount,slotIndex:indexInLayer,time:now});
     const visual=getArmyGenerationPalette(unit,transition);
     const pos=getArmyOrbitPosition({player,unit,slotIndex:indexInLayer,itemsInLayer,layer,time:now,transition});
     const tailX=Number.isFinite(pos.tailX)?pos.tailX:player.x+Math.cos(pos.tailAngle)*pos.radius*pos.xScale, tailY=Number.isFinite(pos.tailY)?pos.tailY:player.y+Math.sin(pos.tailAngle)*pos.radius*pos.yScale;
