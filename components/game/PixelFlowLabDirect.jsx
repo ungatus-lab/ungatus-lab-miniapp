@@ -2409,6 +2409,7 @@ const trainingIntroTimerRef = useRef(null);
     if (outdatedLevel !== null) {
       const available = Math.floor(stats.guardsByLevel[outdatedLevel] || 0);
       if (available > 0) {
+        armyLevelAxisDiveState = { fromLevel: outdatedLevel, toLevel: coreBarracksLevel, startedAt: 0 };
         startArmyGenerationEntryTransition(coreBarracksLevel, outdatedLevel);
         delete stats.guardsByLevel[outdatedLevel];
         stats.guardsByLevel[coreBarracksLevel] =
@@ -5607,8 +5608,8 @@ const ARMY_COLOR_MORPH_BY_STEP = [0, 0.2, 0.4, 0.62, 0.82];
 const ARMY_MOTION_MORPH_BY_STEP = [0, 0.025, 0.07, 0.13, 0.22];
 const ARMY_GENERATION_TURN_TOTAL_SECONDS = 10;
 const ARMY_GENERATION_TURN_LAYER_DELAY_SECONDS = 1.2;
-const ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS = 12;
-const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 1.2;
+const ARMY_GENERATION_ENTRY_BLEND_TOTAL_SECONDS = 8.5;
+const ARMY_GENERATION_ENTRY_LAYER_DELAY_SECONDS = 0.9;
 const ARMY_LEVEL_COLOR_BLEND_TOTAL_SECONDS = 8;
 const ARMY_LEVEL_COLOR_LAYER_DELAY_SECONDS = 0.45;
 const ARMY_LEVEL_COLOR_COHORT_DELAY_SECONDS = 1.8;
@@ -6023,20 +6024,59 @@ function getArmyOrbitPosition({ player, unit, slotIndex, itemsInLayer, layer, ti
       transition: { layerDepth: transition?.layerDepth ?? 0.5, seed: transition?.seed ?? 0.5, colorMorph: previousUnit.colorMorphBase || 0, motionMorph: 0 },
     });
     const current = sampleArmyOrbitPosition({ player, unit, generation, slotIndex, itemsInLayer, layer, time, transition });
-    const blend = entryBlend.blend;
+    const rawBlend = clamp01(entryBlend.rawBlend ?? entryBlend.blend);
+    const inwardPart = 0.36;
+    const previousAngle = Number.isFinite(previous.angle)
+      ? previous.angle
+      : Math.atan2(previous.y - player.y, previous.x - player.x);
+    const currentAngle = Number.isFinite(current.angle)
+      ? current.angle
+      : Math.atan2(current.y - player.y, current.x - player.x);
+    const coreIn = {
+      x: player.x,
+      y: player.y,
+      tailX: player.x,
+      tailY: player.y,
+      angle: previousAngle,
+      tailAngle: previousAngle,
+      selfRotation: previous.selfRotation,
+      radius: 0,
+      xScale: previous.xScale,
+      yScale: previous.yScale,
+    };
+    const coreOutRadius = player.r + 8;
+    const coreOut = {
+      x: player.x + Math.cos(currentAngle) * coreOutRadius,
+      y: player.y + Math.sin(currentAngle) * coreOutRadius,
+      tailX: player.x,
+      tailY: player.y,
+      angle: currentAngle,
+      tailAngle: currentAngle,
+      selfRotation: current.selfRotation,
+      radius: coreOutRadius,
+      xScale: current.xScale,
+      yScale: current.yScale,
+    };
+    const outwardRaw = clamp01((rawBlend - inwardPart) / Math.max(0.001, 1 - inwardPart));
+    const diveBlend = rawBlend < inwardPart
+      ? smoothArmyMorph(rawBlend / inwardPart)
+      : smoothArmyMorph(outwardRaw);
+    const fromPos = rawBlend < inwardPart ? previous : coreOut;
+    const toPos = rawBlend < inwardPart ? coreIn : current;
+    const visualBlend = rawBlend < inwardPart ? 0 : diveBlend;
     return {
-      x: mixNumber(previous.x, current.x, blend),
-      y: mixNumber(previous.y, current.y, blend),
-      tailX: mixNumber(previous.tailX, current.tailX, blend),
-      tailY: mixNumber(previous.tailY, current.tailY, blend),
-      angle: mixNumber(previous.angle, current.angle, blend),
-      tailAngle: mixNumber(previous.tailAngle, current.tailAngle, blend),
-      selfRotation: mixNumber(previous.selfRotation, current.selfRotation, blend),
-      radius: mixNumber(previous.radius, current.radius, blend),
-      xScale: mixNumber(previous.xScale, current.xScale, blend),
-      yScale: mixNumber(previous.yScale, current.yScale, blend),
+      x: mixNumber(fromPos.x, toPos.x, diveBlend),
+      y: mixNumber(fromPos.y, toPos.y, diveBlend),
+      tailX: mixNumber(fromPos.tailX, toPos.tailX, diveBlend),
+      tailY: mixNumber(fromPos.tailY, toPos.tailY, diveBlend),
+      angle: mixNumber(fromPos.angle, toPos.angle, diveBlend),
+      tailAngle: mixNumber(fromPos.tailAngle, toPos.tailAngle, diveBlend),
+      selfRotation: mixNumber(fromPos.selfRotation, toPos.selfRotation, diveBlend),
+      radius: mixNumber(fromPos.radius, toPos.radius, diveBlend),
+      xScale: mixNumber(fromPos.xScale, toPos.xScale, diveBlend),
+      yScale: mixNumber(fromPos.yScale, toPos.yScale, diveBlend),
       entryActive: true,
-      entryBlend: blend,
+      entryBlend: visualBlend,
       previousUnit,
     };
   }
