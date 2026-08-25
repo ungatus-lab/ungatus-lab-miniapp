@@ -2,15 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const WORLD_WIDTH = 12800;
-const WORLD_HEIGHT = 8800;
-const MONSTER_COUNT = 180;
+const WORLD_WIDTH = 25600;
+const WORLD_HEIGHT = 17600;
+const MONSTER_COUNT = 720;
 
 const TELEPORT_COOLDOWN_SECONDS = 15;
 const TELEPORT_CAST_SECONDS = 1.2;
 const TELEPORT_ARRIVAL_SECONDS = 1.1;
 
-const MIN_ZOOM = 0.12;
+const MIN_ZOOM = 0.06;
 const MAX_ZOOM = 0.95;
 
 const GRID_STEP = 110;
