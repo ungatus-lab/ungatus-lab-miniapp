@@ -32,6 +32,8 @@ const CITY_MAX_ZOOM = 1.1;
 
 const ATTACK_MARCH_WORLD_SPEED = 154;
 const RETURN_MARCH_WORLD_SPEED = 191;
+const BOT_RALLY_MIN_SECONDS = 10;
+const BOT_RALLY_MAX_SECONDS = 60;
 
 const MAX_BUILDING_LEVEL = 100;
 const GUARD_CRYSTAL_COST = 1;
@@ -478,6 +480,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const cityStatsUiTimerRef = useRef(0);
 
   const marchesRef = useRef([]);
+  const botMarchesRef = useRef([]);
   const expeditionRef = useRef(null);
   const constructionQueueRef = useRef([]);
   const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false, barracksCommitted: false });
@@ -1171,6 +1174,7 @@ const trainingIntroTimerRef = useRef(null);
     cityStatsRef.current = createCityStats();
     botsRef.current = [];
     setBotCount(0);
+    botMarchesRef.current = [];
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0, productionQueue: 0 };
     productionSpawnsRef.current = [];
     productionSpawnIdRef.current = 1;
@@ -1354,10 +1358,18 @@ const trainingIntroTimerRef = useRef(null);
       y: spawn.y,
       r: 30,
       level: 1,
+      xp: 0,
+      nextLevelXp: getNextLevelXp(1),
+      guardCap: getCoreArmyCapacity(1),
       score: 0,
+      crystals: 0,
       shield: 180,
       alive: true,
       isBot: true,
+      state: "waiting",
+      rallyTimer: getRandomBotRallySeconds(),
+      activeMarchId: null,
+      targetMonsterId: null,
       guardsByLevel: { 1: 100 },
     };
 
@@ -1368,9 +1380,217 @@ const trainingIntroTimerRef = useRef(null);
 
   function removeBotCoreForDevLab() {
     if (!devLabRef.current || botsRef.current.length <= 0) return;
+    const removedBot = botsRef.current[botsRef.current.length - 1];
     botsRef.current = botsRef.current.slice(0, -1);
+    if (removedBot?.id) {
+      botMarchesRef.current = (botMarchesRef.current || []).filter((march) => march.botId !== removedBot.id);
+    }
     setBotCount(botsRef.current.length);
     setHud((current) => ({ ...current, status: botsRef.current.length > 0 ? `BOT CORE ${botsRef.current.length}` : "DEV LAB" }));
+  }
+
+  function getRandomBotRallySeconds() {
+    return rand(BOT_RALLY_MIN_SECONDS, BOT_RALLY_MAX_SECONDS);
+  }
+
+  function getBotSearchTiers(bot) {
+    const topTier = Math.min(Math.max(1, Math.round(bot?.level || 1)), 5);
+    const tiers = [];
+    for (let tier = topTier; tier >= 1; tier -= 1) tiers.push(tier);
+    return tiers;
+  }
+
+  function findNearestMonsterForBot(bot) {
+    const monsters = worldRef.current.monsters || [];
+    for (const tier of getBotSearchTiers(bot)) {
+      const candidates = monsters
+        .filter((monster) => monster && monster.hp > 0 && monster.armor === tier)
+        .sort((a, b) => Math.hypot(a.x - bot.x, a.y - bot.y) - Math.hypot(b.x - bot.x, b.y - bot.y));
+      if (candidates.length > 0) return candidates[0];
+    }
+    return null;
+  }
+
+  function ensureBotHomeArmy(bot) {
+    if (!bot) return;
+    const level = Math.min(MAX_BUILDING_LEVEL, Math.max(1, Math.round(bot.level || 1)));
+    const visualCap = getCoreArmyVisualCapacity(level);
+    const currentElements = getTotalGuardElementsFromMap(bot.guardsByLevel || {});
+    if (currentElements >= visualCap) return;
+    bot.guardsByLevel = { ...(bot.guardsByLevel || {}) };
+    bot.guardsByLevel[level] = (bot.guardsByLevel[level] || 0) + (visualCap - currentElements);
+  }
+
+  function getBotById(botId) {
+    return (botsRef.current || []).find((bot) => bot.id === botId) || null;
+  }
+
+  function getMonsterCrystalReward(monster) {
+    return monster.type === "giant"
+      ? 120
+      : monster.type === "brute"
+        ? 70
+        : monster.type === "beast"
+          ? 42
+          : monster.type === "wild"
+            ? 24
+            : 14;
+  }
+
+  function awardBotMonsterVictoryXp(bot, monster) {
+    if (!bot || !monster) return 0;
+    const startingLevel = Math.max(1, Math.round(bot.level || 1));
+    let remainingEnemyUnits = Math.max(0, Number(monster.maxHp || monster.hp || 0));
+    let totalAwarded = 0;
+    bot.xp = Number(bot.xp || 0);
+    while (remainingEnemyUnits > 0.000001 && bot.level < MAX_BUILDING_LEVEL) {
+      const required = getNextLevelXp(bot.level);
+      const room = Math.max(0, required - bot.xp);
+      const multiplier = getMonsterXpMultiplier(bot.level, monster.armor || 1);
+      const consumedUnits = Math.min(remainingEnemyUnits, room / Math.max(0.000001, multiplier));
+      const awardedNow = consumedUnits * multiplier;
+      bot.xp += awardedNow;
+      bot.score = (bot.score || 0) + awardedNow;
+      totalAwarded += awardedNow;
+      remainingEnemyUnits -= consumedUnits;
+      if (bot.xp + 0.000001 >= required) {
+        bot.xp = Math.max(0, bot.xp - required);
+        bot.level = Math.min(MAX_BUILDING_LEVEL, (bot.level || 1) + 1);
+        bot.nextLevelXp = getNextLevelXp(bot.level);
+        bot.guardCap = getCoreArmyCapacity(bot.level);
+      } else break;
+    }
+    if (bot.level >= MAX_BUILDING_LEVEL) bot.xp = 0;
+    if (bot.level > startingLevel) {
+      bot.guardsByLevel = { [bot.level]: getTotalGuardElementsFromMap(bot.guardsByLevel || {}) };
+      ensureBotHomeArmy(bot);
+    }
+    return totalAwarded;
+  }
+
+  function resetBotRally(bot) {
+    if (!bot) return;
+    bot.activeMarchId = null;
+    bot.targetMonsterId = null;
+    bot.state = bot.level >= MAX_BUILDING_LEVEL ? "complete" : "waiting";
+    bot.rallyTimer = bot.level >= MAX_BUILDING_LEVEL ? 0 : getRandomBotRallySeconds();
+    ensureBotHomeArmy(bot);
+  }
+
+  function launchBotMarch(bot, monster) {
+    if (!bot || !monster || bot.activeMarchId || bot.level >= MAX_BUILDING_LEVEL) return;
+    ensureBotHomeArmy(bot);
+    const sendCount = getTotalGuardsFromStats({ guardsByLevel: bot.guardsByLevel || {} });
+    if (sendCount <= 0) {
+      bot.rallyTimer = getRandomBotRallySeconds();
+      bot.state = "waiting";
+      return;
+    }
+    const sentGuardsByLevel = { ...(bot.guardsByLevel || {}) };
+    bot.guardsByLevel = {};
+    const marchId = `bot-attack-${Date.now()}-${Math.random()}`;
+    const durationSeconds = getMarchDuration(bot.x, bot.y, monster.x, monster.y, "attack");
+    bot.activeMarchId = marchId;
+    bot.targetMonsterId = monster.id;
+    bot.state = "marching";
+    botMarchesRef.current.push({
+      id: marchId,
+      botId: bot.id,
+      type: "attack",
+      count: sendCount,
+      guardsByLevel: sentGuardsByLevel,
+      fromX: bot.x,
+      fromY: bot.y,
+      toX: monster.x,
+      toY: monster.y,
+      progress: 0,
+      durationSeconds,
+      targetMonsterId: monster.id,
+      targetArmor: monster.armor,
+      targetColor: monster.color,
+    });
+  }
+
+  function updateBotMarches(dt) {
+    const world = worldRef.current;
+    const nextMarches = [];
+    for (const march of botMarchesRef.current || []) {
+      const bot = getBotById(march.botId);
+      if (!bot || !bot.alive) continue;
+      const durationSeconds = march.durationSeconds || getMarchDuration(march.fromX, march.fromY, march.toX, march.toY, march.type);
+      const nextProgress = Math.min(1, (march.progress || 0) + dt / durationSeconds);
+      const nextMarch = { ...march, durationSeconds, progress: nextProgress };
+      if (nextProgress < 1) {
+        nextMarches.push(nextMarch);
+        continue;
+      }
+      if (march.type === "attack") {
+        const monster = world.monsters.find((item) => item.id === march.targetMonsterId);
+        if (!monster) {
+          const returnDuration = getMarchDuration(march.toX, march.toY, bot.x, bot.y, "return");
+          nextMarches.push({ ...march, id: `bot-return-${Date.now()}-${Math.random()}`, type: "return", fromX: march.toX, fromY: march.toY, toX: bot.x, toY: bot.y, progress: 0, durationSeconds: returnDuration });
+          continue;
+        }
+        const result = calculateDamageAndReturn(march.guardsByLevel, monster);
+        monster.hp = Math.max(0, result.monsterRemainingHp);
+        if (monster.hp <= 0) {
+          bot.crystals = (bot.crystals || 0) + getMonsterCrystalReward(monster);
+          awardBotMonsterVictoryXp(bot, monster);
+          world.monsters = world.monsters.filter((item) => item.id !== monster.id);
+          if (selectedMonsterRef.current?.id === monster.id) updateSelectedMonster(null);
+        } else if (selectedMonsterRef.current?.id === monster.id) {
+          updateSelectedMonster({ ...monster });
+        }
+        const returnCount = getTotalGuardsFromStats({ guardsByLevel: result.returnGuardsByLevel });
+        if (returnCount > 0) {
+          const returnDuration = getMarchDuration(march.toX, march.toY, bot.x, bot.y, "return");
+          nextMarches.push({
+            id: `bot-return-${Date.now()}-${Math.random()}`,
+            botId: bot.id,
+            type: "return",
+            count: returnCount,
+            guardsByLevel: result.returnGuardsByLevel,
+            fromX: march.toX,
+            fromY: march.toY,
+            toX: bot.x,
+            toY: bot.y,
+            progress: 0,
+            durationSeconds: returnDuration,
+            targetMonsterId: march.targetMonsterId,
+            targetArmor: march.targetArmor,
+            targetColor: march.targetColor,
+          });
+        } else {
+          resetBotRally(bot);
+        }
+        continue;
+      }
+      if (march.type === "return") {
+        const level = Math.min(MAX_BUILDING_LEVEL, Math.max(1, Math.round(bot.level || 1)));
+        bot.guardsByLevel = { ...(bot.guardsByLevel || {}) };
+        for (const count of Object.values(march.guardsByLevel || {})) {
+          bot.guardsByLevel[level] = (bot.guardsByLevel[level] || 0) + Math.max(0, Math.floor(count || 0));
+        }
+        resetBotRally(bot);
+      }
+    }
+    botMarchesRef.current = nextMarches;
+  }
+
+  function updateBots(dt) {
+    for (const bot of botsRef.current || []) {
+      if (!bot.alive || bot.level >= MAX_BUILDING_LEVEL || bot.activeMarchId) continue;
+      ensureBotHomeArmy(bot);
+      bot.rallyTimer = Math.max(0, (bot.rallyTimer || 0) - dt);
+      if (bot.rallyTimer > 0) continue;
+      const monster = findNearestMonsterForBot(bot);
+      if (!monster) {
+        bot.rallyTimer = getRandomBotRallySeconds();
+        bot.state = "waiting";
+        continue;
+      }
+      launchBotMarch(bot, monster);
+    }
   }
 
   function getCitadelFootprint(level) {
@@ -2237,6 +2457,8 @@ const trainingIntroTimerRef = useRef(null);
 
     updateTeleportEffect(dt);
     updateMarches(dt);
+    updateBotMarches(dt);
+    updateBots(dt);
     updateMapTutorial(dt);
 
     const flow = tutorialFlowRef.current;
@@ -2942,6 +3164,7 @@ const trainingIntroTimerRef = useRef(null);
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
     drawMarches(ctx, marchesRef.current);
+    drawMarches(ctx, botMarchesRef.current);
     try {
       drawOrbitGuards(ctx, player, cityStatsRef.current.guardsByLevel, productionSpawnsRef.current);
       for (const bot of botsRef.current) {
