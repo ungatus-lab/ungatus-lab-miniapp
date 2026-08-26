@@ -36,6 +36,9 @@ const ATTACK_MARCH_WORLD_SPEED = 154;
 const RETURN_MARCH_WORLD_SPEED = 191;
 const BOT_RALLY_MIN_SECONDS = 10;
 const BOT_RALLY_MAX_SECONDS = 60;
+const BOT_DIFFICULTY_MIN_LEVEL = 1;
+const BOT_DIFFICULTY_MAX_LEVEL = 2;
+const BOT_RALLY_MAX_SECONDS_BY_DIFFICULTY = { 1: 60, 2: 20 };
 
 const MAX_BUILDING_LEVEL = 100;
 const GUARD_CRYSTAL_COST = 1;
@@ -475,6 +478,8 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const cityStatsRef = useRef(createCityStats());
   const botsRef = useRef([]);
   const [botCount, setBotCount] = useState(0);
+  const botDifficultyRef = useRef(BOT_DIFFICULTY_MIN_LEVEL);
+  const [botDifficulty, setBotDifficulty] = useState(BOT_DIFFICULTY_MIN_LEVEL);
   // One invisible Barracks now lives inside the map Core. Its output still uses
   // the proven auto-fit/output-scale formula, but it no longer occupies city cells.
   const coreBarracksRef = useRef({ level: 1, trainTimer: 0, trainCarry: 0, productionQueue: 0 });
@@ -1178,6 +1183,8 @@ const trainingIntroTimerRef = useRef(null);
     cityStatsRef.current = createCityStats();
     botsRef.current = [];
     setBotCount(0);
+    botDifficultyRef.current = BOT_DIFFICULTY_MIN_LEVEL;
+    setBotDifficulty(BOT_DIFFICULTY_MIN_LEVEL);
     botMarchesRef.current = [];
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0, productionQueue: 0 };
     productionSpawnsRef.current = [];
@@ -1393,8 +1400,26 @@ const trainingIntroTimerRef = useRef(null);
     setHud((current) => ({ ...current, status: botsRef.current.length > 0 ? `BOT CORE ${botsRef.current.length}` : "DEV LAB" }));
   }
 
+  function setBotDifficultyLevel(nextLevel) {
+    if (!devLabRef.current) return;
+    const level = clamp(
+      Math.round(nextLevel || BOT_DIFFICULTY_MIN_LEVEL),
+      BOT_DIFFICULTY_MIN_LEVEL,
+      BOT_DIFFICULTY_MAX_LEVEL
+    );
+    botDifficultyRef.current = level;
+    setBotDifficulty(level);
+    setHud((current) => ({ ...current, status: `BOT DIFFICULTY ${level}` }));
+  }
+
   function getRandomBotRallySeconds() {
-    return rand(BOT_RALLY_MIN_SECONDS, BOT_RALLY_MAX_SECONDS);
+    const difficulty = clamp(
+      Math.round(botDifficultyRef.current || BOT_DIFFICULTY_MIN_LEVEL),
+      BOT_DIFFICULTY_MIN_LEVEL,
+      BOT_DIFFICULTY_MAX_LEVEL
+    );
+    const maximum = BOT_RALLY_MAX_SECONDS_BY_DIFFICULTY[difficulty] || BOT_RALLY_MAX_SECONDS;
+    return rand(BOT_RALLY_MIN_SECONDS, maximum);
   }
 
   function getBotSearchTiers(bot) {
@@ -4985,7 +5010,7 @@ const trainingIntroTimerRef = useRef(null);
     const drag = devLabPanelDragRef.current;
     const canvas = canvasRef.current;
     if (!canvas || drag.pointerId !== event.pointerId) return;
-    const panelWidth = 148, panelHeight = 164, edge = 6;
+    const panelWidth = 148, panelHeight = 204, edge = 6;
     setDevLabPanelPosition({
       left: clamp(event.clientX - drag.offsetX, edge, canvas.clientWidth - panelWidth - edge),
       top: clamp(event.clientY - drag.offsetY, edge, canvas.clientHeight - panelHeight - edge),
@@ -5004,7 +5029,7 @@ const trainingIntroTimerRef = useRef(null);
     if (!canvas || screen !== "city") return styles.devLabPanel;
 
     const panelWidth = 148;
-    const panelHeight = 164;
+    const panelHeight = 204;
     const edge = 10;
     const viewport = getCityViewportMetrics(canvas);
     const safeTop = viewport.top;
@@ -5210,6 +5235,12 @@ const trainingIntroTimerRef = useRef(null);
             <span>BOTS</span>
             <strong>{botCount}</strong>
             <button style={styles.devLabBotButton} onClick={spawnBotCoreForDevLab}>＋</button>
+          </div>
+          <div style={styles.devLabBotLine}>
+            <button style={styles.devLabBotButton} onClick={() => setBotDifficultyLevel(botDifficulty - 1)} disabled={botDifficulty <= BOT_DIFFICULTY_MIN_LEVEL}>−</button>
+            <span>BOT DIFFICULTY</span>
+            <strong>{botDifficulty}</strong>
+            <button style={styles.devLabBotButton} onClick={() => setBotDifficultyLevel(botDifficulty + 1)} disabled={botDifficulty >= BOT_DIFFICULTY_MAX_LEVEL}>＋</button>
           </div>
           <div style={styles.devLabCityLine}><small>CORE B{cityStats.level} · CAP {formatCompactNumber(cityStats.guardCap)}</small></div>
         </div>
