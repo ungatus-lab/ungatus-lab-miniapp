@@ -1386,6 +1386,10 @@ const trainingIntroTimerRef = useRef(null);
       activeMarchId: null,
       targetMonsterId: null,
       guardsByLevel: { 1: 100 },
+      trainTimer: 0,
+      trainCarry: 0,
+      productionQueue: 0,
+      productionSpawnTimer: 0,
     };
 
     botsRef.current = [...botsRef.current, nextBot];
@@ -1436,25 +1440,63 @@ const trainingIntroTimerRef = useRef(null);
     return tiers;
   }
 
+  function canBotDefeatMonster(bot, monster) {
+    if (!bot || !monster || monster.hp <= 0) return false;
+    return calculateDamageAndReturn(bot.guardsByLevel || {}, monster).monsterRemainingHp <= 0;
+  }
+
   function findNearestMonsterForBot(bot) {
     const monsters = worldRef.current.monsters || [];
     for (const tier of getBotSearchTiers(bot)) {
       const candidates = monsters
-        .filter((monster) => monster && monster.hp > 0 && monster.armor === tier)
+        .filter((monster) => monster && monster.hp > 0 && monster.armor === tier && canBotDefeatMonster(bot, monster))
         .sort((a, b) => Math.hypot(a.x - bot.x, a.y - bot.y) - Math.hypot(b.x - bot.x, b.y - bot.y));
       if (candidates.length > 0) return candidates[0];
     }
     return null;
   }
 
-  function ensureBotHomeArmy(bot) {
-    if (!bot) return;
+  function getBotOwnedGuardElements(bot) {
+    const home = getTotalGuardElementsFromMap(bot?.guardsByLevel || {});
+    const marching = (botMarchesRef.current || []).reduce((sum, march) =>
+      march.botId === bot?.id ? sum + getTotalGuardElementsFromMap(march.guardsByLevel || {}) : sum, 0);
+    return home + marching;
+  }
+
+  function updateBotArmyProduction(bot, dt) {
+    if (!bot || !bot.alive || bot.level >= MAX_BUILDING_LEVEL) return;
     const level = Math.min(MAX_BUILDING_LEVEL, Math.max(1, Math.round(bot.level || 1)));
     const visualCap = getCoreArmyVisualCapacity(level);
-    const currentElements = getTotalGuardElementsFromMap(bot.guardsByLevel || {});
-    if (currentElements >= visualCap) return;
+    const economy = getBuildingEconomy("Barracks", level);
     bot.guardsByLevel = { ...(bot.guardsByLevel || {}) };
-    bot.guardsByLevel[level] = (bot.guardsByLevel[level] || 0) + (visualCap - currentElements);
+    bot.trainTimer = Number(bot.trainTimer || 0);
+    bot.trainCarry = Number(bot.trainCarry || 0);
+    bot.productionQueue = Math.max(0, Math.floor(bot.productionQueue || 0));
+    bot.productionSpawnTimer = Math.max(0, Number(bot.productionSpawnTimer || 0) - dt);
+    const freeCapacity = Math.max(0, visualCap - getBotOwnedGuardElements(bot));
+    bot.productionQueue = Math.min(bot.productionQueue, freeCapacity);
+    if (freeCapacity <= 0) { bot.trainTimer = 0; bot.productionQueue = 0; return; }
+    if (bot.productionQueue > 0 && bot.productionSpawnTimer <= 0) {
+      bot.productionQueue -= 1;
+      bot.guardsByLevel[level] = (bot.guardsByLevel[level] || 0) + 1;
+      bot.productionSpawnTimer = ARMY_PRODUCTION_SPAWN_SECONDS;
+      return;
+    }
+    if (bot.productionQueue <= 0 && bot.productionSpawnTimer <= 0) {
+      bot.trainTimer += dt;
+      if (bot.trainTimer >= 1) {
+        bot.trainTimer -= 1;
+        const exactBatch = economy.barracksBatch + bot.trainCarry;
+        const requestedBatch = Math.max(1, Math.floor(exactBatch));
+        bot.trainCarry = exactBatch - requestedBatch;
+        bot.productionQueue = Math.min(requestedBatch, Math.max(0, visualCap - getBotOwnedGuardElements(bot)));
+        if (bot.productionQueue > 0) {
+          bot.productionQueue -= 1;
+          bot.guardsByLevel[level] = (bot.guardsByLevel[level] || 0) + 1;
+          bot.productionSpawnTimer = ARMY_PRODUCTION_SPAWN_SECONDS;
+        }
+      }
+    }
   }
 
   function getBotById(botId) {
@@ -1545,7 +1587,9 @@ const trainingIntroTimerRef = useRef(null);
     if (bot.level >= MAX_BUILDING_LEVEL) bot.xp = 0;
     if (bot.level > startingLevel) {
       bot.guardsByLevel = { [bot.level]: getTotalGuardElementsFromMap(bot.guardsByLevel || {}) };
-      ensureBotHomeArmy(bot);
+      bot.productionQueue = 0;
+      bot.productionSpawnTimer = 0;
+      bot.trainTimer = 0;
     }
     return totalAwarded;
   }
@@ -1556,12 +1600,10 @@ const trainingIntroTimerRef = useRef(null);
     bot.targetMonsterId = null;
     bot.state = bot.level >= MAX_BUILDING_LEVEL ? "complete" : "waiting";
     bot.rallyTimer = bot.level >= MAX_BUILDING_LEVEL ? 0 : getRandomBotRallySeconds();
-    ensureBotHomeArmy(bot);
   }
 
   function launchBotMarch(bot, monster) {
     if (!bot || !monster || bot.activeMarchId || bot.level >= MAX_BUILDING_LEVEL) return;
-    ensureBotHomeArmy(bot);
     const sendCount = getTotalGuardsFromStats({ guardsByLevel: bot.guardsByLevel || {} });
     if (sendCount <= 0) {
       bot.rallyTimer = getRandomBotRallySeconds();
@@ -1662,8 +1704,9 @@ const trainingIntroTimerRef = useRef(null);
 
   function updateBots(dt) {
     for (const bot of botsRef.current || []) {
-      if (!bot.alive || bot.level >= MAX_BUILDING_LEVEL || bot.activeMarchId) continue;
-      ensureBotHomeArmy(bot);
+      if (!bot.alive || bot.level >= MAX_BUILDING_LEVEL) continue;
+      updateBotArmyProduction(bot, dt);
+      if (bot.activeMarchId) continue;
       bot.rallyTimer = Math.max(0, (bot.rallyTimer || 0) - dt);
       if (bot.rallyTimer > 0) continue;
       const monster = findNearestMonsterForBot(bot);
