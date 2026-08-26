@@ -40,6 +40,9 @@ const BOT_DIFFICULTY_MIN_LEVEL = 1;
 const BOT_DIFFICULTY_MAX_LEVEL = 5;
 const BOT_ECONOMIC_MAX_WAIT_SECONDS = 15;
 const BOT_ECONOMIC_PLAN_DEPTH = 3;
+const BOT_TELEPORT_ZONE_TARGET_DEPTH = 4;
+const BOT_TELEPORT_ZONE_RADIUS = 1500;
+const BOT_PLAN_SWITCH_GAIN = 1.15;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
@@ -1401,6 +1404,8 @@ const trainingIntroTimerRef = useRef(null);
       teleportCooldown: 0,
       teleportEffectId: null,
       pendingTeleportTargetId: null,
+      plannedAction: null,
+      plannedZoneMonsterIds: [],
     };
 
     botsRef.current = [...botsRef.current, nextBot];
@@ -1495,65 +1500,106 @@ const trainingIntroTimerRef = useRef(null);
     }, bot.r || 30);
   }
 
-  function getBotMonsterEconomicScore(bot, monster, option, allowTeleport = false) {
-    const guards = option.guardsByLevel;
-    const result = calculateDamageAndReturn(guards, monster);
+  function getBotCombatEconomy(bot, monster, guardsByLevel) {
+    const result = calculateDamageAndReturn(guardsByLevel, monster);
     if (result.monsterRemainingHp > 0) return null;
-    const directAttackSeconds = getMarchDuration(bot.x, bot.y, monster.x, monster.y, "attack");
-    const directReturnSeconds = getMarchDuration(monster.x, monster.y, bot.x, bot.y, "return");
-    const sentElements = getTotalGuardElementsFromMap(guards);
+    const sentElements = getTotalGuardElementsFromMap(guardsByLevel);
     const returnedElements = getTotalGuardElementsFromMap(result.returnGuardsByLevel);
     const lostElements = Math.max(0, sentElements - returnedElements);
-    const replacementSeconds = lostElements * ARMY_PRODUCTION_SPAWN_SECONDS;
-    const xpValue = Math.max(0.0001, Number(monster.maxHp || monster.hp || 0) * getMonsterXpMultiplier(bot.level, monster.armor || 1));
-    let attackSeconds = directAttackSeconds;
-    let returnSeconds = directReturnSeconds;
-    let teleport = false;
-    let teleportLanding = null;
-    let travelSetupSeconds = 0;
-    if (allowTeleport && (bot.teleportCooldown || 0) <= 0 && !bot.teleportEffectId) {
-      const landing = getBotTeleportLanding(bot, monster);
-      const postTeleportAttack = getMarchDuration(landing.x, landing.y, monster.x, monster.y, "attack");
-      const postTeleportReturn = getMarchDuration(monster.x, monster.y, landing.x, landing.y, "return");
-      const teleportSetup = TELEPORT_CAST_SECONDS + TELEPORT_ARRIVAL_SECONDS;
-      if (teleportSetup + postTeleportAttack + postTeleportReturn < directAttackSeconds + directReturnSeconds) {
-        teleport = true;
-        teleportLanding = landing;
-        travelSetupSeconds = teleportSetup;
-        attackSeconds = postTeleportAttack;
-        returnSeconds = postTeleportReturn;
-      }
-    }
-    const totalSeconds = Math.max(0.1, option.waitSeconds + travelSetupSeconds + attackSeconds + returnSeconds + replacementSeconds);
     return {
+      lostElements,
+      replacementSeconds: lostElements * ARMY_PRODUCTION_SPAWN_SECONDS,
+      xpValue: Math.max(0.0001, Number(monster.maxHp || monster.hp || 0) * getMonsterXpMultiplier(bot.level, monster.armor || 1)),
+    };
+  }
+
+  function getBotDirectMonsterOption(bot, monster, production) {
+    const combat = getBotCombatEconomy(bot, monster, production.guardsByLevel);
+    if (!combat) return null;
+    const attackSeconds = getMarchDuration(bot.x, bot.y, monster.x, monster.y, "attack");
+    const returnSeconds = getMarchDuration(monster.x, monster.y, bot.x, bot.y, "return");
+    const totalSeconds = Math.max(0.1, production.waitSeconds + attackSeconds + returnSeconds + combat.replacementSeconds);
+    return {
+      kind: "direct",
       monster,
-      waitSeconds: option.waitSeconds,
-      guardsByLevel: guards,
+      waitSeconds: production.waitSeconds,
+      guardsByLevel: production.guardsByLevel,
       attackSeconds,
       returnSeconds,
-      lostElements,
-      xpValue,
-      teleport,
-      teleportLanding,
-      score: xpValue / totalSeconds,
+      lostElements: combat.lostElements,
+      xpValue: combat.xpValue,
+      teleport: false,
+      score: combat.xpValue / totalSeconds,
+    };
+  }
+
+  function getBotTeleportZoneOption(bot, anchorMonster, reserved) {
+    const landing = getBotTeleportLanding(bot, anchorMonster);
+    const candidates = (worldRef.current.monsters || [])
+      .filter((monster) => monster && monster.hp > 0 && !reserved.has(monster.id) && Math.hypot(monster.x - landing.x, monster.y - landing.y) <= BOT_TELEPORT_ZONE_RADIUS)
+      .map((monster) => {
+        const production = estimateBotProductionWait(bot, monster);
+        if (!production) return null;
+        const combat = getBotCombatEconomy(bot, monster, production.guardsByLevel);
+        if (!combat) return null;
+        const attackSeconds = getMarchDuration(landing.x, landing.y, monster.x, monster.y, "attack");
+        const returnSeconds = getMarchDuration(monster.x, monster.y, landing.x, landing.y, "return");
+        return { monster, production, combat, cycleSeconds: attackSeconds + returnSeconds + combat.replacementSeconds };
+      })
+      .filter(Boolean)
+      .sort((left, right) => (right.combat.xpValue / Math.max(0.1, right.cycleSeconds)) - (left.combat.xpValue / Math.max(0.1, left.cycleSeconds)));
+    if (!candidates.length) return null;
+    const route = candidates.slice(0, BOT_TELEPORT_ZONE_TARGET_DEPTH);
+    const first = route[0];
+    const cooldownWait = Math.max(0, Number(bot.teleportCooldown || 0));
+    const readinessWait = Math.max(cooldownWait, first.production.waitSeconds);
+    const routeXp = route.reduce((sum, item) => sum + item.combat.xpValue, 0);
+    const routeCycles = route.reduce((sum, item) => sum + item.cycleSeconds, 0);
+    const totalSeconds = Math.max(0.1, readinessWait + TELEPORT_CAST_SECONDS + TELEPORT_ARRIVAL_SECONDS + routeCycles);
+    return {
+      kind: cooldownWait > 0 ? "waitTeleport" : "teleport",
+      monster: first.monster,
+      guardsByLevel: first.production.guardsByLevel,
+      waitSeconds: readinessWait,
+      armyWaitSeconds: first.production.waitSeconds,
+      cooldownWaitSeconds: cooldownWait,
+      teleport: true,
+      teleportLanding: landing,
+      zoneMonsterIds: route.map((item) => item.monster.id),
+      xpValue: routeXp,
+      score: routeXp / totalSeconds,
     };
   }
 
   function planEconomicBotTargets(bot, allowTeleport = false) {
     const reserved = getReservedMonsterIdsForBots(bot.id);
-    const options = [];
+    const directOptions = [];
+    const teleportOptions = [];
     for (const monster of worldRef.current.monsters || []) {
       if (!monster || monster.hp <= 0 || reserved.has(monster.id)) continue;
       const production = estimateBotProductionWait(bot, monster);
-      if (!production) continue;
-      const evaluated = getBotMonsterEconomicScore(bot, monster, production, allowTeleport);
-      if (evaluated) options.push(evaluated);
+      if (production) {
+        const direct = getBotDirectMonsterOption(bot, monster, production);
+        if (direct) directOptions.push(direct);
+      }
+      if (allowTeleport) {
+        const zone = getBotTeleportZoneOption(bot, monster, reserved);
+        if (zone) teleportOptions.push(zone);
+      }
     }
-    options.sort((left, right) => right.score - left.score || left.attackSeconds - right.attackSeconds);
-    const plan = options.slice(0, BOT_ECONOMIC_PLAN_DEPTH);
-    bot.plannedMonsterIds = plan.map((item) => item.monster.id);
-    bot.plannedWaitSeconds = plan[0]?.waitSeconds || 0;
-    return plan[0] || null;
+    directOptions.sort((left, right) => right.score - left.score || left.attackSeconds - right.attackSeconds);
+    teleportOptions.sort((left, right) => right.score - left.score);
+    const bestDirect = directOptions[0] || null;
+    const bestTeleport = teleportOptions[0] || null;
+    let decision = bestDirect;
+    if (bestTeleport && (!bestDirect || bestTeleport.score >= bestDirect.score * BOT_PLAN_SWITCH_GAIN)) decision = bestTeleport;
+    const fallbackPlan = [...directOptions.slice(0, BOT_ECONOMIC_PLAN_DEPTH), ...teleportOptions.slice(0, BOT_ECONOMIC_PLAN_DEPTH)]
+      .sort((left, right) => right.score - left.score)
+      .slice(0, BOT_ECONOMIC_PLAN_DEPTH);
+    bot.plannedMonsterIds = decision?.zoneMonsterIds?.length ? [...decision.zoneMonsterIds] : fallbackPlan.map((item) => item.monster.id);
+    bot.plannedWaitSeconds = decision?.waitSeconds || 0;
+    bot.plannedAction = decision?.kind || null;
+    return decision;
   }
 
   function findNearestMonsterForBot(bot) {
@@ -1713,6 +1759,8 @@ const trainingIntroTimerRef = useRef(null);
     bot.rallyTimer = bot.level >= MAX_BUILDING_LEVEL ? 0 : getRandomBotRallySeconds();
     bot.plannedMonsterIds = [];
     bot.plannedWaitSeconds = 0;
+    bot.plannedAction = null;
+    bot.plannedZoneMonsterIds = [];
   }
 
   function launchBotMarch(bot, monster) {
@@ -1826,9 +1874,11 @@ const trainingIntroTimerRef = useRef(null);
       origin: { x: bot.x, y: bot.y },
       target: { ...decision.teleportLanding },
       targetMonsterId: decision.monster.id,
+      zoneMonsterIds: [...(decision.zoneMonsterIds || [decision.monster.id])],
     };
     bot.teleportEffectId = effect.id;
     bot.pendingTeleportTargetId = decision.monster.id;
+    bot.plannedZoneMonsterIds = [...(decision.zoneMonsterIds || [decision.monster.id])];
     bot.state = "teleporting";
     botTeleportEffectsRef.current.push(effect);
     return true;
@@ -1849,9 +1899,12 @@ const trainingIntroTimerRef = useRef(null);
       }
       if (effect.phase === "arrival" && effect.timer >= TELEPORT_ARRIVAL_SECONDS) {
         bot.teleportEffectId = null;
-        const target = (worldRef.current.monsters || []).find((monster) => monster.id === effect.targetMonsterId);
+        const reserved = getReservedMonsterIdsForBots(bot.id);
+        const target = (effect.zoneMonsterIds || [effect.targetMonsterId])
+          .map((id) => (worldRef.current.monsters || []).find((monster) => monster.id === id))
+          .find((monster) => monster && canBotDefeatMonster(bot, monster) && !reserved.has(monster.id));
         bot.pendingTeleportTargetId = null;
-        if (target && canBotDefeatMonster(bot, target) && !getReservedMonsterIdsForBots(bot.id).has(target.id)) {
+        if (target) {
           launchBotMarch(bot, target);
         } else {
           bot.state = "waiting";
@@ -1880,12 +1933,18 @@ const trainingIntroTimerRef = useRef(null);
           bot.state = "waiting";
           continue;
         }
+        if (difficulty >= 5 && decision.kind === "waitTeleport") {
+          bot.rallyTimer = Math.max(0.25, decision.waitSeconds);
+          bot.state = "waitingForTeleportPlan";
+          bot.plannedZoneMonsterIds = [...(decision.zoneMonsterIds || [])];
+          continue;
+        }
         if (decision.waitSeconds > 0) {
           bot.rallyTimer = Math.max(0.25, decision.waitSeconds);
           bot.state = "waitingForArmy";
           continue;
         }
-        if (difficulty >= 5 && decision.teleport) {
+        if (difficulty >= 5 && decision.kind === "teleport") {
           startBotTeleport(bot, decision);
           continue;
         }
