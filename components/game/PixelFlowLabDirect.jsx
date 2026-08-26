@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 const WORLD_WIDTH = 25600;
 const WORLD_HEIGHT = 17600;
 const MONSTER_COUNT = 720;
+const MONSTER_RESPAWN_SECONDS = 120;
+const MONSTER_RESPAWN_AREA_RADIUS = 650;
 
 const TELEPORT_COOLDOWN_SECONDS = 15;
 const TELEPORT_CAST_SECONDS = 1.2;
@@ -467,6 +469,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const rafRef = useRef(null);
 
   const worldRef = useRef(createWorld());
+  const monsterRespawnQueueRef = useRef([]);
   const playerRef = useRef(null);
   const cityRef = useRef(createCityState());
   const cityStatsRef = useRef(createCityStats());
@@ -1168,6 +1171,7 @@ const trainingIntroTimerRef = useRef(null);
   }
   function resetArena() {
     worldRef.current = createWorld();
+    monsterRespawnQueueRef.current = [];
     CITY_WIDTH = CITY_LEVEL_ONE_SIZE;
     CITY_HEIGHT = CITY_LEVEL_ONE_SIZE;
     cityRef.current = createCityState();
@@ -1425,6 +1429,52 @@ const trainingIntroTimerRef = useRef(null);
     return (botsRef.current || []).find((bot) => bot.id === botId) || null;
   }
 
+  function queueMonsterRespawn(monster) {
+    if (!monster) return;
+    monsterRespawnQueueRef.current.push({
+      monster: {
+        ...monster,
+        hp: monster.maxHp,
+      },
+      deathX: monster.x,
+      deathY: monster.y,
+      respawnAt: Date.now() / 1000 + MONSTER_RESPAWN_SECONDS,
+    });
+  }
+
+  function updateMonsterRespawns() {
+    const now = Date.now() / 1000;
+    const world = worldRef.current;
+    const waiting = [];
+
+    for (const entry of monsterRespawnQueueRef.current || []) {
+      if (!entry || entry.respawnAt > now) {
+        if (entry) waiting.push(entry);
+        continue;
+      }
+
+      const angle = rand(0, Math.PI * 2);
+      const distance = Math.sqrt(Math.random()) * MONSTER_RESPAWN_AREA_RADIUS;
+      const source = entry.monster;
+      const radius = Math.max(1, Number(source.r) || 20);
+      const x = clamp(entry.deathX + Math.cos(angle) * distance, radius, WORLD_WIDTH - radius);
+      const y = clamp(entry.deathY + Math.sin(angle) * distance, radius, WORLD_HEIGHT - radius);
+
+      world.monsters.push({
+        ...source,
+        id: source.tutorial
+          ? "tutorial-monster"
+          : `monster-respawn-${Date.now()}-${Math.random()}`,
+        x,
+        y,
+        hp: source.maxHp,
+        pulse: rand(0, Math.PI * 2),
+      });
+    }
+
+    monsterRespawnQueueRef.current = waiting;
+  }
+
   function getMonsterCrystalReward(monster) {
     return monster.type === "giant"
       ? 120
@@ -1536,6 +1586,7 @@ const trainingIntroTimerRef = useRef(null);
         if (monster.hp <= 0) {
           bot.crystals = (bot.crystals || 0) + getMonsterCrystalReward(monster);
           awardBotMonsterVictoryXp(bot, monster);
+          queueMonsterRespawn(monster);
           world.monsters = world.monsters.filter((item) => item.id !== monster.id);
           if (selectedMonsterRef.current?.id === monster.id) updateSelectedMonster(null);
         } else if (selectedMonsterRef.current?.id === monster.id) {
@@ -2456,6 +2507,7 @@ const trainingIntroTimerRef = useRef(null);
     }
 
     updateTeleportEffect(dt);
+    updateMonsterRespawns();
     updateMarches(dt);
     updateBotMarches(dt);
     updateBots(dt);
@@ -2990,6 +3042,7 @@ const trainingIntroTimerRef = useRef(null);
             }
           }
 
+          queueMonsterRespawn(monster);
           world.monsters = world.monsters.filter((item) => item.id !== monster.id);
 
           if (selectedMonsterRef.current?.id === monster.id) {
