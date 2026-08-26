@@ -37,11 +37,14 @@ const RETURN_MARCH_WORLD_SPEED = 191;
 const BOT_RALLY_MIN_SECONDS = 10;
 const BOT_RALLY_MAX_SECONDS = 60;
 const BOT_DIFFICULTY_MIN_LEVEL = 1;
-const BOT_DIFFICULTY_MAX_LEVEL = 3;
+const BOT_DIFFICULTY_MAX_LEVEL = 4;
+const BOT_ECONOMIC_MAX_WAIT_SECONDS = 15;
+const BOT_ECONOMIC_PLAN_DEPTH = 3;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
   3: { min: 0, max: 5 },
+  4: { min: 0, max: 2 },
 };
 
 const MAX_BUILDING_LEVEL = 100;
@@ -1390,6 +1393,8 @@ const trainingIntroTimerRef = useRef(null);
       trainCarry: 0,
       productionQueue: 0,
       productionSpawnTimer: 0,
+      plannedMonsterIds: [],
+      plannedWaitSeconds: 0,
     };
 
     botsRef.current = [...botsRef.current, nextBot];
@@ -1440,9 +1445,79 @@ const trainingIntroTimerRef = useRef(null);
     return tiers;
   }
 
-  function canBotDefeatMonster(bot, monster) {
+  function canBotDefeatMonster(bot, monster, guardsByLevel = bot?.guardsByLevel || {}) {
     if (!bot || !monster || monster.hp <= 0) return false;
-    return calculateDamageAndReturn(bot.guardsByLevel || {}, monster).monsterRemainingHp <= 0;
+    return calculateDamageAndReturn(guardsByLevel, monster).monsterRemainingHp <= 0;
+  }
+
+  function getReservedMonsterIdsForBots(exceptBotId = null) {
+    const reserved = new Set();
+    for (const march of botMarchesRef.current || []) {
+      if (march.botId !== exceptBotId && march.type === "attack" && march.targetMonsterId) {
+        reserved.add(march.targetMonsterId);
+      }
+    }
+    for (const march of marchesRef.current || []) {
+      if (march.type === "attack" && march.targetMonsterId) reserved.add(march.targetMonsterId);
+    }
+    return reserved;
+  }
+
+  function estimateBotProductionWait(bot, monster) {
+    const level = Math.min(MAX_BUILDING_LEVEL, Math.max(1, Math.round(bot?.level || 1)));
+    const visualCap = getCoreArmyVisualCapacity(level);
+    const current = getTotalGuardElementsFromMap(bot?.guardsByLevel || {});
+    if (canBotDefeatMonster(bot, monster)) return { waitSeconds: 0, guardsByLevel: { ...(bot.guardsByLevel || {}) } };
+    const projected = { ...(bot?.guardsByLevel || {}) };
+    const maximumExtra = Math.max(0, visualCap - current);
+    for (let extra = 1; extra <= maximumExtra; extra += 1) {
+      projected[level] = (projected[level] || 0) + 1;
+      const waitSeconds = 1 + (extra - 1) * ARMY_PRODUCTION_SPAWN_SECONDS;
+      if (waitSeconds > BOT_ECONOMIC_MAX_WAIT_SECONDS) break;
+      if (canBotDefeatMonster(bot, monster, projected)) return { waitSeconds, guardsByLevel: { ...projected } };
+    }
+    return null;
+  }
+
+  function getBotMonsterEconomicScore(bot, monster, option) {
+    const guards = option.guardsByLevel;
+    const result = calculateDamageAndReturn(guards, monster);
+    if (result.monsterRemainingHp > 0) return null;
+    const attackSeconds = getMarchDuration(bot.x, bot.y, monster.x, monster.y, "attack");
+    const returnSeconds = getMarchDuration(monster.x, monster.y, bot.x, bot.y, "return");
+    const sentElements = getTotalGuardElementsFromMap(guards);
+    const returnedElements = getTotalGuardElementsFromMap(result.returnGuardsByLevel);
+    const lostElements = Math.max(0, sentElements - returnedElements);
+    const replacementSeconds = lostElements * ARMY_PRODUCTION_SPAWN_SECONDS;
+    const xpValue = Math.max(0.0001, Number(monster.maxHp || monster.hp || 0) * getMonsterXpMultiplier(bot.level, monster.armor || 1));
+    const totalSeconds = Math.max(0.1, option.waitSeconds + attackSeconds + returnSeconds + replacementSeconds);
+    return {
+      monster,
+      waitSeconds: option.waitSeconds,
+      guardsByLevel: guards,
+      attackSeconds,
+      returnSeconds,
+      lostElements,
+      xpValue,
+      score: xpValue / totalSeconds,
+    };
+  }
+
+  function planEconomicBotTargets(bot) {
+    const reserved = getReservedMonsterIdsForBots(bot.id);
+    const options = [];
+    for (const monster of worldRef.current.monsters || []) {
+      if (!monster || monster.hp <= 0 || reserved.has(monster.id)) continue;
+      const production = estimateBotProductionWait(bot, monster);
+      if (!production) continue;
+      const evaluated = getBotMonsterEconomicScore(bot, monster, production);
+      if (evaluated) options.push(evaluated);
+    }
+    options.sort((left, right) => right.score - left.score || left.attackSeconds - right.attackSeconds);
+    const plan = options.slice(0, BOT_ECONOMIC_PLAN_DEPTH);
+    bot.plannedMonsterIds = plan.map((item) => item.monster.id);
+    bot.plannedWaitSeconds = plan[0]?.waitSeconds || 0;
+    return plan[0] || null;
   }
 
   function findNearestMonsterForBot(bot) {
@@ -1600,6 +1675,8 @@ const trainingIntroTimerRef = useRef(null);
     bot.targetMonsterId = null;
     bot.state = bot.level >= MAX_BUILDING_LEVEL ? "complete" : "waiting";
     bot.rallyTimer = bot.level >= MAX_BUILDING_LEVEL ? 0 : getRandomBotRallySeconds();
+    bot.plannedMonsterIds = [];
+    bot.plannedWaitSeconds = 0;
   }
 
   function launchBotMarch(bot, monster) {
@@ -1709,6 +1786,22 @@ const trainingIntroTimerRef = useRef(null);
       if (bot.activeMarchId) continue;
       bot.rallyTimer = Math.max(0, (bot.rallyTimer || 0) - dt);
       if (bot.rallyTimer > 0) continue;
+      const difficulty = Math.round(botDifficultyRef.current || BOT_DIFFICULTY_MIN_LEVEL);
+      if (difficulty >= 4) {
+        const decision = planEconomicBotTargets(bot);
+        if (!decision) {
+          bot.rallyTimer = getRandomBotRallySeconds();
+          bot.state = "waiting";
+          continue;
+        }
+        if (decision.waitSeconds > 0) {
+          bot.rallyTimer = Math.max(0.25, decision.waitSeconds);
+          bot.state = "waitingForArmy";
+          continue;
+        }
+        launchBotMarch(bot, decision.monster);
+        continue;
+      }
       const monster = findNearestMonsterForBot(bot);
       if (!monster) {
         bot.rallyTimer = getRandomBotRallySeconds();
