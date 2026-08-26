@@ -37,8 +37,12 @@ const RETURN_MARCH_WORLD_SPEED = 191;
 const BOT_RALLY_MIN_SECONDS = 10;
 const BOT_RALLY_MAX_SECONDS = 60;
 const BOT_DIFFICULTY_MIN_LEVEL = 1;
-const BOT_DIFFICULTY_MAX_LEVEL = 2;
-const BOT_RALLY_MAX_SECONDS_BY_DIFFICULTY = { 1: 60, 2: 20 };
+const BOT_DIFFICULTY_MAX_LEVEL = 3;
+const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
+  1: { min: 10, max: 60 },
+  2: { min: 10, max: 20 },
+  3: { min: 0, max: 5 },
+};
 
 const MAX_BUILDING_LEVEL = 100;
 const GUARD_CRYSTAL_COST = 1;
@@ -1418,8 +1422,11 @@ const trainingIntroTimerRef = useRef(null);
       BOT_DIFFICULTY_MIN_LEVEL,
       BOT_DIFFICULTY_MAX_LEVEL
     );
-    const maximum = BOT_RALLY_MAX_SECONDS_BY_DIFFICULTY[difficulty] || BOT_RALLY_MAX_SECONDS;
-    return rand(BOT_RALLY_MIN_SECONDS, maximum);
+    const range = BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY[difficulty] || {
+      min: BOT_RALLY_MIN_SECONDS,
+      max: BOT_RALLY_MAX_SECONDS,
+    };
+    return rand(range.min, range.max);
   }
 
   function getBotSearchTiers(bot) {
