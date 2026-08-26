@@ -45,6 +45,10 @@ const BOT_ECONOMIC_PLAN_DEPTH = 3;
 const BOT_TELEPORT_ZONE_TARGET_DEPTH = 4;
 const BOT_TELEPORT_ZONE_RADIUS = 1500;
 const BOT_PLAN_SWITCH_GAIN = 1.15;
+const CORE_DURABILITY_REGEN_SECONDS = 240;
+const CORE_BASE_DURABILITY = 1000;
+const BOT_CORE_RESPAWN_SECONDS = 120;
+const BOT_CORE_RESPAWN_AREA_RADIUS = 650;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
@@ -509,6 +513,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const tutorialFlowRef = useRef({ phase: "buildEconomy", timer: 0 });
   const tutorialLandingTargetRef = useRef(null);
   const selectedMonsterRef = useRef(null);
+  const selectedCoreRef = useRef(null);
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
   const tutorialSearchMonsterIdRef = useRef(null);
@@ -630,6 +635,7 @@ const trainingIntroTimerRef = useRef(null);
   const [movingBuilding, setMovingBuilding] = useState(null);
   const [enterCoreVisible, setEnterCoreVisible] = useState(false);
   const [selectedMonster, setSelectedMonsterState] = useState(null);
+  const [selectedCore, setSelectedCoreState] = useState(null);
   const [expedition, setExpedition] = useState(null);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const [monsterSearchOpen, setMonsterSearchOpen] = useState(false);
@@ -837,6 +843,9 @@ const trainingIntroTimerRef = useRef(null);
   const selectedMonsterScreen = selectedMonster
     ? worldToScreen(selectedMonster.x, selectedMonster.y)
     : null;
+  const selectedCoreScreen = selectedCore ? worldToScreen(selectedCore.x, selectedCore.y) : null;
+  const selectedCoreArmy = selectedCore ? getTotalGuardsFromStats({ guardsByLevel: selectedCore.guardsByLevel || {} }) : 0;
+  const selectedCorePreview = selectedCore ? calculateCoreBattle(cityStats.guardsByLevel || {}, selectedCore.guardsByLevel || {}, selectedCore.durability) : null;
   const mapTutorialTargetScreen = mapTutorialTarget
     ? worldToScreen(mapTutorialTarget.x, mapTutorialTarget.y)
     : null;
@@ -966,6 +975,15 @@ const trainingIntroTimerRef = useRef(null);
   function updateSelectedMonster(nextMonster) {
     selectedMonsterRef.current = nextMonster;
     setSelectedMonsterState(nextMonster);
+    if (nextMonster) updateSelectedCore(null);
+  }
+  function updateSelectedCore(nextCore) {
+    selectedCoreRef.current = nextCore;
+    setSelectedCoreState(nextCore ? { ...nextCore, guardsByLevel: { ...(nextCore.guardsByLevel || {}) } } : null);
+    if (nextCore) {
+      selectedMonsterRef.current = null;
+      setSelectedMonsterState(null);
+    }
   }
 
   function updateSelectedBuilding(nextBuilding) {
@@ -1249,6 +1267,7 @@ const trainingIntroTimerRef = useRef(null);
     setMonsterSearchOpen(false);
     monsterSearchIndexRef.current = { tier: 1, index: -1 };
     updateSelectedMonster(null);
+    updateSelectedCore(null);
     updateSelectedBuilding(null);
 
     const spawn = snapPointToLandingGrid({
@@ -1262,7 +1281,11 @@ const trainingIntroTimerRef = useRef(null);
       r: 30,
       level: 1,
       score: 0,
-      shield: 180,
+      shield: 0,
+      name: "Admin",
+      durabilityLevel: 1,
+      maxDurability: CORE_BASE_DURABILITY,
+      durability: CORE_BASE_DURABILITY,
       alive: true,
     };
 
@@ -1452,8 +1475,10 @@ const trainingIntroTimerRef = useRef(null);
     });
     if (!spawn) return;
 
+    const botIndex = botsRef.current.length + 1;
     const nextBot = {
       id: `bot-${Date.now()}-${Math.random()}`,
+      name: `Bot_${botIndex}`,
       x: spawn.x,
       y: spawn.y,
       r: 30,
@@ -1463,7 +1488,10 @@ const trainingIntroTimerRef = useRef(null);
       guardCap: getCoreArmyCapacity(1),
       score: 0,
       crystals: 0,
-      shield: 180,
+      shield: 0,
+      durabilityLevel: 1,
+      maxDurability: CORE_BASE_DURABILITY,
+      durability: CORE_BASE_DURABILITY,
       alive: true,
       isBot: true,
       state: "waiting",
@@ -2004,9 +2032,60 @@ const trainingIntroTimerRef = useRef(null);
     botTeleportEffectsRef.current = nextEffects;
   }
 
+  function updateBotCoreRespawns() {
+    const now = Date.now() / 1000;
+    for (const bot of botsRef.current || []) {
+      if (bot.alive || !bot.respawnAt || bot.respawnAt > now) continue;
+      const angle = rand(0, Math.PI * 2);
+      const distance = Math.sqrt(Math.random()) * BOT_CORE_RESPAWN_AREA_RADIUS;
+      const origin = {
+        x: Number(bot.deathX ?? bot.x) + Math.cos(angle) * distance,
+        y: Number(bot.deathY ?? bot.y) + Math.sin(angle) * distance,
+      };
+      const landing = findNearestFreeCoreLanding(origin, bot.id);
+      if (!landing) {
+        bot.respawnAt = now + 1;
+        continue;
+      }
+      bot.x = landing.x;
+      bot.y = landing.y;
+      bot.level = 1;
+      bot.xp = 0;
+      bot.nextLevelXp = getNextLevelXp(1);
+      bot.guardCap = getCoreArmyCapacity(1);
+      bot.crystals = 0;
+      bot.shield = 0;
+      bot.durabilityLevel = 1;
+      bot.maxDurability = CORE_BASE_DURABILITY;
+      bot.durability = CORE_BASE_DURABILITY;
+      bot.alive = true;
+      bot.state = "waiting";
+      bot.rallyTimer = getRandomBotRallySeconds();
+      bot.activeMarchId = null;
+      bot.targetMonsterId = null;
+      bot.guardsByLevel = { 1: 100 };
+      bot.trainTimer = 0;
+      bot.trainCarry = 0;
+      bot.productionQueue = 0;
+      bot.productionSpawnTimer = 0;
+      bot.plannedMonsterIds = [];
+      bot.plannedWaitSeconds = 0;
+      bot.teleportCooldown = 0;
+      bot.teleportEffectId = null;
+      bot.pendingTeleportTargetId = null;
+      bot.plannedAction = null;
+      bot.plannedZoneMonsterIds = [];
+      bot.respawnAt = null;
+      bot.deathX = null;
+      bot.deathY = null;
+      setHud((current) => ({ ...current, status: `${bot.name} RESPAWNED` }));
+    }
+  }
+
   function updateBots(dt) {
     for (const bot of botsRef.current || []) {
       if (!bot.alive || bot.level >= MAX_BUILDING_LEVEL) continue;
+      updateCoreDurability(bot, dt);
       updateBotArmyProduction(bot, dt);
       bot.teleportCooldown = Math.max(0, Number(bot.teleportCooldown || 0) - dt);
       if (bot.activeMarchId || bot.teleportEffectId) continue;
@@ -2906,15 +2985,14 @@ const trainingIntroTimerRef = useRef(null);
       cooldownRef.current = Math.max(0, cooldownRef.current - dt);
     }
 
-    if (player.shield > 0) {
-      player.shield = Math.max(0, player.shield - dt * 60);
-    }
+    updateCoreDurability(player, dt);
 
     updateTeleportEffect(dt);
     updateMonsterRespawns();
     updateMarches(dt);
     updateBotMarches(dt);
     updateBotTeleports(dt);
+    updateBotCoreRespawns();
     updateBots(dt);
     updateMapTutorial(dt);
 
@@ -3309,6 +3387,43 @@ const trainingIntroTimerRef = useRef(null);
     expeditionRef.current = next;
     setExpedition(next ? { ...next } : null);
   }
+  function getArmyCombatPower(guardsByLevel) {
+    return Object.entries(guardsByLevel || {}).reduce((sum, [level, count]) => {
+      const numericLevel = Math.max(1, Number(level) || 1);
+      return sum + Math.max(0, Math.floor(count || 0)) * numericLevel * getGuardUnitWeight(numericLevel);
+    }, 0);
+  }
+  function consumeArmyPower(guardsByLevel, incomingPower) {
+    const remaining = { ...(guardsByLevel || {}) };
+    let power = Math.max(0, Number(incomingPower) || 0);
+    const levels = Object.keys(remaining).map(Number).sort((a, b) => a - b);
+    for (const level of levels) {
+      if (power <= 0) break;
+      const count = Math.max(0, Math.floor(remaining[level] || 0));
+      const perElement = level * getGuardUnitWeight(level);
+      const lost = Math.min(count, Math.ceil(power / Math.max(1, perElement)));
+      remaining[level] = count - lost;
+      power = Math.max(0, power - lost * perElement);
+      if (remaining[level] <= 0) delete remaining[level];
+    }
+    return remaining;
+  }
+  function calculateCoreBattle(attackerGuardsByLevel, defenderGuardsByLevel, defenderDurability) {
+    const attackerPower = getArmyCombatPower(attackerGuardsByLevel);
+    const defenderPower = getArmyCombatPower(defenderGuardsByLevel);
+    const attackerReturnGuardsByLevel = consumeArmyPower(attackerGuardsByLevel, defenderPower);
+    const defenderRemainingGuardsByLevel = consumeArmyPower(defenderGuardsByLevel, attackerPower);
+    const survivingAttackPower = getArmyCombatPower(attackerReturnGuardsByLevel);
+    const durabilityDamage = survivingAttackPower;
+    const defenderDurabilityAfter = Math.max(0, Number(defenderDurability || 0) - durabilityDamage);
+    return { attackerReturnGuardsByLevel, defenderRemainingGuardsByLevel, survivingAttackPower, durabilityDamage, defenderDurabilityAfter, coreBroken: defenderDurabilityAfter <= 0 };
+  }
+  function updateCoreDurability(core, dt) {
+    if (!core || core.alive === false || core.durability <= 0) return;
+    core.maxDurability = Math.max(CORE_BASE_DURABILITY, Number(core.maxDurability || CORE_BASE_DURABILITY));
+    core.durability = Math.min(core.maxDurability, Number(core.durability || 0) + core.maxDurability / CORE_DURABILITY_REGEN_SECONDS * dt);
+  }
+
   function calculateDamageAndReturn(guardsByLevel, monster) {
     const nextReturn = {};
     let remainingHp = monster.hp;
@@ -3372,6 +3487,59 @@ const trainingIntroTimerRef = useRef(null);
 
       if (nextProgress < 1) {
         nextMarches.push(nextMarch);
+        continue;
+      }
+
+      if (march.type === "attackCore") {
+        const target = getBotById(march.targetCoreId);
+        const targetStillThere = target && target.alive && Math.hypot(target.x - march.toX, target.y - march.toY) <= GRID_STEP;
+        const result = targetStillThere
+          ? calculateCoreBattle(march.guardsByLevel, target.guardsByLevel || {}, target.durability)
+          : { attackerReturnGuardsByLevel: march.guardsByLevel, durabilityDamage: 0, coreBroken: false };
+
+        if (targetStillThere) {
+          target.guardsByLevel = result.defenderRemainingGuardsByLevel;
+          target.durability = result.defenderDurabilityAfter;
+          if (result.coreBroken) {
+            target.alive = false;
+            target.state = "respawning";
+            target.guardsByLevel = {};
+            target.activeMarchId = null;
+            target.targetMonsterId = null;
+            target.teleportEffectId = null;
+            target.respawnAt = Date.now() / 1000 + BOT_CORE_RESPAWN_SECONDS;
+            target.deathX = target.x;
+            target.deathY = target.y;
+            botMarchesRef.current = (botMarchesRef.current || []).filter((item) => item.botId !== target.id);
+            botTeleportEffectsRef.current = (botTeleportEffectsRef.current || []).filter((item) => item.botId !== target.id);
+            updateSelectedCore(null);
+          } else if (selectedCoreRef.current?.id === target.id) {
+            updateSelectedCore(target);
+          }
+          setHud((current) => ({
+            ...current,
+            status: result.coreBroken ? `CORE BROKEN · RESPAWN ${BOT_CORE_RESPAWN_SECONDS}s` : `CORE DAMAGE ${Math.round(result.durabilityDamage)}`,
+          }));
+        }
+
+        const returnCount = getTotalGuardsFromStats({ guardsByLevel: result.attackerReturnGuardsByLevel || {} });
+        if (returnCount > 0) {
+          const returnId = `return-core-${Date.now()}-${Math.random()}`;
+          const returnDuration = getMarchDuration(march.toX, march.toY, player.x, player.y, "return");
+          nextMarches.push({
+            id: returnId, type: "return", count: returnCount,
+            guardsByLevel: result.attackerReturnGuardsByLevel,
+            fromX: march.toX, fromY: march.toY, toX: player.x, toY: player.y,
+            progress: 0, durationSeconds: returnDuration,
+            targetCoreId: march.targetCoreId, targetColor: "#ef4444",
+          });
+          publishExpedition({
+            marchId: returnId, phase: "return", count: returnCount,
+            remainingSeconds: Math.ceil(returnDuration), targetCoreId: march.targetCoreId, targetColor: "#ef4444",
+          });
+        } else if (expeditionRef.current?.marchId === march.id) {
+          publishExpedition(null);
+        }
         continue;
       }
 
@@ -3633,9 +3801,13 @@ const trainingIntroTimerRef = useRef(null);
       console.error("Orbit guards draw failed", error);
     }
     for (const bot of botsRef.current) {
-      drawPlayer(ctx, bot);
+      if (bot.alive) drawPlayer(ctx, bot);
     }
     drawPlayer(ctx, player);
+    for (const bot of botsRef.current) {
+      if (bot.alive) drawCoreNameplate(ctx, bot, selectedCoreRef.current?.id === bot.id);
+    }
+    drawCoreNameplate(ctx, player, false);
 
     ctx.restore();
   }
@@ -4705,6 +4877,28 @@ const trainingIntroTimerRef = useRef(null);
     setCityStats({ ...stats });
   }
 
+  function beginAttackSelectedCore() {
+    const target = selectedCoreRef.current;
+    const player = playerRef.current;
+    const stats = cityStatsRef.current;
+    if (!target || !target.alive || !player) return;
+    const sendCount = getTotalGuardsFromStats(stats);
+    if (sendCount <= 0) return;
+    const sentGuardsByLevel = { ...stats.guardsByLevel };
+    stats.guardsByLevel = {};
+    coreBarracksRef.current.trainTimer = 0;
+    coreBarracksRef.current.productionQueue = 0;
+    productionSpawnsRef.current = [];
+    const marchId = `attack-core-${Date.now()}-${Math.random()}`;
+    const durationSeconds = getMarchDuration(player.x, player.y, target.x, target.y, "attack");
+    marchesRef.current.push({ id: marchId, type: "attackCore", count: sendCount, guardsByLevel: sentGuardsByLevel,
+      fromX: player.x, fromY: player.y, toX: target.x, toY: target.y, progress: 0, durationSeconds,
+      targetCoreId: target.id, targetColor: "#ef4444" });
+    publishExpedition({ marchId, phase: "attackCore", count: sendCount, remainingSeconds: Math.ceil(durationSeconds), targetCoreId: target.id, targetColor: "#ef4444" });
+    updateSelectedCore(null);
+    setCityStats({ ...stats });
+  }
+
   function onArenaPointerDown(event) {
     event.currentTarget.setPointerCapture?.(event.pointerId);
 
@@ -4880,6 +5074,12 @@ const trainingIntroTimerRef = useRef(null);
         }
       }
 
+      const coreTarget = findCoreAt(worldPoint);
+      if (coreTarget) {
+        updateSelectedCore(coreTarget);
+        setEnterCoreVisible(false);
+        return;
+      }
       const monster = findMonsterAt(worldPoint);
       const cameraTutorialLocksMonsters = [
         "zoomout",
@@ -4926,9 +5126,22 @@ const trainingIntroTimerRef = useRef(null);
         }
       } else {
         updateSelectedMonster(null);
+        updateSelectedCore(null);
         setEnterCoreVisible(false);
       }
     }
+  }
+
+  function findCoreAt(worldPoint) {
+    let best = null;
+    let bestDistance = Infinity;
+    for (const bot of botsRef.current || []) {
+      if (!bot.alive) continue;
+      const distance = Math.hypot(worldPoint.x - bot.x, worldPoint.y - bot.y);
+      const touchRadius = bot.r + 42 / Math.max(0.1, cameraRef.current.zoom);
+      if (distance <= touchRadius && distance < bestDistance) { best = bot; bestDistance = distance; }
+    }
+    return best;
   }
 
   function findMonsterAt(worldPoint) {
@@ -5884,6 +6097,21 @@ const trainingIntroTimerRef = useRef(null);
                 )}
 
               
+
+              {selectedCore && selectedCoreScreen && (
+                <div style={{...styles.monsterIntelCard,left:clamp(selectedCoreScreen.x-150,12,viewport.width-312),top:clamp(selectedCoreScreen.y-190,92,viewport.height-250)}}>
+                  <div style={styles.monsterIntelOrb}><span style={{fontSize:24}}>◎</span></div>
+                  <div style={styles.monsterIntelBody}>
+                    <strong>{selectedCore.name} · LV {selectedCore.level}</strong>
+                    <small>ARMY {formatCompactNumber(selectedCoreArmy)} / {formatCompactNumber(selectedCore.guardCap || 0)}</small>
+                    <small>DURABILITY {formatCompactNumber(selectedCore.durability || 0)} / {formatCompactNumber(selectedCore.maxDurability || CORE_BASE_DURABILITY)}</small>
+                    <small>RALLY {formatMarchTime(getMarchDuration(playerRef.current?.x||0,playerRef.current?.y||0,selectedCore.x,selectedCore.y,"attack"))}</small>
+                    <small>{selectedCorePreview?.durabilityDamage > 0 ? `CORE DAMAGE ~${formatCompactNumber(selectedCorePreview.durabilityDamage)}` : "ARMY BLOCKS CORE DAMAGE"}</small>
+                  </div>
+                  <button style={{...styles.monsterIntelAttack,...(homeGuards<=0?styles.monsterIntelAttackDisabled:{})}} disabled={homeGuards<=0} onClick={beginAttackSelectedCore}>⚔</button>
+                  <button style={styles.monsterIntelClose} onClick={()=>updateSelectedCore(null)}>×</button>
+                </div>
+              )}
 
               {selectedMonster && selectedMonsterThreat && (
                 <div
@@ -7071,6 +7299,25 @@ function mixMarchReturnColor(fill) {
   if (fill.includes("165,243,252")) return "rgba(134,239,172,0.96)";
   return "rgba(134,239,172,0.92)";
 }
+function drawCoreNameplate(ctx, core, selected = false) {
+  if (!core?.name) return;
+  ctx.save();
+  ctx.font = "800 18px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(2,6,23,0.88)";
+  const label = `${core.name} · LV ${Math.round(core.level || 1)}`;
+  ctx.strokeText(label, core.x, core.y - (core.r || 30) - 18);
+  ctx.fillStyle = selected ? "#fca5a5" : "#e0f2fe";
+  ctx.fillText(label, core.x, core.y - (core.r || 30) - 18);
+  if (selected) {
+    ctx.beginPath(); ctx.strokeStyle = "rgba(248,113,113,0.95)"; ctx.lineWidth = 4;
+    ctx.arc(core.x, core.y, (core.r || 30) + 11, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawPlayer(ctx, player) {
   const cityLevel = player.level || 1;
 
