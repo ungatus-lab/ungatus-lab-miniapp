@@ -17,6 +17,8 @@ const MAX_ZOOM = 0.95;
 
 const GRID_STEP = 110;
 const MAJOR_GRID_STEP = GRID_STEP * 2;
+const CORE_FOOTPRINT_CELLS = 2;
+const CORE_FOOTPRINT_SIZE = GRID_STEP * CORE_FOOTPRINT_CELLS;
 const CAMERA_OUTSIDE_PADDING = 950;
 
 const CITY_GRID_STEP = 100;
@@ -436,14 +438,14 @@ function createCityState() {
   return { buildings: [{ id: "citadel", type: "Citadel", level: 1, x: citadelX, y: citadelY, w: citadelSize, h: citadelSize, color: "#38bdf8" }] };
 }
 function snapPointToLandingGrid(point, radius = 30) {
-  const snappedX =
-    Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
-  const snappedY =
-    Math.floor(point.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP + MAJOR_GRID_STEP / 2;
-
+  // A Core occupies a sliding 2x2 footprint. Its center can move by one base
+  // world cell instead of jumping only between fixed 2x2 macro blocks.
+  const snappedX = Math.round(point.x / GRID_STEP) * GRID_STEP;
+  const snappedY = Math.round(point.y / GRID_STEP) * GRID_STEP;
+  const edge = Math.max(GRID_STEP, radius);
   return {
-    x: clamp(snappedX, radius, WORLD_WIDTH - radius),
-    y: clamp(snappedY, radius, WORLD_HEIGHT - radius),
+    x: clamp(snappedX, edge, WORLD_WIDTH - edge),
+    y: clamp(snappedY, edge, WORLD_HEIGHT - edge),
   };
 }
 
@@ -1369,12 +1371,86 @@ const trainingIntroTimerRef = useRef(null);
   }
 
 
+  function getCoreFootprintAt(point) {
+    return {
+      left: point.x - GRID_STEP,
+      top: point.y - GRID_STEP,
+      right: point.x + GRID_STEP,
+      bottom: point.y + GRID_STEP,
+    };
+  }
+
+  function getLandingCellStates(point, exceptCoreId = null) {
+    const footprint = getCoreFootprintAt(point);
+    const cores = [
+      ...(playerRef.current ? [{ ...playerRef.current, id: "player-core" }] : []),
+      ...(botsRef.current || []),
+    ].filter((core) => core.alive !== false && core.id !== exceptCoreId);
+    const reservedTargets = [
+      ...(teleportEffectRef.current?.active ? [{ ...teleportEffectRef.current.target, id: "player-teleport-target" }] : []),
+      ...(botTeleportEffectsRef.current || []).map((effect) => ({ ...effect.target, id: effect.botId })),
+    ].filter((target) => target.id !== exceptCoreId);
+    const cells = [];
+    for (let row = 0; row < CORE_FOOTPRINT_CELLS; row += 1) {
+      for (let column = 0; column < CORE_FOOTPRINT_CELLS; column += 1) {
+        const left = footprint.left + column * GRID_STEP;
+        const top = footprint.top + row * GRID_STEP;
+        const right = left + GRID_STEP;
+        const bottom = top + GRID_STEP;
+        const occupiedByCore = [...cores, ...reservedTargets].some((core) => {
+          const other = getCoreFootprintAt(core);
+          return !(right <= other.left || left >= other.right || bottom <= other.top || top >= other.bottom);
+        });
+        const occupiedByMonster = (worldRef.current.monsters || []).some((monster) => {
+          if (!monster || monster.hp <= 0) return false;
+          const nearestX = clamp(monster.x, left, right);
+          const nearestY = clamp(monster.y, top, bottom);
+          return Math.hypot(monster.x - nearestX, monster.y - nearestY) < Math.max(1, monster.r || 1);
+        });
+        cells.push({ column, row, left, top, occupied: occupiedByCore || occupiedByMonster });
+      }
+    }
+    return cells;
+  }
+
+  function buildLandingPreview(point, exceptCoreId = null) {
+    const snapped = snapPointToLandingGrid(point);
+    const cells = getLandingCellStates(snapped, exceptCoreId);
+    return { ...snapped, cells, valid: cells.every((cell) => !cell.occupied) };
+  }
+
+  function findNearestFreeCoreLanding(point, exceptCoreId = null) {
+    const origin = snapPointToLandingGrid(point);
+    const originGX = Math.round(origin.x / GRID_STEP);
+    const originGY = Math.round(origin.y / GRID_STEP);
+    const maxRadius = Math.max(Math.ceil(WORLD_WIDTH / GRID_STEP), Math.ceil(WORLD_HEIGHT / GRID_STEP));
+    for (let radius = 0; radius <= maxRadius; radius += 1) {
+      const candidates = [];
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        candidates.push({ gx: originGX + dx, gy: originGY - radius });
+        if (radius > 0) candidates.push({ gx: originGX + dx, gy: originGY + radius });
+      }
+      for (let dy = -radius + 1; dy < radius; dy += 1) {
+        candidates.push({ gx: originGX - radius, gy: originGY + dy });
+        if (radius > 0) candidates.push({ gx: originGX + radius, gy: originGY + dy });
+      }
+      for (const candidate of candidates) {
+        const snapped = snapPointToLandingGrid({ x: candidate.gx * GRID_STEP, y: candidate.gy * GRID_STEP });
+        if (Math.round(snapped.x / GRID_STEP) !== candidate.gx || Math.round(snapped.y / GRID_STEP) !== candidate.gy) continue;
+        const preview = buildLandingPreview(snapped, exceptCoreId);
+        if (preview.valid) return preview;
+      }
+    }
+    return null;
+  }
+
   function spawnBotCoreForDevLab() {
     if (!devLabRef.current) return;
-    const spawn = snapPointToLandingGrid({
+    const spawn = findNearestFreeCoreLanding({
       x: rand(200, WORLD_WIDTH - 200),
       y: rand(200, WORLD_HEIGHT - 200),
     });
+    if (!spawn) return;
 
     const nextBot = {
       id: `bot-${Date.now()}-${Math.random()}`,
@@ -1494,10 +1570,10 @@ const trainingIntroTimerRef = useRef(null);
     const dx = bot.x - monster.x;
     const dy = bot.y - monster.y;
     const length = Math.max(1, Math.hypot(dx, dy));
-    return snapPointToLandingGrid({
+    return findNearestFreeCoreLanding({
       x: monster.x + (dx / length) * MAJOR_GRID_STEP,
       y: monster.y + (dy / length) * MAJOR_GRID_STEP,
-    }, bot.r || 30);
+    }, bot.id);
   }
 
   function getBotCombatEconomy(bot, monster, guardsByLevel) {
@@ -1535,6 +1611,7 @@ const trainingIntroTimerRef = useRef(null);
 
   function getBotTeleportZoneOption(bot, anchorMonster, reserved) {
     const landing = getBotTeleportLanding(bot, anchorMonster);
+    if (!landing) return null;
     const candidates = (worldRef.current.monsters || [])
       .filter((monster) => monster && monster.hp > 0 && !reserved.has(monster.id) && Math.hypot(monster.x - landing.x, monster.y - landing.y) <= BOT_TELEPORT_ZONE_RADIUS)
       .map((monster) => {
@@ -1865,6 +1942,8 @@ const trainingIntroTimerRef = useRef(null);
 
   function startBotTeleport(bot, decision) {
     if (!bot || !decision?.teleportLanding || bot.activeMarchId || bot.teleportEffectId) return false;
+    const safeLanding = findNearestFreeCoreLanding(decision.teleportLanding, bot.id);
+    if (!safeLanding) return false;
     const effect = {
       id: `bot-teleport-${Date.now()}-${Math.random()}`,
       botId: bot.id,
@@ -1872,7 +1951,7 @@ const trainingIntroTimerRef = useRef(null);
       phase: "cast",
       timer: 0,
       origin: { x: bot.x, y: bot.y },
-      target: { ...decision.teleportLanding },
+      target: { x: safeLanding.x, y: safeLanding.y },
       targetMonsterId: decision.monster.id,
       zoneMonsterIds: [...(decision.zoneMonsterIds || [decision.monster.id])],
     };
@@ -1891,6 +1970,14 @@ const trainingIntroTimerRef = useRef(null);
       if (!bot || !bot.alive) continue;
       effect.timer += dt;
       if (effect.phase === "cast" && effect.timer >= TELEPORT_CAST_SECONDS) {
+        const safeLanding = findNearestFreeCoreLanding(effect.target, bot.id);
+        if (!safeLanding) {
+          bot.teleportEffectId = null;
+          bot.state = "waiting";
+          bot.rallyTimer = 0;
+          continue;
+        }
+        effect.target = { x: safeLanding.x, y: safeLanding.y };
         bot.x = effect.target.x;
         bot.y = effect.target.y;
         bot.teleportCooldown = TELEPORT_COOLDOWN_SECONDS;
@@ -3729,39 +3816,23 @@ const trainingIntroTimerRef = useRef(null);
   }
 
   function getLandingBlock(point) {
-    const blockX = Math.floor(point.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
-    const blockY = Math.floor(point.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
-
+    const center = snapPointToLandingGrid(point);
     return {
-      x: blockX,
-      y: blockY,
-      centerX: blockX + MAJOR_GRID_STEP / 2,
-      centerY: blockY + MAJOR_GRID_STEP / 2,
+      x: center.x - GRID_STEP,
+      y: center.y - GRID_STEP,
+      centerX: center.x,
+      centerY: center.y,
     };
   }
 
   function pointInsideLandingBlock(worldPoint, landingPoint) {
     if (!landingPoint) return false;
-
     const block = getLandingBlock(landingPoint);
-
-    return (
-      worldPoint.x >= block.x &&
-      worldPoint.x <= block.x + MAJOR_GRID_STEP &&
-      worldPoint.y >= block.y &&
-      worldPoint.y <= block.y + MAJOR_GRID_STEP
-    );
+    return worldPoint.x >= block.x && worldPoint.x <= block.x + CORE_FOOTPRINT_SIZE && worldPoint.y >= block.y && worldPoint.y <= block.y + CORE_FOOTPRINT_SIZE;
   }
 
   function snapToLandingGrid(point) {
-    const player = playerRef.current;
-    const radius = player?.r || 30;
-    const block = getLandingBlock(point);
-
-    return {
-      x: clamp(block.centerX, radius, WORLD_WIDTH - radius),
-      y: clamp(block.centerY, radius, WORLD_HEIGHT - radius),
-    };
+    return snapPointToLandingGrid(point, playerRef.current?.r || 30);
   }
 
   function selectLandingPoint(clientX, clientY) {
@@ -3773,9 +3844,10 @@ const trainingIntroTimerRef = useRef(null);
       tutorialFlowRef.current.phase === "selectLanding" && tutorialLandingTargetRef.current
         ? tutorialLandingTargetRef.current
         : snapToLandingGrid(rawPoint);
+    const preview = buildLandingPreview(snappedPoint, "player-core");
 
     teleportModeRef.current = false;
-    updateLandingPreview(snappedPoint);
+    updateLandingPreview(preview);
     if (tutorialFlowRef.current.phase === "selectLanding") {
       updateTutorialFlowPhase("confirmLanding");
     }
@@ -3786,6 +3858,12 @@ const trainingIntroTimerRef = useRef(null);
     const currentLanding = landingPreviewRef.current;
 
     if (!player || !currentLanding) return;
+    const validatedLanding = buildLandingPreview(currentLanding, "player-core");
+    if (!validatedLanding.valid) {
+      updateLandingPreview(validatedLanding);
+      setHud((current) => ({ ...current, status: "LANDING BLOCKED" }));
+      return;
+    }
     if (cooldownRef.current > 0) return;
     if (teleportEffectRef.current?.active) return;
     if (tutorialFlowRef.current.phase === "confirmLanding") {
@@ -3800,8 +3878,8 @@ const trainingIntroTimerRef = useRef(null);
         y: player.y,
       },
       target: {
-        x: currentLanding.x,
-        y: currentLanding.y,
+        x: validatedLanding.x,
+        y: validatedLanding.y,
       },
     };
 
@@ -5951,7 +6029,7 @@ const trainingIntroTimerRef = useRef(null);
                     top: clamp(landingScreen.y + 30, 86, viewport.height - 154),
                   }}
                 >
-                  <button style={styles.landButton} onClick={beginTeleportToLanding}>
+                  <button disabled={!landingPreview.valid} style={{...styles.landButton,...(!landingPreview.valid?{opacity:0.42,filter:"grayscale(1)",cursor:"not-allowed"}:{})}} onClick={beginTeleportToLanding}>
                     ⬇
                   </button>
                   <button style={styles.cancelButton} onClick={cancelLandingPreview}>
@@ -6142,55 +6220,54 @@ function drawMonsters(ctx, monsters, selectedMonsterId, tutorialFreeTargetIds = 
 
 function drawLandingPreview(ctx, landingPreview) {
   if (!landingPreview) return;
-
-  const blockX = Math.floor(landingPreview.x / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
-  const blockY = Math.floor(landingPreview.y / MAJOR_GRID_STEP) * MAJOR_GRID_STEP;
+  const blockX = landingPreview.x - GRID_STEP;
+  const blockY = landingPreview.y - GRID_STEP;
   const t = Date.now() / 260;
   const pulse = 1 + Math.sin(t) * 0.04;
-
+  const cells = landingPreview.cells || [];
+  const valid = landingPreview.valid !== false;
   ctx.save();
-
-  ctx.fillStyle = "rgba(34,211,238,0.18)";
-  ctx.fillRect(blockX, blockY, MAJOR_GRID_STEP, MAJOR_GRID_STEP);
-
-  ctx.strokeStyle = "rgba(34,211,238,0.95)";
+  for (let row = 0; row < CORE_FOOTPRINT_CELLS; row += 1) {
+    for (let column = 0; column < CORE_FOOTPRINT_CELLS; column += 1) {
+      const cell = cells.find((item) => item.row === row && item.column === column);
+      const occupied = Boolean(cell?.occupied);
+      ctx.fillStyle = occupied ? "rgba(239,68,68,0.34)" : "rgba(34,211,238,0.18)";
+      ctx.fillRect(blockX + column * GRID_STEP, blockY + row * GRID_STEP, GRID_STEP, GRID_STEP);
+      ctx.strokeStyle = occupied ? "rgba(248,113,113,0.98)" : "rgba(34,211,238,0.82)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(blockX + column * GRID_STEP, blockY + row * GRID_STEP, GRID_STEP, GRID_STEP);
+    }
+  }
+  ctx.strokeStyle = valid ? "rgba(34,211,238,0.95)" : "rgba(239,68,68,0.98)";
   ctx.lineWidth = 5;
-  ctx.strokeRect(blockX, blockY, MAJOR_GRID_STEP, MAJOR_GRID_STEP);
-
+  ctx.strokeRect(blockX, blockY, CORE_FOOTPRINT_SIZE, CORE_FOOTPRINT_SIZE);
   ctx.strokeStyle = "rgba(251,191,36,0.62)";
   ctx.lineWidth = 3;
-
   ctx.beginPath();
   ctx.moveTo(blockX + GRID_STEP, blockY);
-  ctx.lineTo(blockX + GRID_STEP, blockY + MAJOR_GRID_STEP);
+  ctx.lineTo(blockX + GRID_STEP, blockY + CORE_FOOTPRINT_SIZE);
   ctx.moveTo(blockX, blockY + GRID_STEP);
-  ctx.lineTo(blockX + MAJOR_GRID_STEP, blockY + GRID_STEP);
+  ctx.lineTo(blockX + CORE_FOOTPRINT_SIZE, blockY + GRID_STEP);
   ctx.stroke();
-
-  ctx.globalAlpha = 0.95;
-
+  ctx.globalAlpha = valid ? 0.95 : 0.72;
   ctx.beginPath();
-  ctx.fillStyle = "rgba(34,211,238,0.16)";
+  ctx.fillStyle = valid ? "rgba(34,211,238,0.16)" : "rgba(239,68,68,0.18)";
   ctx.arc(landingPreview.x, landingPreview.y, 58 * pulse, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.beginPath();
-  ctx.strokeStyle = "rgba(34,211,238,0.9)";
+  ctx.strokeStyle = valid ? "rgba(34,211,238,0.9)" : "rgba(248,113,113,0.95)";
   ctx.lineWidth = 4;
   ctx.arc(landingPreview.x, landingPreview.y, 50 * pulse, 0, Math.PI * 2);
   ctx.stroke();
-
   ctx.beginPath();
   ctx.strokeStyle = "rgba(251,191,36,0.82)";
   ctx.lineWidth = 3;
   ctx.arc(landingPreview.x, landingPreview.y, 31, 0, Math.PI * 2);
   ctx.stroke();
-
   ctx.beginPath();
-  ctx.fillStyle = "rgba(103,232,249,0.32)";
+  ctx.fillStyle = valid ? "rgba(103,232,249,0.32)" : "rgba(239,68,68,0.28)";
   ctx.arc(landingPreview.x, landingPreview.y, 30, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.restore();
 }
 
