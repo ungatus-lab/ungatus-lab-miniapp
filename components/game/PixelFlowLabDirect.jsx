@@ -37,7 +37,7 @@ const RETURN_MARCH_WORLD_SPEED = 191;
 const BOT_RALLY_MIN_SECONDS = 10;
 const BOT_RALLY_MAX_SECONDS = 60;
 const BOT_DIFFICULTY_MIN_LEVEL = 1;
-const BOT_DIFFICULTY_MAX_LEVEL = 4;
+const BOT_DIFFICULTY_MAX_LEVEL = 5;
 const BOT_ECONOMIC_MAX_WAIT_SECONDS = 15;
 const BOT_ECONOMIC_PLAN_DEPTH = 3;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
@@ -45,6 +45,7 @@ const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   2: { min: 10, max: 20 },
   3: { min: 0, max: 5 },
   4: { min: 0, max: 2 },
+  5: { min: 0, max: 2 },
 };
 
 const MAX_BUILDING_LEVEL = 100;
@@ -496,6 +497,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
 
   const marchesRef = useRef([]);
   const botMarchesRef = useRef([]);
+  const botTeleportEffectsRef = useRef([]);
   const expeditionRef = useRef(null);
   const constructionQueueRef = useRef([]);
   const tutorialConstructionRef = useRef({ housesCommitted: false, crystalsCommitted: false, barracksCommitted: false });
@@ -1193,6 +1195,7 @@ const trainingIntroTimerRef = useRef(null);
     botDifficultyRef.current = BOT_DIFFICULTY_MIN_LEVEL;
     setBotDifficulty(BOT_DIFFICULTY_MIN_LEVEL);
     botMarchesRef.current = [];
+    botTeleportEffectsRef.current = [];
     coreBarracksRef.current = { level: 1, trainTimer: 0, trainCarry: 0, productionQueue: 0 };
     productionSpawnsRef.current = [];
     productionSpawnIdRef.current = 1;
@@ -1395,6 +1398,9 @@ const trainingIntroTimerRef = useRef(null);
       productionSpawnTimer: 0,
       plannedMonsterIds: [],
       plannedWaitSeconds: 0,
+      teleportCooldown: 0,
+      teleportEffectId: null,
+      pendingTeleportTargetId: null,
     };
 
     botsRef.current = [...botsRef.current, nextBot];
@@ -1479,18 +1485,46 @@ const trainingIntroTimerRef = useRef(null);
     return null;
   }
 
-  function getBotMonsterEconomicScore(bot, monster, option) {
+  function getBotTeleportLanding(bot, monster) {
+    const dx = bot.x - monster.x;
+    const dy = bot.y - monster.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    return snapPointToLandingGrid({
+      x: monster.x + (dx / length) * MAJOR_GRID_STEP,
+      y: monster.y + (dy / length) * MAJOR_GRID_STEP,
+    }, bot.r || 30);
+  }
+
+  function getBotMonsterEconomicScore(bot, monster, option, allowTeleport = false) {
     const guards = option.guardsByLevel;
     const result = calculateDamageAndReturn(guards, monster);
     if (result.monsterRemainingHp > 0) return null;
-    const attackSeconds = getMarchDuration(bot.x, bot.y, monster.x, monster.y, "attack");
-    const returnSeconds = getMarchDuration(monster.x, monster.y, bot.x, bot.y, "return");
+    const directAttackSeconds = getMarchDuration(bot.x, bot.y, monster.x, monster.y, "attack");
+    const directReturnSeconds = getMarchDuration(monster.x, monster.y, bot.x, bot.y, "return");
     const sentElements = getTotalGuardElementsFromMap(guards);
     const returnedElements = getTotalGuardElementsFromMap(result.returnGuardsByLevel);
     const lostElements = Math.max(0, sentElements - returnedElements);
     const replacementSeconds = lostElements * ARMY_PRODUCTION_SPAWN_SECONDS;
     const xpValue = Math.max(0.0001, Number(monster.maxHp || monster.hp || 0) * getMonsterXpMultiplier(bot.level, monster.armor || 1));
-    const totalSeconds = Math.max(0.1, option.waitSeconds + attackSeconds + returnSeconds + replacementSeconds);
+    let attackSeconds = directAttackSeconds;
+    let returnSeconds = directReturnSeconds;
+    let teleport = false;
+    let teleportLanding = null;
+    let travelSetupSeconds = 0;
+    if (allowTeleport && (bot.teleportCooldown || 0) <= 0 && !bot.teleportEffectId) {
+      const landing = getBotTeleportLanding(bot, monster);
+      const postTeleportAttack = getMarchDuration(landing.x, landing.y, monster.x, monster.y, "attack");
+      const postTeleportReturn = getMarchDuration(monster.x, monster.y, landing.x, landing.y, "return");
+      const teleportSetup = TELEPORT_CAST_SECONDS + TELEPORT_ARRIVAL_SECONDS;
+      if (teleportSetup + postTeleportAttack + postTeleportReturn < directAttackSeconds + directReturnSeconds) {
+        teleport = true;
+        teleportLanding = landing;
+        travelSetupSeconds = teleportSetup;
+        attackSeconds = postTeleportAttack;
+        returnSeconds = postTeleportReturn;
+      }
+    }
+    const totalSeconds = Math.max(0.1, option.waitSeconds + travelSetupSeconds + attackSeconds + returnSeconds + replacementSeconds);
     return {
       monster,
       waitSeconds: option.waitSeconds,
@@ -1499,18 +1533,20 @@ const trainingIntroTimerRef = useRef(null);
       returnSeconds,
       lostElements,
       xpValue,
+      teleport,
+      teleportLanding,
       score: xpValue / totalSeconds,
     };
   }
 
-  function planEconomicBotTargets(bot) {
+  function planEconomicBotTargets(bot, allowTeleport = false) {
     const reserved = getReservedMonsterIdsForBots(bot.id);
     const options = [];
     for (const monster of worldRef.current.monsters || []) {
       if (!monster || monster.hp <= 0 || reserved.has(monster.id)) continue;
       const production = estimateBotProductionWait(bot, monster);
       if (!production) continue;
-      const evaluated = getBotMonsterEconomicScore(bot, monster, production);
+      const evaluated = getBotMonsterEconomicScore(bot, monster, production, allowTeleport);
       if (evaluated) options.push(evaluated);
     }
     options.sort((left, right) => right.score - left.score || left.attackSeconds - right.attackSeconds);
@@ -1779,16 +1815,66 @@ const trainingIntroTimerRef = useRef(null);
     botMarchesRef.current = nextMarches;
   }
 
+  function startBotTeleport(bot, decision) {
+    if (!bot || !decision?.teleportLanding || bot.activeMarchId || bot.teleportEffectId) return false;
+    const effect = {
+      id: `bot-teleport-${Date.now()}-${Math.random()}`,
+      botId: bot.id,
+      active: true,
+      phase: "cast",
+      timer: 0,
+      origin: { x: bot.x, y: bot.y },
+      target: { ...decision.teleportLanding },
+      targetMonsterId: decision.monster.id,
+    };
+    bot.teleportEffectId = effect.id;
+    bot.pendingTeleportTargetId = decision.monster.id;
+    bot.state = "teleporting";
+    botTeleportEffectsRef.current.push(effect);
+    return true;
+  }
+
+  function updateBotTeleports(dt) {
+    const nextEffects = [];
+    for (const effect of botTeleportEffectsRef.current || []) {
+      const bot = getBotById(effect.botId);
+      if (!bot || !bot.alive) continue;
+      effect.timer += dt;
+      if (effect.phase === "cast" && effect.timer >= TELEPORT_CAST_SECONDS) {
+        bot.x = effect.target.x;
+        bot.y = effect.target.y;
+        bot.teleportCooldown = TELEPORT_COOLDOWN_SECONDS;
+        effect.phase = "arrival";
+        effect.timer = 0;
+      }
+      if (effect.phase === "arrival" && effect.timer >= TELEPORT_ARRIVAL_SECONDS) {
+        bot.teleportEffectId = null;
+        const target = (worldRef.current.monsters || []).find((monster) => monster.id === effect.targetMonsterId);
+        bot.pendingTeleportTargetId = null;
+        if (target && canBotDefeatMonster(bot, target) && !getReservedMonsterIdsForBots(bot.id).has(target.id)) {
+          launchBotMarch(bot, target);
+        } else {
+          bot.state = "waiting";
+          bot.rallyTimer = 0;
+        }
+        continue;
+      }
+      nextEffects.push(effect);
+    }
+    botTeleportEffectsRef.current = nextEffects;
+  }
+
   function updateBots(dt) {
     for (const bot of botsRef.current || []) {
       if (!bot.alive || bot.level >= MAX_BUILDING_LEVEL) continue;
       updateBotArmyProduction(bot, dt);
-      if (bot.activeMarchId) continue;
+      bot.teleportCooldown = Math.max(0, Number(bot.teleportCooldown || 0) - dt);
+      if (bot.activeMarchId || bot.teleportEffectId) continue;
       bot.rallyTimer = Math.max(0, (bot.rallyTimer || 0) - dt);
       if (bot.rallyTimer > 0) continue;
       const difficulty = Math.round(botDifficultyRef.current || BOT_DIFFICULTY_MIN_LEVEL);
       if (difficulty >= 4) {
-        const decision = planEconomicBotTargets(bot);
+        const decision = planEconomicBotTargets(bot, difficulty >= 5);
         if (!decision) {
           bot.rallyTimer = getRandomBotRallySeconds();
           bot.state = "waiting";
@@ -1797,6 +1883,10 @@ const trainingIntroTimerRef = useRef(null);
         if (decision.waitSeconds > 0) {
           bot.rallyTimer = Math.max(0.25, decision.waitSeconds);
           bot.state = "waitingForArmy";
+          continue;
+        }
+        if (difficulty >= 5 && decision.teleport) {
+          startBotTeleport(bot, decision);
           continue;
         }
         launchBotMarch(bot, decision.monster);
@@ -2678,6 +2768,7 @@ const trainingIntroTimerRef = useRef(null);
     updateMonsterRespawns();
     updateMarches(dt);
     updateBotMarches(dt);
+    updateBotTeleports(dt);
     updateBots(dt);
     updateMapTutorial(dt);
 
@@ -3384,6 +3475,7 @@ const trainingIntroTimerRef = useRef(null);
     drawMonsters(ctx, world.monsters, selectedMonsterRef.current?.id, tutorialFreeTargetIdsRef.current);
     drawLandingPreview(ctx, landingPreviewRef.current);
     drawTeleportEffectRings(ctx, teleportEffectRef.current);
+    for (const effect of botTeleportEffectsRef.current || []) drawTeleportEffectRings(ctx, effect);
     drawMarches(ctx, marchesRef.current);
     drawMarches(ctx, botMarchesRef.current);
     try {
