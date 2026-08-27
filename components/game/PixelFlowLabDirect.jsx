@@ -9566,7 +9566,7 @@ const styles = {
     background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)", zIndex: 4,
   },
 
-  attackJoystick: { position:"absolute",right:18,bottom:122,width:84,height:84,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"transparent",border:"1px solid transparent",boxShadow:"none" },
+  attackJoystick: { position:"absolute",right:74,bottom:148,width:84,height:84,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"transparent",border:"1px solid transparent",boxShadow:"none" },
   attackJoystickActive: { borderColor:"transparent",boxShadow:"none" },
   attackJoystickDisabled: { opacity:.34,filter:"grayscale(.8)",pointerEvents:"none" },
   attackJoystickCrosshair: { position:"absolute",inset:0,display:"grid",placeItems:"center",color:"transparent",fontSize:31,fontWeight:900,pointerEvents:"none" },
