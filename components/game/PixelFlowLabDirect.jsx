@@ -54,6 +54,14 @@ const CORE_NAMEPLATE_VISUAL_PADDING = 9;
 const CORE_STATUS_BAR_WIDTH = 112;
 const CORE_STATUS_BAR_HEIGHT = 4;
 const CORE_STATUS_BAR_GAP = 2;
+const ATTACK_AIM_MIN_WORLD_DISTANCE = 180;
+const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
+const ATTACK_AIM_FORWARD_SPEED = 2300;
+const ATTACK_AIM_REVERSE_SPEED = 1850;
+const ATTACK_AIM_NEUTRAL_DRAG_PX = 25;
+const ATTACK_AIM_MAX_DRAG_PX = 92;
+const ATTACK_AIM_LOCK_RADIUS_PX = 34;
+const ATTACK_AIM_RELEASE_RADIUS_PX = 48;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
@@ -538,7 +546,7 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const tutorialLandingTargetRef = useRef(null);
   const selectedMonsterRef = useRef(null);
   const selectedCoreRef = useRef(null);
-  const attackJoystickRef = useRef({ active: false, pointerId: null, dx: 0, dy: 0 });
+  const attackJoystickRef = useRef({ active: false, pointerId: null, dx: 0, dy: 0, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: 0, aimWorldY: 0, lockedTarget: null });
   const [attackJoystick, setAttackJoystick] = useState({ active: false, dx: 0, dy: 0, targetType: null });
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
@@ -1291,6 +1299,8 @@ const trainingIntroTimerRef = useRef(null);
     monsterSearchIndexRef.current = { tier: 1, index: -1 };
     updateSelectedMonster(null);
     updateSelectedCore(null);
+    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: 0, aimWorldY: 0, lockedTarget: null };
+    setAttackJoystick({ active: false, dx: 0, dy: 0, targetType: null });
     updateSelectedBuilding(null);
 
     const spawn = snapPointToLandingGrid({
@@ -3009,6 +3019,7 @@ const trainingIntroTimerRef = useRef(null);
     }
 
     updateCoreDurability(player, dt);
+    updateAttackAim(dt);
 
     updateTeleportEffect(dt);
     updateMonsterRespawns();
@@ -3841,6 +3852,7 @@ const trainingIntroTimerRef = useRef(null);
       drawCoreNameplate(ctx, bot, bot.guardsByLevel || {}, isSelected, status);
     }
     drawCoreNameplate(ctx, player, cityStatsRef.current.guardsByLevel || {}, false, null);
+    drawAttackAim(ctx, attackJoystickRef.current, player, camera.zoom);
 
     ctx.restore();
   }
@@ -4852,53 +4864,73 @@ const trainingIntroTimerRef = useRef(null);
     return null;
   }
 
-  function getAttackJoystickTarget(dx, dy) {
-    const player = playerRef.current;
-    if (!player || Math.hypot(dx, dy) < 18) return null;
-    const length = Math.hypot(dx, dy), directionX = dx / length, directionY = dy / length;
-    const playerScreen = worldToScreen(player.x, player.y);
-    const candidates = [
-      ...(worldRef.current.monsters || []).filter((item) => item && item.hp > 0).map((item) => ({ type: "monster", item })),
-      ...(botsRef.current || []).filter((item) => item && item.alive !== false).map((item) => ({ type: "core", item })),
+  function getAttackableAimTargets() {
+    return [
+      ...(worldRef.current.monsters || []).filter((item) => item && item.hp > 0).map((item) => ({ type: "monster", item, x: item.x, y: item.y, radius: item.r || 18 })),
+      ...(botsRef.current || []).filter((item) => item && item.alive !== false).map((item) => ({ type: "core", item, x: item.x, y: item.y, radius: item.r || 30 })),
     ];
-    let best = null;
-    for (const candidate of candidates) {
-      const screen = worldToScreen(candidate.item.x, candidate.item.y);
-      const tx = screen.x - playerScreen.x, ty = screen.y - playerScreen.y;
-      const distance = Math.max(1, Math.hypot(tx, ty));
-      const alignment = (tx / distance) * directionX + (ty / distance) * directionY;
-      if (alignment < 0.72) continue;
-      const score = alignment * 900 - distance;
-      if (!best || score > best.score) best = { ...candidate, score };
+  }
+  function findAttackAimLock(aim) {
+    const cursor = worldToScreen(aim.aimWorldX, aim.aimWorldY);
+    if (!cursor) return null;
+    const current = aim.lockedTarget;
+    if (current && current.item && (current.type !== "monster" || current.item.hp > 0) && (current.type !== "core" || current.item.alive !== false)) {
+      const screen = worldToScreen(current.x, current.y);
+      if (screen && Math.hypot(cursor.x - screen.x, cursor.y - screen.y) <= ATTACK_AIM_RELEASE_RADIUS_PX) return current;
+    }
+    let best = null, bestDistance = Infinity;
+    for (const target of getAttackableAimTargets()) {
+      const screen = worldToScreen(target.x, target.y);
+      if (!screen) continue;
+      const distance = Math.hypot(cursor.x - screen.x, cursor.y - screen.y);
+      if (distance <= ATTACK_AIM_LOCK_RADIUS_PX && distance < bestDistance) { best = target; bestDistance = distance; }
     }
     return best;
+  }
+  function updateAttackAim(dt) {
+    const aim = attackJoystickRef.current, player = playerRef.current, camera = cameraRef.current;
+    if (!aim.active || !player) return;
+    const drag = Math.hypot(aim.dx, aim.dy);
+    if (drag > 7) aim.angle = Math.atan2(aim.dy, aim.dx);
+    const forward = clamp((drag - ATTACK_AIM_NEUTRAL_DRAG_PX) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - ATTACK_AIM_NEUTRAL_DRAG_PX), 0, 1);
+    const reverse = clamp((ATTACK_AIM_NEUTRAL_DRAG_PX - drag) / ATTACK_AIM_NEUTRAL_DRAG_PX, 0, 1);
+    aim.aimDistance = clamp(aim.aimDistance + (forward * ATTACK_AIM_FORWARD_SPEED - reverse * ATTACK_AIM_REVERSE_SPEED) * dt, ATTACK_AIM_MIN_WORLD_DISTANCE, ATTACK_AIM_MAX_WORLD_DISTANCE);
+    aim.aimWorldX = player.x + Math.cos(aim.angle) * aim.aimDistance;
+    aim.aimWorldY = player.y + Math.sin(aim.angle) * aim.aimDistance;
+    aim.lockedTarget = findAttackAimLock(aim);
+    const distanceProgress = (aim.aimDistance - ATTACK_AIM_MIN_WORLD_DISTANCE) / Math.max(1, ATTACK_AIM_MAX_WORLD_DISTANCE - ATTACK_AIM_MIN_WORLD_DISTANCE);
+    const targetZoom = mixNumber(MAX_ZOOM, Math.max(MIN_ZOOM, 0.16), distanceProgress);
+    const follow = Math.min(1, dt * 6.5), zoomFollow = Math.min(1, dt * 3.2);
+    camera.x += (player.x - camera.x) * follow;
+    camera.y += (player.y - camera.y) * follow;
+    camera.zoom += (targetZoom - camera.zoom) * zoomFollow;
+    clampCameraToWorld();
   }
   function updateAttackJoystick(clientX, clientY, element) {
     const rect = element.getBoundingClientRect();
     const rawDx = clientX - (rect.left + rect.width / 2), rawDy = clientY - (rect.top + rect.height / 2);
-    const length = Math.hypot(rawDx, rawDy), scale = length > 34 ? 34 / length : 1;
-    const dx = rawDx * scale, dy = rawDy * scale;
-    attackJoystickRef.current.dx = dx; attackJoystickRef.current.dy = dy;
-    const target = getAttackJoystickTarget(dx, dy);
-    setAttackJoystick({ active: true, dx, dy, targetType: target?.type || null });
+    const drag = Math.hypot(rawDx, rawDy), visualScale = drag > 34 ? 34 / drag : 1;
+    attackJoystickRef.current.dx = rawDx;
+    attackJoystickRef.current.dy = rawDy;
+    setAttackJoystick({ active: true, dx: rawDx * visualScale, dy: rawDy * visualScale, targetType: attackJoystickRef.current.lockedTarget?.type || null });
   }
   function beginAttackJoystick(event) {
     if (homeGuards <= 0 || teleportModeRef.current) return;
-    event.preventDefault(); event.stopPropagation();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: 0 };
-    updateAttackJoystick(event.clientX, event.clientY, event.currentTarget);
+    event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture?.(event.pointerId);
+    const player = playerRef.current;
+    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: -ATTACK_AIM_NEUTRAL_DRAG_PX, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: player?.x || 0, aimWorldY: (player?.y || 0) - ATTACK_AIM_MIN_WORLD_DISTANCE, lockedTarget: null };
+    setAttackJoystick({ active: true, dx: 0, dy: 0, targetType: null });
   }
   function moveAttackJoystick(event) {
     if (!attackJoystickRef.current.active || attackJoystickRef.current.pointerId !== event.pointerId) return;
-    event.preventDefault(); event.stopPropagation();
-    updateAttackJoystick(event.clientX, event.clientY, event.currentTarget);
+    event.preventDefault(); event.stopPropagation(); updateAttackJoystick(event.clientX, event.clientY, event.currentTarget);
   }
   function endAttackJoystick(event) {
-    if (!attackJoystickRef.current.active || attackJoystickRef.current.pointerId !== event.pointerId) return;
+    const aim = attackJoystickRef.current;
+    if (!aim.active || aim.pointerId !== event.pointerId) return;
     event.preventDefault(); event.stopPropagation();
-    const target = getAttackJoystickTarget(attackJoystickRef.current.dx, attackJoystickRef.current.dy);
-    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0 };
+    const target = aim.lockedTarget;
+    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0, angle: aim.angle, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: 0, aimWorldY: 0, lockedTarget: null };
     setAttackJoystick({ active: false, dx: 0, dy: 0, targetType: null });
     if (!target) return;
     if (target.type === "core") { updateSelectedCore(target.item); requestAnimationFrame(beginAttackSelectedCore); }
@@ -4906,7 +4938,7 @@ const trainingIntroTimerRef = useRef(null);
   }
   function cancelAttackJoystick(event) {
     if (attackJoystickRef.current.pointerId !== event.pointerId) return;
-    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0 };
+    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: 0, aimWorldY: 0, lockedTarget: null };
     setAttackJoystick({ active: false, dx: 0, dy: 0, targetType: null });
   }
 
@@ -6378,6 +6410,33 @@ const trainingIntroTimerRef = useRef(null);
       )}
     </div>
   );
+}
+
+function drawAttackAim(ctx, aim, player, zoom) {
+  if (!aim?.active || !player) return;
+  const target = aim.lockedTarget;
+  const endX = target ? target.x : aim.aimWorldX;
+  const endY = target ? target.y : aim.aimWorldY;
+  const dx = endX - player.x, dy = endY - player.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const ux = dx / distance, uy = dy / distance;
+  const ringRadius = target ? Math.max(target.radius || 18, 18 / Math.max(.1, zoom)) + 9 / Math.max(.1, zoom) : 0;
+  const gapStartX = endX - ux * ringRadius, gapStartY = endY - uy * ringRadius;
+  const gapEndX = endX + ux * ringRadius, gapEndY = endY + uy * ringRadius;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.shadowBlur = 11 / Math.max(.1, zoom);
+  ctx.shadowColor = target ? "rgba(251,113,133,.9)" : "rgba(103,232,249,.8)";
+  ctx.strokeStyle = target ? "rgba(251,113,133,.9)" : "rgba(103,232,249,.78)";
+  ctx.lineWidth = 2.2 / Math.max(.1, zoom);
+  ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(target ? gapStartX : endX, target ? gapStartY : endY); ctx.stroke();
+  if (target) {
+    ctx.beginPath(); ctx.moveTo(gapEndX, gapEndY); ctx.lineTo(gapEndX + ux * 45 / Math.max(.1, zoom), gapEndY + uy * 45 / Math.max(.1, zoom)); ctx.stroke();
+    ctx.lineWidth = 2.8 / Math.max(.1, zoom);
+    ctx.beginPath(); ctx.arc(endX, endY, ringRadius, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = .36; ctx.lineWidth = 7 / Math.max(.1, zoom); ctx.beginPath(); ctx.arc(endX, endY, ringRadius, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawSpaceBackground(ctx, width, height) {
@@ -9423,10 +9482,10 @@ const styles = {
     background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)", zIndex: 4,
   },
 
-  attackJoystick: { position:"absolute",right:18,bottom:122,width:84,height:84,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"radial-gradient(circle at 50% 50%,rgba(15,23,42,.90) 0 36%,rgba(8,47,73,.66) 37% 68%,rgba(2,6,23,.84) 69%)",border:"1px solid rgba(103,232,249,.42)",boxShadow:"0 10px 28px rgba(0,0,0,.42),inset 0 0 18px rgba(34,211,238,.12)" },
-  attackJoystickActive: { borderColor:"rgba(251,113,133,.78)",boxShadow:"0 10px 28px rgba(0,0,0,.46),0 0 24px rgba(244,63,94,.22),inset 0 0 20px rgba(244,63,94,.12)" },
+  attackJoystick: { position:"absolute",right:18,bottom:122,width:84,height:84,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"transparent",border:"1px solid transparent",boxShadow:"none" },
+  attackJoystickActive: { borderColor:"transparent",boxShadow:"none" },
   attackJoystickDisabled: { opacity:.34,filter:"grayscale(.8)",pointerEvents:"none" },
-  attackJoystickCrosshair: { position:"absolute",inset:0,display:"grid",placeItems:"center",color:"rgba(103,232,249,.28)",fontSize:31,fontWeight:900,pointerEvents:"none" },
+  attackJoystickCrosshair: { position:"absolute",inset:0,display:"grid",placeItems:"center",color:"transparent",fontSize:31,fontWeight:900,pointerEvents:"none" },
   attackJoystickKnob: { position:"absolute",left:22,top:22,width:38,height:38,borderRadius:"50%",display:"grid",placeItems:"center",background:"linear-gradient(180deg,rgba(30,41,59,.98),rgba(15,23,42,.98))",border:"1px solid rgba(165,243,252,.72)",color:"#e0f2fe",fontSize:17,fontWeight:950,boxShadow:"0 4px 12px rgba(0,0,0,.46),0 0 13px rgba(34,211,238,.20)",pointerEvents:"none" },
   attackJoystickKnobLocked: { borderColor:"rgba(251,113,133,.95)",color:"#fecdd3",boxShadow:"0 4px 14px rgba(0,0,0,.5),0 0 18px rgba(244,63,94,.48)" },
   iconControlButton: {
