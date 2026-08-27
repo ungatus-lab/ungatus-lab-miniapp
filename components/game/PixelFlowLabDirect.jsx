@@ -49,6 +49,8 @@ const CORE_DURABILITY_REGEN_SECONDS = 240;
 const CORE_BASE_DURABILITY = 1000;
 const BOT_CORE_RESPAWN_SECONDS = 120;
 const BOT_CORE_RESPAWN_AREA_RADIUS = 650;
+const CORE_NAMEPLATE_GAP = 14;
+const CORE_NAMEPLATE_VISUAL_PADDING = 9;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
@@ -3805,9 +3807,9 @@ const trainingIntroTimerRef = useRef(null);
     }
     drawPlayer(ctx, player);
     for (const bot of botsRef.current) {
-      if (bot.alive) drawCoreNameplate(ctx, bot, selectedCoreRef.current?.id === bot.id);
+      if (bot.alive) drawCoreNameplate(ctx, bot, bot.guardsByLevel || {}, selectedCoreRef.current?.id === bot.id);
     }
-    drawCoreNameplate(ctx, player, false);
+    drawCoreNameplate(ctx, player, cityStatsRef.current.guardsByLevel || {}, false);
 
     ctx.restore();
   }
@@ -7299,8 +7301,41 @@ function mixMarchReturnColor(fill) {
   if (fill.includes("165,243,252")) return "rgba(134,239,172,0.96)";
   return "rgba(134,239,172,0.92)";
 }
-function drawCoreNameplate(ctx, core, selected = false) {
+function getCoreArmyVisualExtent(core, guardsByLevel, time = Date.now() / 1000) {
+  const coreRadius = Math.max(1, Number(core?.r) || 30);
+  const units = buildArmyRepresentatives(guardsByLevel || {});
+  if (!units.length) {
+    return { topExtent: coreRadius, outerRadius: coreRadius, visibleElements: 0, layerCount: 0 };
+  }
+  const layerSize = 42;
+  const layerCount = Math.max(1, Math.ceil(units.length / layerSize));
+  let topEdge = core.y - coreRadius;
+  let outerRadius = coreRadius;
+  for (let index = 0; index < units.length; index += 1) {
+    const unit = units[index];
+    const layer = Math.floor(index / layerSize);
+    const slotIndex = index % layerSize;
+    const itemsInLayer = Math.min(layerSize, units.length - layer * layerSize);
+    const transition = getArmyLayerTransition({ unit, layer, layerCount, slotIndex, time });
+    const position = getArmyOrbitPosition({
+      player: core, unit, slotIndex, itemsInLayer, layer, time, transition,
+    });
+    const visualPadding = CORE_NAMEPLATE_VISUAL_PADDING + Math.min(8, Math.max(0, Number(unit?.cycleStep || 1) - 1));
+    topEdge = Math.min(topEdge, position.y - visualPadding);
+    outerRadius = Math.max(outerRadius, Math.hypot(position.x - core.x, position.y - core.y) + visualPadding);
+  }
+  return {
+    topExtent: Math.max(coreRadius, core.y - topEdge),
+    outerRadius,
+    visibleElements: units.length,
+    layerCount,
+  };
+}
+
+function drawCoreNameplate(ctx, core, guardsByLevel = {}, selected = false) {
   if (!core?.name) return;
+  const extent = getCoreArmyVisualExtent(core, guardsByLevel);
+  const labelY = core.y - extent.topExtent - CORE_NAMEPLATE_GAP;
   ctx.save();
   ctx.font = "800 18px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
@@ -7308,9 +7343,9 @@ function drawCoreNameplate(ctx, core, selected = false) {
   ctx.lineWidth = 5;
   ctx.strokeStyle = "rgba(2,6,23,0.88)";
   const label = `${core.name} · LV ${Math.round(core.level || 1)}`;
-  ctx.strokeText(label, core.x, core.y - (core.r || 30) - 18);
+  ctx.strokeText(label, core.x, labelY);
   ctx.fillStyle = selected ? "#fca5a5" : "#e0f2fe";
-  ctx.fillText(label, core.x, core.y - (core.r || 30) - 18);
+  ctx.fillText(label, core.x, labelY);
   if (selected) {
     ctx.beginPath(); ctx.strokeStyle = "rgba(248,113,113,0.95)"; ctx.lineWidth = 4;
     ctx.arc(core.x, core.y, (core.r || 30) + 11, 0, Math.PI * 2); ctx.stroke();
