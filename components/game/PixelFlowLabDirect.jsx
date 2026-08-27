@@ -5848,14 +5848,12 @@ const trainingIntroTimerRef = useRef(null);
           </div>
           <div style={styles.devLabBotLine}>
             <button style={styles.devLabBotButton} onClick={removeBotCoreForDevLab} disabled={botCount <= 0}>−</button>
-            <span>BOTS</span>
-            <strong>{botCount}</strong>
+            <div style={styles.devLabBotCenter}><span>BOTS</span><strong>{botCount}</strong></div>
             <button style={styles.devLabBotButton} onClick={spawnBotCoreForDevLab}>＋</button>
           </div>
           <div style={styles.devLabBotLine}>
             <button style={styles.devLabBotButton} onClick={() => setBotDifficultyLevel(botDifficulty - 1)} disabled={botDifficulty <= BOT_DIFFICULTY_MIN_LEVEL}>−</button>
-            <span>BOT DIFFICULTY</span>
-            <strong>{botDifficulty}</strong>
+            <div style={styles.devLabBotCenter}><span>BOT DIFFICULTY</span><strong>{botDifficulty}</strong></div>
             <button style={styles.devLabBotButton} onClick={() => setBotDifficultyLevel(botDifficulty + 1)} disabled={botDifficulty >= BOT_DIFFICULTY_MAX_LEVEL}>＋</button>
           </div>
           <div style={styles.devLabCityLine}><small>CORE B{cityStats.level} · CAP {formatCompactNumber(cityStats.guardCap)}</small></div>
@@ -8320,8 +8318,9 @@ const styles = {
   devLabPanel: { position:"absolute",right:10,top:78,zIndex:45,width:148,padding:8,borderRadius:16,boxSizing:"border-box",background:"rgba(12,18,34,.94)",border:"1px solid rgba(192,132,252,.72)",boxShadow:"0 12px 38px rgba(0,0,0,.48),0 0 22px rgba(168,85,247,.18)",backdropFilter:"blur(10px)" },
   devLabHeader: { display:"flex",justifyContent:"space-between",alignItems:"center",color:"#e9d5ff",fontSize:9,fontWeight:950,letterSpacing:".08em" },
   devLabControls: { display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,margin:"7px 0 4px" },
-  devLabBotLine: { display:"grid",gridTemplateColumns:"24px 1fr 28px 24px",alignItems:"center",gap:4,margin:"5px 0",padding:"5px",borderRadius:10,border:"1px solid rgba(103,232,249,.22)",background:"rgba(8,47,73,.36)",color:"#a5f3fc",fontSize:8,fontWeight:950,letterSpacing:".06em" },
-  devLabBotButton: { height:22,borderRadius:7,border:"1px solid rgba(103,232,249,.38)",background:"rgba(15,23,42,.82)",color:"#e0f2fe",fontWeight:950,cursor:"pointer" },
+  devLabBotLine: { display:"grid",gridTemplateColumns:"26px minmax(0,1fr) 26px",alignItems:"center",gap:5,margin:"5px 0",padding:"5px",boxSizing:"border-box",width:"100%",borderRadius:10,border:"1px solid rgba(103,232,249,.22)",background:"rgba(8,47,73,.36)",color:"#a5f3fc",fontSize:8,fontWeight:950,letterSpacing:".06em" },
+  devLabBotCenter: { minWidth:0,display:"flex",alignItems:"center",justifyContent:"space-between",gap:5,overflow:"hidden",whiteSpace:"nowrap" },
+  devLabBotButton: { width:26,minWidth:26,height:22,padding:0,boxSizing:"border-box",borderRadius:7,border:"1px solid rgba(103,232,249,.38)",background:"rgba(15,23,42,.82)",color:"#e0f2fe",fontWeight:950,cursor:"pointer" },
   devLabCityLine: { display:"flex",alignItems:"center",justifyContent:"space-between",gap:6 },
   devLabGridReportButton: { minWidth:54,height:22,padding:"0 7px",borderRadius:7,border:"1px solid rgba(103,232,249,.48)",background:"rgba(8,47,73,.72)",color:"#a5f3fc",fontSize:8,fontWeight:950,letterSpacing:".05em",cursor:"pointer" },
   cityGridReportBackdrop: { position:"fixed",inset:0,zIndex:240,display:"grid",placeItems:"center",padding:12,boxSizing:"border-box",background:"rgba(0,4,12,.78)",backdropFilter:"blur(9px)" },
