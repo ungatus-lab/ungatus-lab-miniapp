@@ -67,6 +67,9 @@ const ATTACK_AIM_LOCK_RADIUS_PX = 52;
 const ATTACK_AIM_RELEASE_RADIUS_PX = 78;
 const ATTACK_AIM_ASSIST_RADIUS_PX = 108;
 const ATTACK_AIM_ASSIST_MIN_SPEED = 0.22;
+const ATTACK_AIM_LANE_HALF_WIDTH_PX = 72;
+const ATTACK_AIM_LANE_RELEASE_PX = 118;
+const ATTACK_AIM_TARGET_SWITCH_MARGIN_PX = 18;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
@@ -4875,22 +4878,52 @@ const trainingIntroTimerRef = useRef(null);
       ...(botsRef.current || []).filter((item) => item && item.alive !== false).map((item) => ({ type: "core", item, x: item.x, y: item.y, radius: item.r || 30 })),
     ];
   }
-  function findAttackAimLock(aim) {
-    const cursor = worldToScreen(aim.aimWorldX, aim.aimWorldY);
-    if (!cursor) return null;
-    const current = aim.lockedTarget;
-    if (current && current.item && (current.type !== "monster" || current.item.hp > 0) && (current.type !== "core" || current.item.alive !== false)) {
-      const screen = worldToScreen(current.x, current.y);
-      if (screen && Math.hypot(cursor.x - screen.x, cursor.y - screen.y) <= ATTACK_AIM_RELEASE_RADIUS_PX) return current;
-    }
-    let best = null, bestDistance = Infinity;
-    for (const target of getAttackableAimTargets()) {
+  function getAttackAimLaneTargets(aim) {
+    const player = playerRef.current, canvas = canvasRef.current;
+    if (!player || !canvas) return [];
+    const ux = Math.cos(aim.angle), uy = Math.sin(aim.angle);
+    const zoom = Math.max(0.001, cameraRef.current.zoom);
+    return getAttackableAimTargets().map((target) => {
+      const dx = target.x - player.x, dy = target.y - player.y;
+      const radial = dx * ux + dy * uy;
+      const lateralPx = Math.abs(dx * -uy + dy * ux) * zoom;
       const screen = worldToScreen(target.x, target.y);
-      if (!screen) continue;
-      const distance = Math.hypot(cursor.x - screen.x, cursor.y - screen.y);
-      if (distance <= ATTACK_AIM_LOCK_RADIUS_PX && distance < bestDistance) { best = target; bestDistance = distance; }
+      const visible = screen && screen.x >= -40 && screen.x <= canvas.clientWidth + 40 && screen.y >= -40 && screen.y <= canvas.clientHeight + 40;
+      return { ...target, radial, lateralPx, visible };
+    }).filter((target) => target.visible && target.radial >= ATTACK_AIM_MIN_WORLD_DISTANCE * .55 && target.lateralPx <= ATTACK_AIM_LANE_HALF_WIDTH_PX)
+      .sort((left, right) => left.radial - right.radial || left.lateralPx - right.lateralPx);
+  }
+  function findAttackAimLock(aim, radialVelocity = 0) {
+    const lane = getAttackAimLaneTargets(aim);
+    const current = aim.lockedTarget;
+    if (!lane.length) return null;
+    let currentIndex = current ? lane.findIndex((target) => target.type === current.type && target.item?.id === current.item?.id) : -1;
+    if (current && currentIndex < 0) {
+      const player = playerRef.current;
+      const dx = current.x - player.x, dy = current.y - player.y;
+      const lateralPx = Math.abs(dx * -Math.sin(aim.angle) + dy * Math.cos(aim.angle)) * Math.max(.001, cameraRef.current.zoom);
+      if (lateralPx <= ATTACK_AIM_LANE_RELEASE_PX) return current;
     }
-    return best;
+    if (currentIndex >= 0) {
+      const currentTarget = lane[currentIndex];
+      if (radialVelocity > 0 && currentIndex < lane.length - 1) {
+        const next = lane[currentIndex + 1];
+        const threshold = (currentTarget.radial + next.radial) * .5 + ATTACK_AIM_TARGET_SWITCH_MARGIN_PX / Math.max(.001, cameraRef.current.zoom);
+        if (aim.aimDistance >= threshold) return next;
+      }
+      if (radialVelocity < 0 && currentIndex > 0) {
+        const previous = lane[currentIndex - 1];
+        const threshold = (previous.radial + currentTarget.radial) * .5 - ATTACK_AIM_TARGET_SWITCH_MARGIN_PX / Math.max(.001, cameraRef.current.zoom);
+        if (aim.aimDistance <= threshold) return previous;
+      }
+      return currentTarget;
+    }
+    const captureLead = ATTACK_AIM_LOCK_RADIUS_PX / Math.max(.001, cameraRef.current.zoom);
+    if (radialVelocity >= 0) return lane.find((target) => target.radial >= aim.aimDistance - captureLead) || lane[lane.length - 1];
+    for (let index = lane.length - 1; index >= 0; index -= 1) {
+      if (lane[index].radial <= aim.aimDistance + captureLead) return lane[index];
+    }
+    return lane[0];
   }
   function getAttackAimAssist(aim) {
     const cursor = worldToScreen(aim.aimWorldX, aim.aimWorldY);
@@ -4922,7 +4955,7 @@ const trainingIntroTimerRef = useRef(null);
     aim.aimDistance = clamp(aim.aimDistance + radialVelocity * assist.speedScale * dt, ATTACK_AIM_MIN_WORLD_DISTANCE, expandedRange);
     aim.aimWorldX = player.x + Math.cos(aim.angle) * aim.aimDistance;
     aim.aimWorldY = player.y + Math.sin(aim.angle) * aim.aimDistance;
-    aim.lockedTarget = findAttackAimLock(aim);
+    aim.lockedTarget = findAttackAimLock(aim, radialVelocity);
     const expansionProgress = clamp((aim.aimDistance - fixedZoomRange) / Math.max(1, expandedRange - fixedZoomRange), 0, 1);
     const targetZoom = expansionProgress <= 0
       ? ATTACK_AIM_NEAR_ZOOM
@@ -6441,7 +6474,8 @@ const trainingIntroTimerRef = useRef(null);
 
 function drawAttackAim(ctx, aim, player, zoom) {
   if (!aim?.active || !player) return;
-  const endX = aim.aimWorldX, endY = aim.aimWorldY;
+  const endX = aim.lockedTarget?.x ?? aim.aimWorldX;
+  const endY = aim.lockedTarget?.y ?? aim.aimWorldY;
   const dx = endX - player.x, dy = endY - player.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
   const ux = dx / distance, uy = dy / distance, nx = -uy, ny = ux;
