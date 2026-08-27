@@ -56,6 +56,9 @@ const CORE_STATUS_BAR_HEIGHT = 4;
 const CORE_STATUS_BAR_GAP = 2;
 const ATTACK_AIM_MIN_WORLD_DISTANCE = 180;
 const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
+const ATTACK_AIM_NEAR_ZOOM = 0.68;
+const ATTACK_AIM_FAR_ZOOM = 0.30;
+const ATTACK_AIM_VIEWPORT_RADIUS = 0.42;
 const ATTACK_AIM_FORWARD_SPEED = 2300;
 const ATTACK_AIM_REVERSE_SPEED = 1850;
 const ATTACK_AIM_NEUTRAL_DRAG_PX = 25;
@@ -4894,12 +4897,15 @@ const trainingIntroTimerRef = useRef(null);
     if (drag > 7) aim.angle = Math.atan2(aim.dy, aim.dx);
     const forward = clamp((drag - ATTACK_AIM_NEUTRAL_DRAG_PX) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - ATTACK_AIM_NEUTRAL_DRAG_PX), 0, 1);
     const reverse = clamp((ATTACK_AIM_NEUTRAL_DRAG_PX - drag) / ATTACK_AIM_NEUTRAL_DRAG_PX, 0, 1);
-    aim.aimDistance = clamp(aim.aimDistance + (forward * ATTACK_AIM_FORWARD_SPEED - reverse * ATTACK_AIM_REVERSE_SPEED) * dt, ATTACK_AIM_MIN_WORLD_DISTANCE, ATTACK_AIM_MAX_WORLD_DISTANCE);
+    const canvas = canvasRef.current;
+    const screenRadius = canvas ? Math.min(canvas.clientWidth, canvas.clientHeight) * ATTACK_AIM_VIEWPORT_RADIUS : 320;
+    const visibleWorldLimit = Math.min(ATTACK_AIM_MAX_WORLD_DISTANCE, screenRadius / Math.max(ATTACK_AIM_FAR_ZOOM, camera.zoom));
+    aim.aimDistance = clamp(aim.aimDistance + (forward * ATTACK_AIM_FORWARD_SPEED - reverse * ATTACK_AIM_REVERSE_SPEED) * dt, ATTACK_AIM_MIN_WORLD_DISTANCE, visibleWorldLimit);
     aim.aimWorldX = player.x + Math.cos(aim.angle) * aim.aimDistance;
     aim.aimWorldY = player.y + Math.sin(aim.angle) * aim.aimDistance;
     aim.lockedTarget = findAttackAimLock(aim);
-    const distanceProgress = (aim.aimDistance - ATTACK_AIM_MIN_WORLD_DISTANCE) / Math.max(1, ATTACK_AIM_MAX_WORLD_DISTANCE - ATTACK_AIM_MIN_WORLD_DISTANCE);
-    const targetZoom = mixNumber(MAX_ZOOM, Math.max(MIN_ZOOM, 0.16), distanceProgress);
+    const distanceProgress = clamp((aim.aimDistance - ATTACK_AIM_MIN_WORLD_DISTANCE) / Math.max(1, visibleWorldLimit - ATTACK_AIM_MIN_WORLD_DISTANCE), 0, 1);
+    const targetZoom = mixNumber(ATTACK_AIM_NEAR_ZOOM, ATTACK_AIM_FAR_ZOOM, distanceProgress);
     const follow = Math.min(1, dt * 6.5), zoomFollow = Math.min(1, dt * 3.2);
     camera.x += (player.x - camera.x) * follow;
     camera.y += (player.y - camera.y) * follow;
@@ -6414,27 +6420,61 @@ const trainingIntroTimerRef = useRef(null);
 
 function drawAttackAim(ctx, aim, player, zoom) {
   if (!aim?.active || !player) return;
-  const target = aim.lockedTarget;
-  const endX = target ? target.x : aim.aimWorldX;
-  const endY = target ? target.y : aim.aimWorldY;
-  const dx = endX - player.x, dy = endY - player.y;
+  const rawEndX = aim.aimWorldX, rawEndY = aim.aimWorldY;
+  const dx = rawEndX - player.x, dy = rawEndY - player.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
   const ux = dx / distance, uy = dy / distance;
-  const ringRadius = target ? Math.max(target.radius || 18, 18 / Math.max(.1, zoom)) + 9 / Math.max(.1, zoom) : 0;
-  const gapStartX = endX - ux * ringRadius, gapStartY = endY - uy * ringRadius;
-  const gapEndX = endX + ux * ringRadius, gapEndY = endY + uy * ringRadius;
+  const nx = -uy, ny = ux;
+  const shaftStart = Math.max(player.r + 18 / Math.max(.1, zoom), 42 / Math.max(.1, zoom));
+  const shaftHalf = 6 / Math.max(.1, zoom);
+  const arrowHead = 24 / Math.max(.1, zoom);
+  const arrowX = rawEndX - ux * 8 / Math.max(.1, zoom);
+  const arrowY = rawEndY - uy * 8 / Math.max(.1, zoom);
+  const color = aim.lockedTarget ? "251,113,133" : "103,232,249";
   ctx.save();
   ctx.lineCap = "round";
-  ctx.shadowBlur = 11 / Math.max(.1, zoom);
-  ctx.shadowColor = target ? "rgba(251,113,133,.9)" : "rgba(103,232,249,.8)";
-  ctx.strokeStyle = target ? "rgba(251,113,133,.9)" : "rgba(103,232,249,.78)";
+  ctx.lineJoin = "round";
+  ctx.fillStyle = `rgba(${color},.18)`;
+  ctx.strokeStyle = `rgba(${color},.48)`;
+  ctx.lineWidth = 1.4 / Math.max(.1, zoom);
+  ctx.beginPath();
+  ctx.moveTo(player.x + ux * shaftStart + nx * shaftHalf, player.y + uy * shaftStart + ny * shaftHalf);
+  ctx.lineTo(arrowX - ux * arrowHead + nx * shaftHalf, arrowY - uy * arrowHead + ny * shaftHalf);
+  ctx.lineTo(arrowX - ux * arrowHead + nx * shaftHalf * 2.5, arrowY - uy * arrowHead + ny * shaftHalf * 2.5);
+  ctx.lineTo(arrowX, arrowY);
+  ctx.lineTo(arrowX - ux * arrowHead - nx * shaftHalf * 2.5, arrowY - uy * arrowHead - ny * shaftHalf * 2.5);
+  ctx.lineTo(arrowX - ux * arrowHead - nx * shaftHalf, arrowY - uy * arrowHead - ny * shaftHalf);
+  ctx.lineTo(player.x + ux * shaftStart - nx * shaftHalf, player.y + uy * shaftStart - ny * shaftHalf);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  const arcHalf = 0.34;
+  ctx.shadowBlur = 8 / Math.max(.1, zoom);
+  ctx.shadowColor = `rgba(${color},.72)`;
+  ctx.strokeStyle = `rgba(${color},.72)`;
   ctx.lineWidth = 2.2 / Math.max(.1, zoom);
-  ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(target ? gapStartX : endX, target ? gapStartY : endY); ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, distance, aim.angle - arcHalf, aim.angle + arcHalf);
+  ctx.stroke();
+  for (const side of [-1, 1]) {
+    const a = aim.angle + side * arcHalf;
+    const ex = player.x + Math.cos(a) * distance, ey = player.y + Math.sin(a) * distance;
+    ctx.beginPath();
+    ctx.moveTo(ex - ux * 8 / Math.max(.1, zoom), ey - uy * 8 / Math.max(.1, zoom));
+    ctx.lineTo(ex + ux * 8 / Math.max(.1, zoom), ey + uy * 8 / Math.max(.1, zoom));
+    ctx.stroke();
+  }
+
+  const target = aim.lockedTarget;
   if (target) {
-    ctx.beginPath(); ctx.moveTo(gapEndX, gapEndY); ctx.lineTo(gapEndX + ux * 45 / Math.max(.1, zoom), gapEndY + uy * 45 / Math.max(.1, zoom)); ctx.stroke();
-    ctx.lineWidth = 2.8 / Math.max(.1, zoom);
-    ctx.beginPath(); ctx.arc(endX, endY, ringRadius, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = .36; ctx.lineWidth = 7 / Math.max(.1, zoom); ctx.beginPath(); ctx.arc(endX, endY, ringRadius, 0, Math.PI * 2); ctx.stroke();
+    const ringRadius = Math.max(target.radius || 18, 20 / Math.max(.1, zoom)) + 10 / Math.max(.1, zoom);
+    ctx.strokeStyle = "rgba(251,113,133,.96)";
+    ctx.lineWidth = 3 / Math.max(.1, zoom);
+    ctx.shadowBlur = 15 / Math.max(.1, zoom);
+    ctx.shadowColor = "rgba(251,113,133,.95)";
+    ctx.beginPath(); ctx.arc(target.x, target.y, ringRadius, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = .32;
+    ctx.lineWidth = 8 / Math.max(.1, zoom);
+    ctx.beginPath(); ctx.arc(target.x, target.y, ringRadius, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.restore();
 }
@@ -9486,7 +9526,7 @@ const styles = {
   attackJoystickActive: { borderColor:"transparent",boxShadow:"none" },
   attackJoystickDisabled: { opacity:.34,filter:"grayscale(.8)",pointerEvents:"none" },
   attackJoystickCrosshair: { position:"absolute",inset:0,display:"grid",placeItems:"center",color:"transparent",fontSize:31,fontWeight:900,pointerEvents:"none" },
-  attackJoystickKnob: { position:"absolute",left:22,top:22,width:38,height:38,borderRadius:"50%",display:"grid",placeItems:"center",background:"linear-gradient(180deg,rgba(30,41,59,.98),rgba(15,23,42,.98))",border:"1px solid rgba(165,243,252,.72)",color:"#e0f2fe",fontSize:17,fontWeight:950,boxShadow:"0 4px 12px rgba(0,0,0,.46),0 0 13px rgba(34,211,238,.20)",pointerEvents:"none" },
+  attackJoystickKnob: { position:"absolute",left:22,top:22,width:38,height:38,borderRadius:"50%",display:"grid",placeItems:"center",background:"linear-gradient(180deg,rgba(30,41,59,.78),rgba(15,23,42,.76))",border:"1px solid rgba(165,243,252,.72)",color:"rgba(224,242,254,.82)",fontSize:17,fontWeight:950,boxShadow:"0 4px 12px rgba(0,0,0,.46),0 0 13px rgba(34,211,238,.20)",pointerEvents:"none" },
   attackJoystickKnobLocked: { borderColor:"rgba(251,113,133,.95)",color:"#fecdd3",boxShadow:"0 4px 14px rgba(0,0,0,.5),0 0 18px rgba(244,63,94,.48)" },
   iconControlButton: {
     minHeight: 52,
