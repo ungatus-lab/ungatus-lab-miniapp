@@ -51,6 +51,9 @@ const BOT_CORE_RESPAWN_SECONDS = 120;
 const BOT_CORE_RESPAWN_AREA_RADIUS = 650;
 const CORE_NAMEPLATE_GAP = 14;
 const CORE_NAMEPLATE_VISUAL_PADDING = 9;
+const CORE_STATUS_BAR_WIDTH = 112;
+const CORE_STATUS_BAR_HEIGHT = 4;
+const CORE_STATUS_BAR_GAP = 2;
 const BOT_RALLY_RANGE_SECONDS_BY_DIFFICULTY = {
   1: { min: 10, max: 60 },
   2: { min: 10, max: 20 },
@@ -259,6 +262,25 @@ function getTotalOwnedGuards(stats, marches) {
 }
 function getTotalOwnedGuardElements(stats, marches) {
   return getTotalGuardElementsFromStats(stats) + getTotalGuardElementsInMarches(marches);
+}
+function getCoreArmyPresence({ core, guardCap, marches, ownerId = null }) {
+  const homeArmy = getTotalGuardsFromStats({ guardsByLevel: core?.guardsByLevel || {} });
+  const awayArmy = (marches || []).reduce((sum, march) => {
+    if (ownerId && march.botId !== ownerId) return sum;
+    return sum + getTotalGuardsFromStats({ guardsByLevel: march.guardsByLevel || {} });
+  }, 0);
+  const capacity = Math.max(1, Number(guardCap) || 1);
+  const homeClamped = Math.min(capacity, homeArmy);
+  const awayClamped = Math.min(Math.max(0, capacity - homeClamped), awayArmy);
+  return {
+    homeArmy,
+    awayArmy,
+    guardCap: capacity,
+    homeRatio: homeClamped / capacity,
+    awayRatio: awayClamped / capacity,
+    durability: Math.max(0, Number(core?.durability) || 0),
+    maxDurability: Math.max(1, Number(core?.maxDurability) || CORE_BASE_DURABILITY),
+  };
 }
 
 function getXpRequiredForLevel(level) {
@@ -845,9 +867,6 @@ const trainingIntroTimerRef = useRef(null);
   const selectedMonsterScreen = selectedMonster
     ? worldToScreen(selectedMonster.x, selectedMonster.y)
     : null;
-  const selectedCoreScreen = selectedCore ? worldToScreen(selectedCore.x, selectedCore.y) : null;
-  const selectedCoreArmy = selectedCore ? getTotalGuardsFromStats({ guardsByLevel: selectedCore.guardsByLevel || {} }) : 0;
-  const selectedCorePreview = selectedCore ? calculateCoreBattle(cityStats.guardsByLevel || {}, selectedCore.guardsByLevel || {}, selectedCore.durability) : null;
   const mapTutorialTargetScreen = mapTutorialTarget
     ? worldToScreen(mapTutorialTarget.x, mapTutorialTarget.y)
     : null;
@@ -3807,9 +3826,19 @@ const trainingIntroTimerRef = useRef(null);
     }
     drawPlayer(ctx, player);
     for (const bot of botsRef.current) {
-      if (bot.alive) drawCoreNameplate(ctx, bot, bot.guardsByLevel || {}, selectedCoreRef.current?.id === bot.id);
+      if (!bot.alive) continue;
+      const isSelected = selectedCoreRef.current?.id === bot.id;
+      const status = isSelected
+        ? getCoreArmyPresence({
+            core: bot,
+            guardCap: bot.guardCap,
+            marches: botMarchesRef.current,
+            ownerId: bot.id,
+          })
+        : null;
+      drawCoreNameplate(ctx, bot, bot.guardsByLevel || {}, isSelected, status);
     }
-    drawCoreNameplate(ctx, player, cityStatsRef.current.guardsByLevel || {}, false);
+    drawCoreNameplate(ctx, player, cityStatsRef.current.guardsByLevel || {}, false, null);
 
     ctx.restore();
   }
@@ -6100,20 +6129,7 @@ const trainingIntroTimerRef = useRef(null);
 
               
 
-              {selectedCore && selectedCoreScreen && (
-                <div style={{...styles.monsterIntelCard,left:clamp(selectedCoreScreen.x-150,12,viewport.width-312),top:clamp(selectedCoreScreen.y-190,92,viewport.height-250)}}>
-                  <div style={styles.monsterIntelOrb}><span style={{fontSize:24}}>◎</span></div>
-                  <div style={styles.monsterIntelBody}>
-                    <strong>{selectedCore.name} · LV {selectedCore.level}</strong>
-                    <small>ARMY {formatCompactNumber(selectedCoreArmy)} / {formatCompactNumber(selectedCore.guardCap || 0)}</small>
-                    <small>DURABILITY {formatCompactNumber(selectedCore.durability || 0)} / {formatCompactNumber(selectedCore.maxDurability || CORE_BASE_DURABILITY)}</small>
-                    <small>RALLY {formatMarchTime(getMarchDuration(playerRef.current?.x||0,playerRef.current?.y||0,selectedCore.x,selectedCore.y,"attack"))}</small>
-                    <small>{selectedCorePreview?.durabilityDamage > 0 ? `CORE DAMAGE ~${formatCompactNumber(selectedCorePreview.durabilityDamage)}` : "ARMY BLOCKS CORE DAMAGE"}</small>
-                  </div>
-                  <button style={{...styles.monsterIntelAttack,...(homeGuards<=0?styles.monsterIntelAttackDisabled:{})}} disabled={homeGuards<=0} onClick={beginAttackSelectedCore}>⚔</button>
-                  <button style={styles.monsterIntelClose} onClick={()=>updateSelectedCore(null)}>×</button>
-                </div>
-              )}
+
 
               {selectedMonster && selectedMonsterThreat && (
                 <div
@@ -7332,7 +7348,61 @@ function getCoreArmyVisualExtent(core, guardsByLevel, time = Date.now() / 1000) 
   };
 }
 
-function drawCoreNameplate(ctx, core, guardsByLevel = {}, selected = false) {
+function drawCoreStatusBarBackground(ctx, left, top, width, height) {
+  ctx.fillStyle = "rgba(2,6,23,0.86)";
+  ctx.fillRect(left, top, width, height);
+  ctx.strokeStyle = "rgba(148,163,184,0.55)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(left, top, width, height);
+}
+
+function drawCoreAwayHatch(ctx, left, top, width, height) {
+  if (width <= 0) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  ctx.fillStyle = "rgba(56,189,248,0.34)";
+  ctx.fillRect(left, top, width, height);
+  ctx.strokeStyle = "rgba(186,230,253,0.92)";
+  ctx.lineWidth = 1;
+  for (let x = left - height; x < left + width + height; x += 5) {
+    ctx.beginPath();
+    ctx.moveTo(x, top + height);
+    ctx.lineTo(x + height, top);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function getCoreDurabilityColor(ratio) {
+  if (ratio <= 0.25) return "#ef4444";
+  if (ratio <= 0.55) return "#f59e0b";
+  return "#22c55e";
+}
+
+function drawSelectedCoreBars(ctx, core, labelY, status) {
+  if (!status) return;
+  const width = CORE_STATUS_BAR_WIDTH;
+  const height = CORE_STATUS_BAR_HEIGHT;
+  const left = core.x - width / 2;
+  const armyTop = labelY + 2;
+  const durabilityTop = armyTop + height + CORE_STATUS_BAR_GAP;
+  drawCoreStatusBarBackground(ctx, left, armyTop, width, height);
+  const homeWidth = width * clamp01(status.homeRatio);
+  const awayWidth = Math.min(width - homeWidth, width * clamp01(status.awayRatio));
+  if (homeWidth > 0) {
+    ctx.fillStyle = "rgba(103,232,249,0.96)";
+    ctx.fillRect(left, armyTop, homeWidth, height);
+  }
+  drawCoreAwayHatch(ctx, left + homeWidth, armyTop, awayWidth, height);
+  drawCoreStatusBarBackground(ctx, left, durabilityTop, width, height);
+  const durabilityRatio = clamp01(status.durability / status.maxDurability);
+  ctx.fillStyle = getCoreDurabilityColor(durabilityRatio);
+  ctx.fillRect(left, durabilityTop, width * durabilityRatio, height);
+}
+
+function drawCoreNameplate(ctx, core, guardsByLevel = {}, selected = false, status = null) {
   if (!core?.name) return;
   const extent = getCoreArmyVisualExtent(core, guardsByLevel);
   const labelY = core.y - extent.topExtent - CORE_NAMEPLATE_GAP;
@@ -7347,6 +7417,7 @@ function drawCoreNameplate(ctx, core, guardsByLevel = {}, selected = false) {
   ctx.fillStyle = selected ? "#fca5a5" : "#e0f2fe";
   ctx.fillText(label, core.x, labelY);
   if (selected) {
+    drawSelectedCoreBars(ctx, core, labelY, status);
     ctx.beginPath(); ctx.strokeStyle = "rgba(248,113,113,0.95)"; ctx.lineWidth = 4;
     ctx.arc(core.x, core.y, (core.r || 30) + 11, 0, Math.PI * 2); ctx.stroke();
   }
