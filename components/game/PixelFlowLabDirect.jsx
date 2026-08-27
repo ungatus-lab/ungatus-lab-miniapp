@@ -538,6 +538,8 @@ export default function PixelFlowLabDirect({ open, onClose }) {
   const tutorialLandingTargetRef = useRef(null);
   const selectedMonsterRef = useRef(null);
   const selectedCoreRef = useRef(null);
+  const attackJoystickRef = useRef({ active: false, pointerId: null, dx: 0, dy: 0 });
+  const [attackJoystick, setAttackJoystick] = useState({ active: false, dx: 0, dy: 0, targetType: null });
   const mapTutorialSeenRef = useRef(false);
   const mapTutorialTargetRef = useRef(null);
   const tutorialSearchMonsterIdRef = useRef(null);
@@ -4850,6 +4852,64 @@ const trainingIntroTimerRef = useRef(null);
     return null;
   }
 
+  function getAttackJoystickTarget(dx, dy) {
+    const player = playerRef.current;
+    if (!player || Math.hypot(dx, dy) < 18) return null;
+    const length = Math.hypot(dx, dy), directionX = dx / length, directionY = dy / length;
+    const playerScreen = worldToScreen(player.x, player.y);
+    const candidates = [
+      ...(worldRef.current.monsters || []).filter((item) => item && item.hp > 0).map((item) => ({ type: "monster", item })),
+      ...(botsRef.current || []).filter((item) => item && item.alive !== false).map((item) => ({ type: "core", item })),
+    ];
+    let best = null;
+    for (const candidate of candidates) {
+      const screen = worldToScreen(candidate.item.x, candidate.item.y);
+      const tx = screen.x - playerScreen.x, ty = screen.y - playerScreen.y;
+      const distance = Math.max(1, Math.hypot(tx, ty));
+      const alignment = (tx / distance) * directionX + (ty / distance) * directionY;
+      if (alignment < 0.72) continue;
+      const score = alignment * 900 - distance;
+      if (!best || score > best.score) best = { ...candidate, score };
+    }
+    return best;
+  }
+  function updateAttackJoystick(clientX, clientY, element) {
+    const rect = element.getBoundingClientRect();
+    const rawDx = clientX - (rect.left + rect.width / 2), rawDy = clientY - (rect.top + rect.height / 2);
+    const length = Math.hypot(rawDx, rawDy), scale = length > 34 ? 34 / length : 1;
+    const dx = rawDx * scale, dy = rawDy * scale;
+    attackJoystickRef.current.dx = dx; attackJoystickRef.current.dy = dy;
+    const target = getAttackJoystickTarget(dx, dy);
+    setAttackJoystick({ active: true, dx, dy, targetType: target?.type || null });
+  }
+  function beginAttackJoystick(event) {
+    if (homeGuards <= 0 || teleportModeRef.current) return;
+    event.preventDefault(); event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: 0 };
+    updateAttackJoystick(event.clientX, event.clientY, event.currentTarget);
+  }
+  function moveAttackJoystick(event) {
+    if (!attackJoystickRef.current.active || attackJoystickRef.current.pointerId !== event.pointerId) return;
+    event.preventDefault(); event.stopPropagation();
+    updateAttackJoystick(event.clientX, event.clientY, event.currentTarget);
+  }
+  function endAttackJoystick(event) {
+    if (!attackJoystickRef.current.active || attackJoystickRef.current.pointerId !== event.pointerId) return;
+    event.preventDefault(); event.stopPropagation();
+    const target = getAttackJoystickTarget(attackJoystickRef.current.dx, attackJoystickRef.current.dy);
+    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0 };
+    setAttackJoystick({ active: false, dx: 0, dy: 0, targetType: null });
+    if (!target) return;
+    if (target.type === "core") { updateSelectedCore(target.item); requestAnimationFrame(beginAttackSelectedCore); }
+    else { updateSelectedMonster(target.item); requestAnimationFrame(beginAttackSelectedMonster); }
+  }
+  function cancelAttackJoystick(event) {
+    if (attackJoystickRef.current.pointerId !== event.pointerId) return;
+    attackJoystickRef.current = { active: false, pointerId: null, dx: 0, dy: 0 };
+    setAttackJoystick({ active: false, dx: 0, dy: 0, targetType: null });
+  }
+
   function beginAttackSelectedMonster() {
     if (tutorialFlowRef.current.phase === "attackButton") {
       updateTutorialFlowPhase("attackLaunched");
@@ -6271,6 +6331,11 @@ const trainingIntroTimerRef = useRef(null);
               {(tutorialFlowPhase === "enterCity" || (tutorialFlowPhase === "citadelUpgrade" && cityReturnPointerReady)) && (
                 <div style={styles.tutorialCityPointer}><div style={styles.macroPointer}>☟︎</div></div>
               )}
+              <div style={{ ...styles.attackJoystick, ...(homeGuards <= 0 ? styles.attackJoystickDisabled : {}), ...(attackJoystick.active ? styles.attackJoystickActive : {}) }} onPointerDown={beginAttackJoystick} onPointerMove={moveAttackJoystick} onPointerUp={endAttackJoystick} onPointerCancel={cancelAttackJoystick} title="Hold and drag to attack">
+                <div style={styles.attackJoystickCrosshair}>⌖</div>
+                <div style={{ ...styles.attackJoystickKnob, transform: `translate(${attackJoystick.dx}px, ${attackJoystick.dy}px)`, ...(attackJoystick.targetType ? styles.attackJoystickKnobLocked : {}) }}>⚔</div>
+              </div>
+
               {landingPreview && landingScreen && (
                 <div
                   style={{
@@ -9358,6 +9423,12 @@ const styles = {
     background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)", zIndex: 4,
   },
 
+  attackJoystick: { position:"absolute",right:18,bottom:122,width:84,height:84,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"radial-gradient(circle at 50% 50%,rgba(15,23,42,.90) 0 36%,rgba(8,47,73,.66) 37% 68%,rgba(2,6,23,.84) 69%)",border:"1px solid rgba(103,232,249,.42)",boxShadow:"0 10px 28px rgba(0,0,0,.42),inset 0 0 18px rgba(34,211,238,.12)" },
+  attackJoystickActive: { borderColor:"rgba(251,113,133,.78)",boxShadow:"0 10px 28px rgba(0,0,0,.46),0 0 24px rgba(244,63,94,.22),inset 0 0 20px rgba(244,63,94,.12)" },
+  attackJoystickDisabled: { opacity:.34,filter:"grayscale(.8)",pointerEvents:"none" },
+  attackJoystickCrosshair: { position:"absolute",inset:0,display:"grid",placeItems:"center",color:"rgba(103,232,249,.28)",fontSize:31,fontWeight:900,pointerEvents:"none" },
+  attackJoystickKnob: { position:"absolute",left:22,top:22,width:38,height:38,borderRadius:"50%",display:"grid",placeItems:"center",background:"linear-gradient(180deg,rgba(30,41,59,.98),rgba(15,23,42,.98))",border:"1px solid rgba(165,243,252,.72)",color:"#e0f2fe",fontSize:17,fontWeight:950,boxShadow:"0 4px 12px rgba(0,0,0,.46),0 0 13px rgba(34,211,238,.20)",pointerEvents:"none" },
+  attackJoystickKnobLocked: { borderColor:"rgba(251,113,133,.95)",color:"#fecdd3",boxShadow:"0 4px 14px rgba(0,0,0,.5),0 0 18px rgba(244,63,94,.48)" },
   iconControlButton: {
     minHeight: 52,
     border: "1px solid rgba(255,255,255,0.09)",
