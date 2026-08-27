@@ -7317,7 +7317,7 @@ function mixMarchReturnColor(fill) {
   if (fill.includes("165,243,252")) return "rgba(134,239,172,0.96)";
   return "rgba(134,239,172,0.92)";
 }
-function getCoreArmyVisualExtent(core, guardsByLevel, time = Date.now() / 1000) {
+function getCoreArmyVisualExtent(core, guardsByLevel) {
   const coreRadius = Math.max(1, Number(core?.r) || 30);
   const units = buildArmyRepresentatives(guardsByLevel || {});
   if (!units.length) {
@@ -7325,24 +7325,22 @@ function getCoreArmyVisualExtent(core, guardsByLevel, time = Date.now() / 1000) 
   }
   const layerSize = 42;
   const layerCount = Math.max(1, Math.ceil(units.length / layerSize));
-  let topEdge = core.y - coreRadius;
-  let outerRadius = coreRadius;
-  for (let index = 0; index < units.length; index += 1) {
-    const unit = units[index];
-    const layer = Math.floor(index / layerSize);
-    const slotIndex = index % layerSize;
-    const itemsInLayer = Math.min(layerSize, units.length - layer * layerSize);
-    const transition = getArmyLayerTransition({ unit, layer, layerCount, slotIndex, time });
-    const position = getArmyOrbitPosition({
-      player: core, unit, slotIndex, itemsInLayer, layer, time, transition,
-    });
-    const visualPadding = CORE_NAMEPLATE_VISUAL_PADDING + Math.min(8, Math.max(0, Number(unit?.cycleStep || 1) - 1));
-    topEdge = Math.min(topEdge, position.y - visualPadding);
-    outerRadius = Math.max(outerRadius, Math.hypot(position.x - core.x, position.y - core.y) + visualPadding);
-  }
+  const outerLayer = layerCount - 1;
+  const highestGeneration = units.reduce(
+    (maximum, unit) => Math.max(maximum, Math.max(0, Number(unit?.generation) || 0)),
+    0
+  );
+  const largestCycleStep = units.reduce(
+    (maximum, unit) => Math.max(maximum, Math.max(1, Number(unit?.cycleStep) || 1)),
+    1
+  );
+  const axisRadius = coreRadius + 34 + outerLayer * 16 + highestGeneration * 2.5;
+  const motionEnvelope = axisRadius * 0.25 + 18;
+  const visualPadding = CORE_NAMEPLATE_VISUAL_PADDING + Math.min(8, largestCycleStep - 1);
+  const stableOuterExtent = axisRadius + motionEnvelope + visualPadding;
   return {
-    topExtent: Math.max(coreRadius, core.y - topEdge),
-    outerRadius,
+    topExtent: Math.max(coreRadius, stableOuterExtent),
+    outerRadius: Math.max(coreRadius, stableOuterExtent),
     visibleElements: units.length,
     layerCount,
   };
@@ -7405,7 +7403,12 @@ function drawSelectedCoreBars(ctx, core, labelY, status) {
 function drawCoreNameplate(ctx, core, guardsByLevel = {}, selected = false, status = null) {
   if (!core?.name) return;
   const extent = getCoreArmyVisualExtent(core, guardsByLevel);
-  const labelY = core.y - extent.topExtent - CORE_NAMEPLATE_GAP;
+  const selectorExtent = selected ? Math.max(1, Number(core.r) || 30) + 11 : Math.max(1, Number(core.r) || 30);
+  const lowerBoundaryY = core.y - Math.max(extent.topExtent, selectorExtent) - CORE_NAMEPLATE_GAP;
+  const selectedBarsHeight = selected
+    ? 2 + CORE_STATUS_BAR_HEIGHT * 2 + CORE_STATUS_BAR_GAP
+    : 0;
+  const labelY = lowerBoundaryY - selectedBarsHeight;
   ctx.save();
   ctx.font = "800 18px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
