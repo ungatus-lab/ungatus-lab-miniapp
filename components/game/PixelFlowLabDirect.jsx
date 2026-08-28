@@ -59,7 +59,7 @@ const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
 const ATTACK_AIM_NEAR_ZOOM = 0.30;
 const ATTACK_AIM_FAR_ZOOM = 0.10;
 const ATTACK_AIM_ZOOM_LEVELS = [0.30, 0.18, 0.10];
-const ATTACK_AIM_CURSOR_SPEED_PX = 285;
+const ATTACK_AIM_CURSOR_SPEED_PX = 1140;
 const ATTACK_AIM_EDGE_MARGIN_PX = 16;
 const ATTACK_AIM_CORE_RETURN_GAP_PX = 8;
 const ATTACK_AIM_ZOOM_SWITCH_COOLDOWN = 0.28;
@@ -4990,8 +4990,8 @@ const trainingIntroTimerRef = useRef(null);
     const canvas = canvasRef.current;
     if (!aim.active || !player || !canvas) return;
     const drag = Math.hypot(aim.dx, aim.dy);
-    const strength = clamp((drag - 6) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - 6), 0, 1);
-    if (drag > 6 && strength > 0) {
+    const strength = clamp((drag - 2) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - 2), 0, 1);
+    if (drag > 2 && strength > 0) {
       const dirX = aim.dx / drag, dirY = aim.dy / drag;
       const worldSpeed = ATTACK_AIM_CURSOR_SPEED_PX / Math.max(0.001, camera.zoom);
       aim.aimWorldX += dirX * worldSpeed * strength * dt;
