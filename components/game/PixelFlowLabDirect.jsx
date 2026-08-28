@@ -6554,81 +6554,141 @@ const trainingIntroTimerRef = useRef(null);
 
 function drawAttackAim(ctx, aim, player, zoom) {
   if (!aim?.active || !player) return;
-  const endX = aim.lockedTarget?.x ?? aim.aimWorldX;
-  const endY = aim.lockedTarget?.y ?? aim.aimWorldY;
+  const target = aim.lockedTarget || null;
+  const endX = target?.x ?? aim.aimWorldX;
+  const endY = target?.y ?? aim.aimWorldY;
   const dx = endX - player.x, dy = endY - player.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
   const ux = dx / distance, uy = dy / distance, nx = -uy, ny = ux;
   const invZoom = 1 / Math.max(.1, zoom);
-  const startDistance = Math.max(player.r + 14 * invZoom, 38 * invZoom);
-  const headLength = 25 * invZoom;
-  const baseHalf = 5.5 * invZoom;
-  const headHalf = 14 * invZoom;
-  const curve = Math.sin(aim.angle * 1.7) * Math.min(16 * invZoom, distance * .025);
-  const sx = player.x + ux * startDistance, sy = player.y + uy * startDistance;
-  const bx = endX - ux * headLength, by = endY - uy * headLength;
-  const midX = (sx + bx) / 2 + nx * curve, midY = (sy + by) / 2 + ny * curve;
-  const color = aim.lockedTarget ? "251,113,133" : "103,232,249";
+  const startDistance = Math.max(player.r + 11 * invZoom, 34 * invZoom);
+  const sx = player.x + ux * startDistance;
+  const sy = player.y + uy * startDistance;
+  const pulse = .5 + .5 * Math.sin(Date.now() / 145);
+  const bend = Math.sin(aim.angle * 1.37) * Math.min(13 * invZoom, distance * .018);
+  const c1x = sx + dx * .30 + nx * bend;
+  const c1y = sy + dy * .30 + ny * bend;
+  const c2x = sx + dx * .74 - nx * bend * .35;
+  const c2y = sy + dy * .74 - ny * bend * .35;
+  const rgb = target ? "251,113,133" : "103,232,249";
+
   ctx.save();
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.fillStyle = `rgba(${color},.16)`;
-  ctx.shadowBlur = 8 * invZoom; ctx.shadowColor = `rgba(${color},.34)`;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Layered energy tether instead of a solid Paint-style polygon.
   ctx.beginPath();
-  ctx.moveTo(sx + nx * baseHalf, sy + ny * baseHalf);
-  ctx.quadraticCurveTo(midX + nx * baseHalf, midY + ny * baseHalf, bx + nx * baseHalf, by + ny * baseHalf);
-  ctx.lineTo(bx + nx * headHalf, by + ny * headHalf);
-  ctx.lineTo(endX, endY);
-  ctx.lineTo(bx - nx * headHalf, by - ny * headHalf);
-  ctx.lineTo(bx - nx * baseHalf, by - ny * baseHalf);
-  ctx.quadraticCurveTo(midX - nx * baseHalf, midY - ny * baseHalf, sx - nx * baseHalf, sy - ny * baseHalf);
-  ctx.closePath(); ctx.fill();
+  ctx.moveTo(sx, sy);
+  ctx.bezierCurveTo(c1x, c1y, c2x, c2y, endX, endY);
+  ctx.strokeStyle = `rgba(${rgb},${.055 + pulse * .025})`;
+  ctx.lineWidth = 14 * invZoom;
+  ctx.shadowColor = `rgba(${rgb},.48)`;
+  ctx.shadowBlur = 22 * invZoom;
+  ctx.stroke();
 
-  const arcHalf = .31;
-  ctx.strokeStyle = `rgba(${color},.34)`;
-  ctx.lineWidth = 8 * invZoom; ctx.shadowBlur = 14 * invZoom;
-  ctx.beginPath(); ctx.arc(player.x, player.y, distance, aim.angle - arcHalf, aim.angle + arcHalf); ctx.stroke();
-  ctx.strokeStyle = `rgba(${color},.75)`;
-  ctx.lineWidth = 1.7 * invZoom; ctx.shadowBlur = 9 * invZoom;
-  ctx.beginPath(); ctx.arc(player.x, player.y, distance, aim.angle - arcHalf, aim.angle + arcHalf); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.bezierCurveTo(c1x, c1y, c2x, c2y, endX, endY);
+  ctx.strokeStyle = `rgba(${rgb},.24)`;
+  ctx.lineWidth = 4.2 * invZoom;
+  ctx.shadowBlur = 10 * invZoom;
+  ctx.stroke();
 
-  // The cyan reticle is the real joystick-driven cursor. It remains visible
-  // even while the pink magnetic lock ring stays attached to the last target.
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.bezierCurveTo(c1x, c1y, c2x, c2y, endX, endY);
+  ctx.strokeStyle = `rgba(224,252,255,${target ? .62 : .52})`;
+  ctx.lineWidth = .9 * invZoom;
+  ctx.setLineDash([8 * invZoom, 12 * invZoom]);
+  ctx.lineDashOffset = -(Date.now() / 34) * invZoom;
+  ctx.shadowBlur = 7 * invZoom;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Soft sector haze replaces the former hard circular bracket.
+  const hazeRadius = Math.max(startDistance + 8 * invZoom, distance * .78);
+  const haze = ctx.createRadialGradient(player.x, player.y, startDistance, player.x, player.y, hazeRadius);
+  haze.addColorStop(0, `rgba(${rgb},.075)`);
+  haze.addColorStop(.58, `rgba(${rgb},.026)`);
+  haze.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.beginPath();
+  ctx.moveTo(player.x, player.y);
+  ctx.arc(player.x, player.y, hazeRadius, aim.angle - .19, aim.angle + .19);
+  ctx.closePath();
+  ctx.fillStyle = haze;
+  ctx.fill();
+
+  // Small luminous arrival flare, not a geometric arrow head.
+  const flareLength = 17 * invZoom;
+  ctx.beginPath();
+  ctx.moveTo(endX - ux * flareLength + nx * 4.6 * invZoom, endY - uy * flareLength + ny * 4.6 * invZoom);
+  ctx.quadraticCurveTo(endX - ux * 6 * invZoom, endY - uy * 6 * invZoom, endX, endY);
+  ctx.quadraticCurveTo(endX - ux * 6 * invZoom, endY - uy * 6 * invZoom, endX - ux * flareLength - nx * 4.6 * invZoom, endY - uy * flareLength - ny * 4.6 * invZoom);
+  ctx.strokeStyle = `rgba(${rgb},.72)`;
+  ctx.lineWidth = 1.35 * invZoom;
+  ctx.shadowColor = `rgba(${rgb},.9)`;
+  ctx.shadowBlur = 12 * invZoom;
+  ctx.stroke();
+
   const cursorX = Number.isFinite(aim.aimWorldX) ? aim.aimWorldX : endX;
   const cursorY = Number.isFinite(aim.aimWorldY) ? aim.aimWorldY : endY;
-  const cursorRadius = 10 * invZoom;
-  if (aim.lockedTarget) {
-    ctx.save();
-    ctx.strokeStyle = "rgba(103,232,249,.28)";
-    ctx.lineWidth = 1.2 * invZoom;
-    ctx.setLineDash([5 * invZoom, 7 * invZoom]);
-    ctx.beginPath(); ctx.moveTo(cursorX, cursorY); ctx.lineTo(aim.lockedTarget.x, aim.lockedTarget.y); ctx.stroke();
-    ctx.restore();
+  const cursorRadius = 9.5 * invZoom;
+  if (target) {
+    ctx.beginPath();
+    ctx.moveTo(cursorX, cursorY);
+    ctx.lineTo(target.x, target.y);
+    ctx.strokeStyle = "rgba(103,232,249,.20)";
+    ctx.lineWidth = .8 * invZoom;
+    ctx.setLineDash([3 * invZoom, 8 * invZoom]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
+
+  // Reticle: broken orbital arcs with breathing particles, no spreadsheet crosshair.
   ctx.save();
-  ctx.strokeStyle = "rgba(165,243,252,.96)";
-  ctx.fillStyle = "rgba(103,232,249,.95)";
-  ctx.lineWidth = 2 * invZoom;
-  ctx.shadowBlur = 12 * invZoom;
+  ctx.translate(cursorX, cursorY);
+  ctx.rotate(Date.now() / 1150);
+  ctx.strokeStyle = "rgba(165,243,252,.92)";
+  ctx.lineWidth = 1.45 * invZoom;
   ctx.shadowColor = "rgba(34,211,238,.95)";
-  ctx.beginPath(); ctx.arc(cursorX, cursorY, cursorRadius, 0, Math.PI * 2); ctx.stroke();
-  const tickInner = 13 * invZoom, tickOuter = 19 * invZoom;
+  ctx.shadowBlur = 10 * invZoom;
+  for (let i = 0; i < 4; i += 1) {
+    const a = i * Math.PI / 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, cursorRadius, a - .34, a + .34);
+    ctx.stroke();
+  }
+  ctx.rotate(-Date.now() / 760);
+  for (let i = 0; i < 3; i += 1) {
+    const a = i * Math.PI * 2 / 3;
+    const r = (13.5 + pulse * 1.5) * invZoom;
+    ctx.beginPath();
+    ctx.fillStyle = i === 0 ? "rgba(255,255,255,.95)" : "rgba(103,232,249,.72)";
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 1.15 * invZoom, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.beginPath();
-  ctx.moveTo(cursorX - tickOuter, cursorY); ctx.lineTo(cursorX - tickInner, cursorY);
-  ctx.moveTo(cursorX + tickInner, cursorY); ctx.lineTo(cursorX + tickOuter, cursorY);
-  ctx.moveTo(cursorX, cursorY - tickOuter); ctx.lineTo(cursorX, cursorY - tickInner);
-  ctx.moveTo(cursorX, cursorY + tickInner); ctx.lineTo(cursorX, cursorY + tickOuter);
-  ctx.stroke();
-  ctx.beginPath(); ctx.arc(cursorX, cursorY, 2.4 * invZoom, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(224,252,255,.96)";
+  ctx.arc(0, 0, 1.8 * invZoom, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 
-  if (aim.lockedTarget) {
-    const target = aim.lockedTarget;
-    const ringRadius = Math.max(target.radius || 18, 20 * invZoom) + 10 * invZoom;
-    ctx.strokeStyle = "rgba(251,113,133,.97)"; ctx.lineWidth = 3 * invZoom;
-    ctx.shadowBlur = 16 * invZoom; ctx.shadowColor = "rgba(251,113,133,.95)";
-    ctx.beginPath(); ctx.arc(target.x, target.y, ringRadius, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = .27; ctx.lineWidth = 9 * invZoom;
-    ctx.beginPath(); ctx.arc(target.x, target.y, ringRadius, 0, Math.PI * 2); ctx.stroke();
+  if (target) {
+    const ringRadius = Math.max(target.radius || 18, 18 * invZoom) + 8 * invZoom;
+    ctx.save();
+    ctx.translate(target.x, target.y);
+    ctx.rotate(-Date.now() / 980);
+    ctx.strokeStyle = "rgba(251,113,133,.90)";
+    ctx.lineWidth = 1.8 * invZoom;
+    ctx.shadowColor = "rgba(251,113,133,.92)";
+    ctx.shadowBlur = 14 * invZoom;
+    for (let i = 0; i < 3; i += 1) {
+      const a = i * Math.PI * 2 / 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringRadius, a - .54, a + .54);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   ctx.restore();
 }
