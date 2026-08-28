@@ -6511,6 +6511,36 @@ function drawAttackAim(ctx, aim, player, zoom) {
   ctx.lineWidth = 1.7 * invZoom; ctx.shadowBlur = 9 * invZoom;
   ctx.beginPath(); ctx.arc(player.x, player.y, distance, aim.angle - arcHalf, aim.angle + arcHalf); ctx.stroke();
 
+  // The cyan reticle is the real joystick-driven cursor. It remains visible
+  // even while the pink magnetic lock ring stays attached to the last target.
+  const cursorX = Number.isFinite(aim.aimWorldX) ? aim.aimWorldX : endX;
+  const cursorY = Number.isFinite(aim.aimWorldY) ? aim.aimWorldY : endY;
+  const cursorRadius = 10 * invZoom;
+  if (aim.lockedTarget) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(103,232,249,.28)";
+    ctx.lineWidth = 1.2 * invZoom;
+    ctx.setLineDash([5 * invZoom, 7 * invZoom]);
+    ctx.beginPath(); ctx.moveTo(cursorX, cursorY); ctx.lineTo(aim.lockedTarget.x, aim.lockedTarget.y); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.strokeStyle = "rgba(165,243,252,.96)";
+  ctx.fillStyle = "rgba(103,232,249,.95)";
+  ctx.lineWidth = 2 * invZoom;
+  ctx.shadowBlur = 12 * invZoom;
+  ctx.shadowColor = "rgba(34,211,238,.95)";
+  ctx.beginPath(); ctx.arc(cursorX, cursorY, cursorRadius, 0, Math.PI * 2); ctx.stroke();
+  const tickInner = 13 * invZoom, tickOuter = 19 * invZoom;
+  ctx.beginPath();
+  ctx.moveTo(cursorX - tickOuter, cursorY); ctx.lineTo(cursorX - tickInner, cursorY);
+  ctx.moveTo(cursorX + tickInner, cursorY); ctx.lineTo(cursorX + tickOuter, cursorY);
+  ctx.moveTo(cursorX, cursorY - tickOuter); ctx.lineTo(cursorX, cursorY - tickInner);
+  ctx.moveTo(cursorX, cursorY + tickInner); ctx.lineTo(cursorX, cursorY + tickOuter);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cursorX, cursorY, 2.4 * invZoom, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
   if (aim.lockedTarget) {
     const target = aim.lockedTarget;
     const ringRadius = Math.max(target.radius || 18, 20 * invZoom) + 10 * invZoom;
