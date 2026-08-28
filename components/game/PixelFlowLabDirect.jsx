@@ -58,6 +58,11 @@ const ATTACK_AIM_MIN_WORLD_DISTANCE = 180;
 const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
 const ATTACK_AIM_NEAR_ZOOM = 0.30;
 const ATTACK_AIM_FAR_ZOOM = 0.10;
+const ATTACK_AIM_ZOOM_LEVELS = [0.30, 0.18, 0.10];
+const ATTACK_AIM_CURSOR_SPEED_PX = 285;
+const ATTACK_AIM_EDGE_MARGIN_PX = 16;
+const ATTACK_AIM_CORE_RETURN_GAP_PX = 8;
+const ATTACK_AIM_ZOOM_SWITCH_COOLDOWN = 0.28;
 const ATTACK_AIM_VIEWPORT_RADIUS = 0.42;
 const ATTACK_AIM_FORWARD_SPEED = 1250;
 const ATTACK_AIM_REVERSE_SPEED = 1050;
@@ -4939,32 +4944,82 @@ const trainingIntroTimerRef = useRef(null);
     const proximity = 1 - clamp(nearest / ATTACK_AIM_ASSIST_RADIUS_PX, 0, 1);
     return { speedScale: mixNumber(1, ATTACK_AIM_ASSIST_MIN_SPEED, proximity * proximity), candidate };
   }
+  function findFreeCursorMagnetLock(aim) {
+    const cursor = worldToScreen(aim.aimWorldX, aim.aimWorldY);
+    if (!cursor) return aim.lockedTarget || null;
+    const current = aim.lockedTarget;
+    if (current) {
+      const currentScreen = worldToScreen(current.x, current.y);
+      if (currentScreen && Math.hypot(cursor.x - currentScreen.x, cursor.y - currentScreen.y) <= ATTACK_AIM_RELEASE_RADIUS_PX) return current;
+    }
+    let best = null, bestDistance = Infinity;
+    for (const target of getAttackableAimTargets()) {
+      const screen = worldToScreen(target.x, target.y);
+      if (!screen) continue;
+      const distance = Math.hypot(cursor.x - screen.x, cursor.y - screen.y);
+      if (distance <= ATTACK_AIM_LOCK_RADIUS_PX && distance < bestDistance) {
+        best = target;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+  function getAttackAimSafeScreenBounds(canvas) {
+    return {
+      left: ATTACK_AIM_EDGE_MARGIN_PX,
+      right: Math.max(ATTACK_AIM_EDGE_MARGIN_PX, canvas.clientWidth - ATTACK_AIM_EDGE_MARGIN_PX),
+      top: 58 + ATTACK_AIM_EDGE_MARGIN_PX,
+      bottom: Math.max(90, canvas.clientHeight - 84 - ATTACK_AIM_EDGE_MARGIN_PX),
+    };
+  }
   function updateAttackAim(dt) {
     const aim = attackJoystickRef.current, player = playerRef.current, camera = cameraRef.current;
-    if (!aim.active || !player) return;
-    const drag = Math.hypot(aim.dx, aim.dy);
-    if (drag > 7) aim.angle = Math.atan2(aim.dy, aim.dx);
-    const forward = clamp((drag - ATTACK_AIM_NEUTRAL_DRAG_PX) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - ATTACK_AIM_NEUTRAL_DRAG_PX), 0, 1);
-    const reverse = clamp((ATTACK_AIM_NEUTRAL_DRAG_PX - drag) / ATTACK_AIM_NEUTRAL_DRAG_PX, 0, 1);
     const canvas = canvasRef.current;
-    const screenRadius = canvas ? Math.min(canvas.clientWidth, canvas.clientHeight) * ATTACK_AIM_VIEWPORT_RADIUS : 320;
-    const fixedZoomRange = screenRadius / ATTACK_AIM_NEAR_ZOOM;
-    const expandedRange = Math.min(ATTACK_AIM_MAX_WORLD_DISTANCE, screenRadius / ATTACK_AIM_FAR_ZOOM);
-    const assist = getAttackAimAssist(aim);
-    const radialVelocity = forward * ATTACK_AIM_FORWARD_SPEED - reverse * ATTACK_AIM_REVERSE_SPEED;
-    aim.aimDistance = clamp(aim.aimDistance + radialVelocity * assist.speedScale * dt, ATTACK_AIM_MIN_WORLD_DISTANCE, expandedRange);
-    aim.aimWorldX = player.x + Math.cos(aim.angle) * aim.aimDistance;
-    aim.aimWorldY = player.y + Math.sin(aim.angle) * aim.aimDistance;
-    aim.lockedTarget = findAttackAimLock(aim, radialVelocity);
-    const expansionProgress = clamp((aim.aimDistance - fixedZoomRange) / Math.max(1, expandedRange - fixedZoomRange), 0, 1);
-    const targetZoom = expansionProgress <= 0
-      ? ATTACK_AIM_NEAR_ZOOM
-      : mixNumber(ATTACK_AIM_NEAR_ZOOM, ATTACK_AIM_FAR_ZOOM, expansionProgress);
-    const follow = Math.min(1, dt * 6.5), zoomFollow = Math.min(1, dt * 3.2);
+    if (!aim.active || !player || !canvas) return;
+    const drag = Math.hypot(aim.dx, aim.dy);
+    const strength = clamp((drag - 6) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - 6), 0, 1);
+    if (drag > 6 && strength > 0) {
+      const dirX = aim.dx / drag, dirY = aim.dy / drag;
+      const worldSpeed = ATTACK_AIM_CURSOR_SPEED_PX / Math.max(0.001, camera.zoom);
+      aim.aimWorldX += dirX * worldSpeed * strength * dt;
+      aim.aimWorldY += dirY * worldSpeed * strength * dt;
+    }
+    const bounds = getAttackAimSafeScreenBounds(canvas);
+    let cursorScreen = worldToScreen(aim.aimWorldX, aim.aimWorldY);
+    aim.zoomSwitchCooldown = Math.max(0, Number(aim.zoomSwitchCooldown || 0) - dt);
+    const edgeHit = cursorScreen && (cursorScreen.x <= bounds.left || cursorScreen.x >= bounds.right || cursorScreen.y <= bounds.top || cursorScreen.y >= bounds.bottom);
+    const coreScreen = worldToScreen(player.x, player.y);
+    const coreReturnRadius = Math.max(18, player.r * camera.zoom + ATTACK_AIM_CORE_RETURN_GAP_PX);
+    const nearCore = cursorScreen && coreScreen && Math.hypot(cursorScreen.x - coreScreen.x, cursorScreen.y - coreScreen.y) <= coreReturnRadius;
+    if (aim.zoomSwitchCooldown <= 0) {
+      if (edgeHit && aim.zoomLevel < ATTACK_AIM_ZOOM_LEVELS.length - 1) {
+        aim.zoomLevel += 1;
+        aim.zoomSwitchCooldown = ATTACK_AIM_ZOOM_SWITCH_COOLDOWN;
+      } else if (nearCore && aim.zoomLevel > 0) {
+        aim.zoomLevel -= 1;
+        aim.zoomSwitchCooldown = ATTACK_AIM_ZOOM_SWITCH_COOLDOWN;
+      }
+    }
+    const targetZoom = ATTACK_AIM_ZOOM_LEVELS[aim.zoomLevel] || ATTACK_AIM_NEAR_ZOOM;
+    const follow = Math.min(1, dt * 6.5), zoomFollow = Math.min(1, dt * 4.2);
     camera.x += (player.x - camera.x) * follow;
     camera.y += (player.y - camera.y) * follow;
     camera.zoom += (targetZoom - camera.zoom) * zoomFollow;
     clampCameraToWorld();
+    cursorScreen = worldToScreen(aim.aimWorldX, aim.aimWorldY);
+    if (cursorScreen) {
+      const clampedX = clamp(cursorScreen.x, bounds.left, bounds.right);
+      const clampedY = clamp(cursorScreen.y, bounds.top, bounds.bottom);
+      if (clampedX !== cursorScreen.x || clampedY !== cursorScreen.y) {
+        aim.aimWorldX = camera.x + (clampedX - canvas.clientWidth / 2) / Math.max(0.001, camera.zoom);
+        aim.aimWorldY = camera.y + (clampedY - canvas.clientHeight / 2) / Math.max(0.001, camera.zoom);
+      }
+    }
+    aim.aimWorldX = clamp(aim.aimWorldX, 0, WORLD_WIDTH);
+    aim.aimWorldY = clamp(aim.aimWorldY, 0, WORLD_HEIGHT);
+    aim.angle = Math.atan2(aim.aimWorldY - player.y, aim.aimWorldX - player.x);
+    aim.aimDistance = Math.hypot(aim.aimWorldX - player.x, aim.aimWorldY - player.y);
+    aim.lockedTarget = findFreeCursorMagnetLock(aim);
   }
   function updateAttackJoystick(clientX, clientY, element) {
     const rect = element.getBoundingClientRect();
@@ -4978,7 +5033,7 @@ const trainingIntroTimerRef = useRef(null);
     if (homeGuards <= 0 || teleportModeRef.current) return;
     event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture?.(event.pointerId);
     const player = playerRef.current;
-    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: -ATTACK_AIM_NEUTRAL_DRAG_PX, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: player?.x || 0, aimWorldY: (player?.y || 0) - ATTACK_AIM_MIN_WORLD_DISTANCE, lockedTarget: null };
+    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: 0, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: player?.x || 0, aimWorldY: (player?.y || 0) - ATTACK_AIM_MIN_WORLD_DISTANCE, lockedTarget: null, zoomLevel: 0, zoomSwitchCooldown: 0 };
     setAttackJoystick({ active: true, dx: 0, dy: 0, targetType: null });
   }
   function moveAttackJoystick(event) {
