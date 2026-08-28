@@ -4947,22 +4947,35 @@ const trainingIntroTimerRef = useRef(null);
   function findFreeCursorMagnetLock(aim) {
     const cursor = worldToScreen(aim.aimWorldX, aim.aimWorldY);
     if (!cursor) return aim.lockedTarget || null;
+    const zoom = Math.max(0.001, cameraRef.current.zoom);
+    const targets = getAttackableAimTargets();
+    let directHit = null, directHitDistance = Infinity;
+    let magneticCandidate = null, magneticDistance = Infinity;
+    for (const target of targets) {
+      const screen = worldToScreen(target.x, target.y);
+      if (!screen) continue;
+      const distance = Math.hypot(cursor.x - screen.x, cursor.y - screen.y);
+      // Cursor ring radius is about 10 screen px. A target is a direct hit when
+      // the visible cursor ring overlaps the visible monster/Core body.
+      const directHitRadius = Math.max(4, Number(target.radius || 0) * zoom) + 10;
+      if (distance <= directHitRadius && distance < directHitDistance) {
+        directHit = target;
+        directHitDistance = distance;
+      }
+      if (distance <= ATTACK_AIM_LOCK_RADIUS_PX && distance < magneticDistance) {
+        magneticCandidate = target;
+        magneticDistance = distance;
+      }
+    }
+    // A target physically under the cyan cursor always wins immediately,
+    // including every monster tier and every living Bot Core.
+    if (directHit) return directHit;
     const current = aim.lockedTarget;
     if (current) {
       const currentScreen = worldToScreen(current.x, current.y);
       if (currentScreen && Math.hypot(cursor.x - currentScreen.x, cursor.y - currentScreen.y) <= ATTACK_AIM_RELEASE_RADIUS_PX) return current;
     }
-    let best = null, bestDistance = Infinity;
-    for (const target of getAttackableAimTargets()) {
-      const screen = worldToScreen(target.x, target.y);
-      if (!screen) continue;
-      const distance = Math.hypot(cursor.x - screen.x, cursor.y - screen.y);
-      if (distance <= ATTACK_AIM_LOCK_RADIUS_PX && distance < bestDistance) {
-        best = target;
-        bestDistance = distance;
-      }
-    }
-    return best;
+    return magneticCandidate;
   }
   function getAttackAimSafeScreenBounds(canvas) {
     return {
