@@ -43,7 +43,7 @@ const BOT_DIFFICULTY_MAX_LEVEL = 5;
 const BOT_ECONOMIC_MAX_WAIT_SECONDS = 15;
 const BOT_ECONOMIC_PLAN_DEPTH = 3;
 const BOT_TELEPORT_ZONE_TARGET_DEPTH = 4;
-const BOT_TELEPORT_ZONE_RADIUS = 1500;
+const BOT_TELEPORT_ZONE_RADIUS = CORE_LOCAL_VISION_RADIUS;
 const BOT_PLAN_SWITCH_GAIN = 1.15;
 const CORE_DURABILITY_REGEN_SECONDS = 240;
 const CORE_BASE_DURABILITY = 1000;
@@ -56,6 +56,8 @@ const CORE_STATUS_BAR_HEIGHT = 4;
 const CORE_STATUS_BAR_GAP = 2;
 const ATTACK_AIM_MIN_WORLD_DISTANCE = 180;
 const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
+// Universal local perception radius for the player and every bot difficulty.
+const CORE_LOCAL_VISION_RADIUS = ATTACK_AIM_MAX_WORLD_DISTANCE;
 const ATTACK_AIM_NEAR_ZOOM = 0.30;
 const ATTACK_AIM_FAR_ZOOM = 0.10;
 const ATTACK_AIM_ZOOM_LEVELS = [0.30, 0.18, 0.10];
@@ -128,6 +130,11 @@ const BUILDINGS = {
     color: "#f59e0b",
   },
 };
+
+function isWithinCoreLocalVision(core, target, extraRadius = 0) {
+  if (!core || !target) return false;
+  return Math.hypot(target.x - core.x, target.y - core.y) <= CORE_LOCAL_VISION_RADIUS + Math.max(0, Number(extraRadius) || 0);
+}
 
 function getBuildingModuleCount(level) {
   const safeLevel = Math.max(1, Math.round(level || 1));
@@ -1728,7 +1735,7 @@ const trainingIntroTimerRef = useRef(null);
     const directOptions = [];
     const teleportOptions = [];
     for (const monster of worldRef.current.monsters || []) {
-      if (!monster || monster.hp <= 0 || reserved.has(monster.id)) continue;
+      if (!monster || monster.hp <= 0 || reserved.has(monster.id) || !isWithinCoreLocalVision(bot, monster, monster.r)) continue;
       const production = estimateBotProductionWait(bot, monster);
       if (production) {
         const direct = getBotDirectMonsterOption(bot, monster, production);
@@ -1758,7 +1765,7 @@ const trainingIntroTimerRef = useRef(null);
     const monsters = worldRef.current.monsters || [];
     for (const tier of getBotSearchTiers(bot)) {
       const candidates = monsters
-        .filter((monster) => monster && monster.hp > 0 && monster.armor === tier && canBotDefeatMonster(bot, monster))
+        .filter((monster) => monster && monster.hp > 0 && monster.armor === tier && canBotDefeatMonster(bot, monster) && isWithinCoreLocalVision(bot, monster, monster.r))
         .sort((a, b) => Math.hypot(a.x - bot.x, a.y - bot.y) - Math.hypot(b.x - bot.x, b.y - bot.y));
       if (candidates.length > 0) return candidates[0];
     }
@@ -2990,7 +2997,7 @@ const trainingIntroTimerRef = useRef(null);
   function findNextMonsterByTier() {
     const player = playerRef.current;
     if (!player) return;
-    const candidates = worldRef.current.monsters.filter((monster) => monster.armor === monsterSearchTier).sort((a, b) =>
+    const candidates = worldRef.current.monsters.filter((monster) => monster.armor === monsterSearchTier && monster.hp > 0 && isWithinCoreLocalVision(player, monster, monster.r)).sort((a, b) =>
       Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
     if (!candidates.length) return;
     const state = monsterSearchIndexRef.current;
@@ -4879,9 +4886,10 @@ const trainingIntroTimerRef = useRef(null);
   }
 
   function getAttackableAimTargets() {
+    const observer = playerRef.current;
     return [
-      ...(worldRef.current.monsters || []).filter((item) => item && item.hp > 0).map((item) => ({ type: "monster", item, x: item.x, y: item.y, radius: item.r || 18 })),
-      ...(botsRef.current || []).filter((item) => item && item.alive !== false).map((item) => ({ type: "core", item, x: item.x, y: item.y, radius: item.r || 30 })),
+      ...(worldRef.current.monsters || []).filter((item) => item && item.hp > 0 && isWithinCoreLocalVision(observer, item, item.r)).map((item) => ({ type: "monster", item, x: item.x, y: item.y, radius: item.r || 18 })),
+      ...(botsRef.current || []).filter((item) => item && item.alive !== false && isWithinCoreLocalVision(observer, item, item.r)).map((item) => ({ type: "core", item, x: item.x, y: item.y, radius: item.r || 30 })),
     ];
   }
   function getAttackAimLaneTargets(aim) {
@@ -5233,7 +5241,8 @@ const trainingIntroTimerRef = useRef(null);
       if (pointerState.lastPinchDistance > 0) {
         const ratio = distance / pointerState.lastPinchDistance;
         const camera = cameraRef.current;
-        camera.zoom = clamp(camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
+        const minimumArenaZoom = devLabRef.current ? MIN_ZOOM : ATTACK_AIM_FAR_ZOOM;
+    camera.zoom = clamp(camera.zoom * ratio, minimumArenaZoom, MAX_ZOOM);
 
         const zoomRange = Math.max(0.0001, MAX_ZOOM - pointerState.pinchStartZoom);
         const centerProgress = clamp(
@@ -5399,7 +5408,7 @@ const trainingIntroTimerRef = useRef(null);
     let best = null;
     let bestDistance = Infinity;
     for (const bot of botsRef.current || []) {
-      if (!bot.alive) continue;
+      if (!bot.alive || !isWithinCoreLocalVision(playerRef.current, bot, bot.r)) continue;
       const distance = Math.hypot(worldPoint.x - bot.x, worldPoint.y - bot.y);
       const touchRadius = bot.r + 42 / Math.max(0.1, cameraRef.current.zoom);
       if (distance <= touchRadius && distance < bestDistance) { best = bot; bestDistance = distance; }
@@ -5412,6 +5421,7 @@ const trainingIntroTimerRef = useRef(null);
     let bestDistance = Infinity;
 
     for (const monster of worldRef.current.monsters) {
+      if (!isWithinCoreLocalVision(playerRef.current, monster, monster.r)) continue;
       const distance = Math.hypot(worldPoint.x - monster.x, worldPoint.y - monster.y);
 
       if (distance <= monster.r + 32 && distance < bestDistance) {
