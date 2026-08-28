@@ -6634,11 +6634,12 @@ function drawAttackAim(ctx, aim, player, zoom) {
 }
 
 function drawSpaceBackground(ctx, width, height) {
+  // Near-black space keeps the grid readable while giving the arena a deeper
+  // universe-like backdrop instead of the previous dark-blue wash.
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#050816");
-  gradient.addColorStop(0.55, "#07111f");
-  gradient.addColorStop(1, "#020617");
-
+  gradient.addColorStop(0, "#01030a");
+  gradient.addColorStop(0.52, "#020612");
+  gradient.addColorStop(1, "#000106");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 }
