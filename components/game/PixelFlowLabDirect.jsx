@@ -59,7 +59,8 @@ const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
 const ATTACK_AIM_NEAR_ZOOM = 0.30;
 const ATTACK_AIM_FAR_ZOOM = 0.10;
 const ATTACK_AIM_ZOOM_LEVELS = [0.30, 0.18, 0.10];
-const ATTACK_AIM_CURSOR_SPEED_PX = 1140;
+const ATTACK_AIM_CURSOR_MIN_SPEED_PX = 220;
+const ATTACK_AIM_CURSOR_MAX_SPEED_PX = 760;
 const ATTACK_AIM_EDGE_MARGIN_PX = 16;
 const ATTACK_AIM_CORE_RETURN_GAP_PX = 8;
 const ATTACK_AIM_ZOOM_SWITCH_COOLDOWN = 0.28;
@@ -67,7 +68,7 @@ const ATTACK_AIM_VIEWPORT_RADIUS = 0.42;
 const ATTACK_AIM_FORWARD_SPEED = 1250;
 const ATTACK_AIM_REVERSE_SPEED = 1050;
 const ATTACK_AIM_NEUTRAL_DRAG_PX = 25;
-const ATTACK_AIM_MAX_DRAG_PX = 92;
+const ATTACK_AIM_MAX_DRAG_PX = 110;
 const ATTACK_AIM_LOCK_RADIUS_PX = 52;
 const ATTACK_AIM_RELEASE_RADIUS_PX = 78;
 const ATTACK_AIM_ASSIST_RADIUS_PX = 108;
@@ -4990,12 +4991,17 @@ const trainingIntroTimerRef = useRef(null);
     const canvas = canvasRef.current;
     if (!aim.active || !player || !canvas) return;
     const drag = Math.hypot(aim.dx, aim.dy);
-    const strength = clamp((drag - 2) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - 2), 0, 1);
-    if (drag > 2 && strength > 0) {
+    const deadZone = 4;
+    const normalizedThrow = clamp((drag - deadZone) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - deadZone), 0, 1);
+    if (drag > deadZone && normalizedThrow > 0) {
       const dirX = aim.dx / drag, dirY = aim.dy / drag;
-      const worldSpeed = ATTACK_AIM_CURSOR_SPEED_PX / Math.max(0.001, camera.zoom);
-      aim.aimWorldX += dirX * worldSpeed * strength * dt;
-      aim.aimWorldY += dirY * worldSpeed * strength * dt;
+      // A small but immediate base speed removes the muddy/tugging feeling.
+      // Smoothstep then raises speed gradually, while the lower maximum prevents overshoot.
+      const curvedThrow = normalizedThrow * normalizedThrow * (3 - 2 * normalizedThrow);
+      const screenSpeed = mixNumber(ATTACK_AIM_CURSOR_MIN_SPEED_PX, ATTACK_AIM_CURSOR_MAX_SPEED_PX, curvedThrow);
+      const worldSpeed = screenSpeed / Math.max(0.001, camera.zoom);
+      aim.aimWorldX += dirX * worldSpeed * dt;
+      aim.aimWorldY += dirY * worldSpeed * dt;
     }
     const bounds = getAttackAimSafeScreenBounds(canvas);
     let cursorScreen = worldToScreen(aim.aimWorldX, aim.aimWorldY);
@@ -9664,7 +9670,7 @@ const styles = {
     background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.055)", zIndex: 4,
   },
 
-  attackJoystick: { position:"absolute",right:74,bottom:148,width:84,height:84,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"transparent",border:"1px solid transparent",boxShadow:"none" },
+  attackJoystick: { position:"absolute",right:60,bottom:134,width:112,height:112,borderRadius:"50%",zIndex:34,touchAction:"none",userSelect:"none",WebkitUserSelect:"none",background:"transparent",border:"1px solid transparent",boxShadow:"none" },
   attackJoystickActive: { borderColor:"transparent",boxShadow:"none" },
   attackJoystickDisabled: { opacity:.34,filter:"grayscale(.8)",pointerEvents:"none" },
   attackJoystickCrosshair: { position:"absolute",inset:0,display:"grid",placeItems:"center",color:"transparent",fontSize:31,fontWeight:900,pointerEvents:"none" },
