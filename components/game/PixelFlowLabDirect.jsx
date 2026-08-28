@@ -59,8 +59,8 @@ const ATTACK_AIM_MAX_WORLD_DISTANCE = 5200;
 const ATTACK_AIM_NEAR_ZOOM = 0.30;
 const ATTACK_AIM_FAR_ZOOM = 0.10;
 const ATTACK_AIM_ZOOM_LEVELS = [0.30, 0.18, 0.10];
-const ATTACK_AIM_CURSOR_MIN_SPEED_PX = 220;
-const ATTACK_AIM_CURSOR_MAX_SPEED_PX = 760;
+const ATTACK_AIM_REMOTE_GAIN = 3.0;
+const ATTACK_AIM_REMOTE_MAX_STEP_PX = 54;
 const ATTACK_AIM_EDGE_MARGIN_PX = 16;
 const ATTACK_AIM_CORE_RETURN_GAP_PX = 8;
 const ATTACK_AIM_ZOOM_SWITCH_COOLDOWN = 0.28;
@@ -4990,18 +4990,15 @@ const trainingIntroTimerRef = useRef(null);
     const aim = attackJoystickRef.current, player = playerRef.current, camera = cameraRef.current;
     const canvas = canvasRef.current;
     if (!aim.active || !player || !canvas) return;
-    const drag = Math.hypot(aim.dx, aim.dy);
-    const deadZone = 4;
-    const normalizedThrow = clamp((drag - deadZone) / Math.max(1, ATTACK_AIM_MAX_DRAG_PX - deadZone), 0, 1);
-    if (drag > deadZone && normalizedThrow > 0) {
-      const dirX = aim.dx / drag, dirY = aim.dy / drag;
-      // A small but immediate base speed removes the muddy/tugging feeling.
-      // Smoothstep then raises speed gradually, while the lower maximum prevents overshoot.
-      const curvedThrow = normalizedThrow * normalizedThrow * (3 - 2 * normalizedThrow);
-      const screenSpeed = mixNumber(ATTACK_AIM_CURSOR_MIN_SPEED_PX, ATTACK_AIM_CURSOR_MAX_SPEED_PX, curvedThrow);
-      const worldSpeed = screenSpeed / Math.max(0.001, camera.zoom);
-      aim.aimWorldX += dirX * worldSpeed * dt;
-      aim.aimWorldY += dirY * worldSpeed * dt;
+    // Trackpad-style remote control: only fresh finger displacement moves the cursor.
+    // Holding the finger still produces zero movement, so the cursor cannot drive itself.
+    const pendingX = clamp(Number(aim.pendingScreenDx || 0), -ATTACK_AIM_REMOTE_MAX_STEP_PX, ATTACK_AIM_REMOTE_MAX_STEP_PX);
+    const pendingY = clamp(Number(aim.pendingScreenDy || 0), -ATTACK_AIM_REMOTE_MAX_STEP_PX, ATTACK_AIM_REMOTE_MAX_STEP_PX);
+    aim.pendingScreenDx = 0;
+    aim.pendingScreenDy = 0;
+    if (pendingX !== 0 || pendingY !== 0) {
+      aim.aimWorldX += pendingX / Math.max(0.001, camera.zoom);
+      aim.aimWorldY += pendingY / Math.max(0.001, camera.zoom);
     }
     const bounds = getAttackAimSafeScreenBounds(canvas);
     let cursorScreen = worldToScreen(aim.aimWorldX, aim.aimWorldY);
@@ -5041,18 +5038,27 @@ const trainingIntroTimerRef = useRef(null);
     aim.lockedTarget = findFreeCursorMagnetLock(aim);
   }
   function updateAttackJoystick(clientX, clientY, element) {
+    const aim = attackJoystickRef.current;
+    const previousX = Number.isFinite(aim.lastClientX) ? aim.lastClientX : clientX;
+    const previousY = Number.isFinite(aim.lastClientY) ? aim.lastClientY : clientY;
+    const moveX = clientX - previousX;
+    const moveY = clientY - previousY;
+    aim.lastClientX = clientX;
+    aim.lastClientY = clientY;
+    aim.pendingScreenDx = Number(aim.pendingScreenDx || 0) + moveX * ATTACK_AIM_REMOTE_GAIN;
+    aim.pendingScreenDy = Number(aim.pendingScreenDy || 0) + moveY * ATTACK_AIM_REMOTE_GAIN;
     const rect = element.getBoundingClientRect();
     const rawDx = clientX - (rect.left + rect.width / 2), rawDy = clientY - (rect.top + rect.height / 2);
-    const drag = Math.hypot(rawDx, rawDy), visualScale = drag > 34 ? 34 / drag : 1;
-    attackJoystickRef.current.dx = rawDx;
-    attackJoystickRef.current.dy = rawDy;
-    setAttackJoystick({ active: true, dx: rawDx * visualScale, dy: rawDy * visualScale, targetType: attackJoystickRef.current.lockedTarget?.type || null });
+    const drag = Math.hypot(rawDx, rawDy), visualScale = drag > 40 ? 40 / drag : 1;
+    aim.dx = rawDx;
+    aim.dy = rawDy;
+    setAttackJoystick({ active: true, dx: rawDx * visualScale, dy: rawDy * visualScale, targetType: aim.lockedTarget?.type || null });
   }
   function beginAttackJoystick(event) {
     if (homeGuards <= 0 || teleportModeRef.current) return;
     event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture?.(event.pointerId);
     const player = playerRef.current;
-    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: 0, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: player?.x || 0, aimWorldY: (player?.y || 0) - ATTACK_AIM_MIN_WORLD_DISTANCE, lockedTarget: null, zoomLevel: 0, zoomSwitchCooldown: 0 };
+    attackJoystickRef.current = { active: true, pointerId: event.pointerId, dx: 0, dy: 0, angle: -Math.PI / 2, aimDistance: ATTACK_AIM_MIN_WORLD_DISTANCE, aimWorldX: player?.x || 0, aimWorldY: (player?.y || 0) - ATTACK_AIM_MIN_WORLD_DISTANCE, lockedTarget: null, zoomLevel: 0, zoomSwitchCooldown: 0, lastClientX: event.clientX, lastClientY: event.clientY, pendingScreenDx: 0, pendingScreenDy: 0 };
     setAttackJoystick({ active: true, dx: 0, dy: 0, targetType: null });
   }
   function moveAttackJoystick(event) {
